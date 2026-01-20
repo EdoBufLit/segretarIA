@@ -3,4 +3,8 @@ uvicorn[standard]
 python-dotenv
 websockets
 openai
-
+sqlalchemy
+alembic
+passlib[bcrypt]
+itsdangerous
+python-multipart
