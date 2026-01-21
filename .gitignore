@@ -205,9 +205,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-<<<<<<< HEAD
-=======
 
 # Database files
 *.db
->>>>>>> origin/feat/db-setup-11543017062117725203

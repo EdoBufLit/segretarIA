@@ -5,14 +5,8 @@ from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Request, Body, Query
 from fastapi.responses import HTMLResponse
-<<<<<<< HEAD
-from email.message import EmailMessage
-import smtplib
-from dotenv import load_dotenv
-=======
 from dotenv import load_dotenv
 from mailer import send_email
->>>>>>> origin/feat/db-setup-11543017062117725203
 from openai import OpenAI
 import logging
 from pathlib import Path
@@ -21,13 +15,6 @@ from datetime import datetime, date, timedelta
 from openai import OpenAI
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse
-<<<<<<< HEAD
-from fastapi import Form
-import httpx
-# ================== CONFIG BASE ==================
-
-load_dotenv()
-=======
 from fastapi import Form, Depends
 from fastapi.templating import Jinja2Templates
 import httpx
@@ -42,7 +29,6 @@ from billing_service import BillingService
 
 load_dotenv()
 templates = Jinja2Templates(directory="templates")
->>>>>>> origin/feat/db-setup-11543017062117725203
 
 app = FastAPI()
 app.add_middleware(
@@ -390,39 +376,6 @@ def build_email_body_html(
     return html
 
 
-<<<<<<< HEAD
-def send_email(to_addr: str, subject: str, html_body: str):
-    """
-    Invia una mail in formato HTML + fallback text.
-    """
-
-    if not all([EMAIL_FROM, SMTP_HOST, SMTP_USER, SMTP_PASSWORD]):
-        raise RuntimeError("Configurazione SMTP incompleta (controlla .env).")
-
-    if not to_addr:
-        raise RuntimeError("Destinatario email mancante (to_addr).")
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = EMAIL_FROM
-    msg["To"] = to_addr
-
-    # Fallback text (in caso il client non supporti HTML)
-    msg.set_content("La tua email richiede un client che supporta HTML.")
-
-    # Parte HTML
-    msg.add_alternative(html_body, subtype="html")
-
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.send_message(msg)
-
-    logger.info(f"[EMAIL] Inviata email a {to_addr} con subject='{subject}'")
-
-
-=======
->>>>>>> origin/feat/db-setup-11543017062117725203
 # ================== ENDPOINT DI TEST ==================
 
 @app.get("/")
@@ -430,8 +383,6 @@ async def root():
     return {"status": "ok", "message": "Segreteria IA ElevenLabs backend attivo."}
 
 
-<<<<<<< HEAD
-=======
 # ================== ADMIN ENDPOINTS ==================
 
 @app.get("/admin/clients", response_class=HTMLResponse)
@@ -537,7 +488,6 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
         raise HTTPException(status_code=400, detail=str(e))
 
 
->>>>>>> origin/feat/db-setup-11543017062117725203
 # ================== WEBHOOK ELEVENLABS ==================
 
 def extract_transcript_text(payload: dict) -> str:
@@ -708,8 +658,6 @@ async def elevenlabs_webhook(request: Request):
         return {"status": "error", "reason": f"email error: {e}"}
 
     logger.info(f"[WEBHOOK] Chiamata gestita correttamente per {studio_name} ({agent_id})")
-<<<<<<< HEAD
-=======
 
     # Meter the call
     if duration_secs and agent_id:
@@ -727,7 +675,6 @@ async def elevenlabs_webhook(request: Request):
         else:
             logger.warning("[METERING] No unique call_id found in webhook payload.")
 
->>>>>>> origin/feat/db-setup-11543017062117725203
     return {"status": "ok", "message": "Webhook ricevuto e email inviata."}
 
 @app.get("/clients")
@@ -1046,17 +993,6 @@ async def analytics_client(agent_id: str):
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-<<<<<<< HEAD
-async def dashboard(request: Request):
-    user = request.session.get("user")
-    if not user:
-        return RedirectResponse(url="/login", status_code=302)
-
-    maybe_reload_clients()
-    with open("templates/dashboard.html", "r", encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(content=html)
-=======
 async def dashboard(request: Request, current_user: User = Depends(get_current_user)):
     if current_user.role == "admin":
         maybe_reload_clients()
@@ -1065,7 +1001,6 @@ async def dashboard(request: Request, current_user: User = Depends(get_current_u
         return HTMLResponse(content=html)
     else:
         return templates.TemplateResponse("client_portal.html", {"request": request})
->>>>>>> origin/feat/db-setup-11543017062117725203
 
 
 @app.get("/logout")
@@ -1074,8 +1009,6 @@ async def logout(request: Request):
     return RedirectResponse(url="/login", status_code=302)
 
 
-<<<<<<< HEAD
-=======
 @app.get("/me")
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return {
@@ -1084,7 +1017,6 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
         "studio_name": current_user.studio_name,
     }
 
->>>>>>> origin/feat/db-setup-11543017062117725203
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_form(request: Request):
@@ -1098,17 +1030,6 @@ async def login_form(request: Request):
 async def login_submit(
     request: Request,
     username: str = Form(...),
-<<<<<<< HEAD
-    password: str = Form(...)
-):
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-        request.session["user"] = username
-        return RedirectResponse(url="/dashboard", status_code=302)
-    else:
-        # credenziali sbagliate → rimando al login con ?error=1
-        return RedirectResponse(url="/login?error=1", status_code=302)
-
-=======
     password: str = Form(...),
     db: Session = Depends(get_db)
 ):
@@ -1124,7 +1045,6 @@ async def login_submit(
     }
     return RedirectResponse(url="/dashboard", status_code=302)
 
->>>>>>> origin/feat/db-setup-11543017062117725203
 
 @app.get("/logs/{agent_id}/list")
 async def get_logs_filtered(
