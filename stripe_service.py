@@ -252,7 +252,13 @@ class StripeService:
                 sub.cycle_start = datetime.utcfromtimestamp(subscription_obj['current_period_start'])
                 sub.cycle_end = datetime.utcfromtimestamp(subscription_obj['current_period_end'])
                 sub.state = subscription_obj['status'] # e.g. active
-                sub.last_payment_status = 'succeeded'
+                sub.last_payment_status = 'paid'
+
+                # Restore service if previously suspended (and payment succeeded)
+                if sub.state == 'active' and not sub.user.is_active:
+                    sub.user.is_active = True
+                    db.add(sub.user)
+
                 db.commit()
             except Exception as e:
                 print(f"Error updating subscription {stripe_subscription_id}: {e}")
