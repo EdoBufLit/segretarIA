@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta
 import os
 from sqlalchemy.orm import Session
-from models import User, Agent, Plan, Subscription, PhoneNumber
+from models import User, Agent, Plan, Subscription, PhoneNumber, UsageEvent
 from auth import hash_password, generate_random_password
 from mailer import send_email
 from audit_logger import log_admin_action
+from sqlalchemy import func
 import csv
 import io
 
@@ -252,4 +253,44 @@ class AdminService:
             ])
 
         log_admin_action(self.admin_username, "Exported clients CSV")
+        return output.getvalue()
+
+    def export_minutes_csv(self, from_date: datetime, to_date: datetime) -> str:
+        # Group usage by user and agent
+        results = (
+            self.db.query(
+                User.username,
+                Agent.agent_id,
+                func.sum(UsageEvent.billed_seconds).label("total_seconds")
+            )
+            .join(UsageEvent, User.id == UsageEvent.user_id)
+            .join(Agent, Agent.id == UsageEvent.agent_id)
+            .filter(UsageEvent.started_at >= from_date)
+            .filter(UsageEvent.started_at <= to_date)
+            .group_by(User.id, Agent.id)
+            .all()
+        )
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        headers = ["user", "agent_id", "minuti_usati", "periodo"]
+        writer.writerow(headers)
+
+        period_str = f"{from_date.date()} - {to_date.date()}"
+
+        for row in results:
+            username = row.username
+            agent_id = row.agent_id
+            total_seconds = row.total_seconds or 0
+            minutes = round(total_seconds / 60, 2)
+
+            writer.writerow([
+                username,
+                agent_id,
+                minutes,
+                period_str
+            ])
+
+        log_admin_action(self.admin_username, f"Exported minutes CSV ({period_str})")
         return output.getvalue()

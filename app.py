@@ -26,7 +26,7 @@ from admin_service import AdminService
 from client_service import ClientService
 from billing_service import BillingService
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 import time
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -471,6 +471,35 @@ async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = D
     service = AdminService(db, admin.username)
     summary = service.sync_clients_to_json()
     return {"status": "ok", **summary}
+
+@app.get("/admin/export/minutes")
+async def admin_export_minutes(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db, admin.username)
+    try:
+        dt_from = datetime.fromisoformat(from_date)
+        dt_to = datetime.fromisoformat(to_date)
+
+        # Ensure 'to_date' covers the whole day if it's just a date
+        if "T" not in to_date and len(to_date) == 10:
+             dt_to = dt_to + timedelta(hours=23, minutes=59, seconds=59)
+
+        csv_content = service.export_minutes_csv(dt_from, dt_to)
+
+        filename = f"minutes_{from_date}_{to_date}.csv"
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)")
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/phone-numbers", response_class=HTMLResponse)
 async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
