@@ -19,7 +19,7 @@ from fastapi import Form, Depends
 from fastapi.templating import Jinja2Templates
 import httpx
 from sqlalchemy.orm import Session
-from db import get_db
+from db import get_db, SessionLocal
 from models import User, Agent
 from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
@@ -680,6 +680,16 @@ async def elevenlabs_webhook(request: Request):
 
     # 3b) Agent ID (chi identifica il cliente)
     agent_id: Optional[str] = data.get("agent_id")
+
+    # Check suspension status
+    with SessionLocal() as db:
+        agent_db = db.query(Agent).filter(Agent.agent_id == agent_id).first()
+        if agent_db and agent_db.users:
+            user = agent_db.users[0]
+            if not user.is_active:
+                logger.warning(f"[WEBHOOK] Blocked call for suspended user {user.username} (Agent {agent_id})")
+                return {"status": "suspended"}
+
     client_cfg = get_client_config(agent_id)
     studio_name = client_cfg["studio_name"]
     email_to = client_cfg["email_to"]
