@@ -4,8 +4,10 @@ from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Request, Body, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from dotenv import load_dotenv
+from collections import defaultdict
+import time
 from mailer import send_email
 from openai import OpenAI
 import logging
@@ -31,6 +33,32 @@ load_dotenv()
 templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
+
+# Rate Limiting
+rate_limit_data = defaultdict(list)
+RATE_LIMIT_COUNT = 10
+RATE_LIMIT_WINDOW = 60 # seconds
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Skip rate limiting for static files
+    if request.url.path.startswith("/static"):
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+
+    # Filter out timestamps older than the window
+    rate_limit_data[client_ip] = [t for t in rate_limit_data[client_ip] if now - t < RATE_LIMIT_WINDOW]
+
+    if len(rate_limit_data[client_ip]) >= RATE_LIMIT_COUNT:
+        return JSONResponse(status_code=429, content={"error": "Too many attempts"})
+
+    rate_limit_data[client_ip].append(now)
+
+    response = await call_next(request)
+    return response
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "super-secret-change-me"),
