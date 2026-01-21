@@ -110,7 +110,7 @@ class PhoneNumber(Base):
     status = Column(String, nullable=False, default="active") # active, pending_deprovision, released
     deprovision_at = Column(DateTime, nullable=True)
     released_at = Column(DateTime, nullable=True)
-    last_notified_at = Column(DateTime, nullable=True)
+    notified_at = Column(DateTime, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

@@ -97,6 +97,7 @@ class AdminService:
         if phone_number and phone_number.deprovision_at > datetime.utcnow():
             phone_number.status = "active"
             phone_number.deprovision_at = None
+            phone_number.notified_at = None
             self.db.commit()
 
             admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
@@ -173,6 +174,7 @@ class AdminService:
         if phone.status == "pending_deprovision":
             phone.status = "active"
             phone.deprovision_at = None
+            phone.notified_at = None
             self.db.commit()
 
             admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")

@@ -32,11 +32,13 @@ def send_email(to_addr: str, subject: str, html_body: str):
     # HTML content
     msg.add_alternative(html_body, subtype="html")
 
-    # In a real app, this would send an email. For this environment, we'll just log it.
-    print("--- SIMULATING EMAIL ---")
-    print(f"To: {to_addr}")
-    print(f"From: {EMAIL_FROM}")
-    print(f"Subject: {subject}")
-    print("Body:")
-    print(html_body)
-    print("--- END SIMULATING EMAIL ---")
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.send_message(msg)
+        print(f"Email sent to {to_addr} with subject: '{subject}'")
+    except Exception as e:
+        print(f"Failed to send email to {to_addr}: {e}")
+        # In a real app, you'd want more robust error handling/logging here
+        raise

@@ -10,14 +10,12 @@ def run_deprovision_job():
 
     try:
         now = datetime.utcnow()
-        # Notify once every 24 hours
-        notification_threshold = now - timedelta(hours=24)
 
         numbers_to_deprovision = db.query(PhoneNumber).filter(
             PhoneNumber.provider == "ehiweb",
             PhoneNumber.status == "pending_deprovision",
             PhoneNumber.deprovision_at <= now,
-            (PhoneNumber.last_notified_at == None) | (PhoneNumber.last_notified_at < notification_threshold)
+            PhoneNumber.notified_at == None
         ).all()
 
         if not numbers_to_deprovision:
@@ -49,7 +47,7 @@ def run_deprovision_job():
             """
 
             send_email(admin_email, subject, body)
-            number.last_notified_at = now
+            number.notified_at = now
             db.commit()
 
         print(f"Sent {len(numbers_to_deprovision)} deprovisioning notifications.")
