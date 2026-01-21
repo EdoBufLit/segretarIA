@@ -45,6 +45,18 @@
 - **Root Cause**: `RateLimitMiddleware` is missing from `app.py`.
 - **Severity**: High (Security Feature Missing)
 
+## Enforcement Test: Suspended Users
+- **Method**: Manual DB update to set `is_active=False` (API endpoint missing).
+- **Target**: Block access for suspended users.
+- **Results**:
+    - **Login**: PASS (User blocked, redirected to login).
+    - **Webhook (`/elevenlabs/webhook`)**: FAIL (Returned 200 OK, processed call).
+        - *Reason*: Webhook uses `clients.json` which lacks status, and does not check DB.
+    - **Test Call (`/clients/.../test-call`)**: FAIL (Returned 400 Config Error, not 403 Forbidden).
+        - *Reason*: Endpoint does not verify `is_active` status.
+    - **Admin API**: FAIL (Endpoint `POST /admin/users/{id}/toggle-active` is missing).
+- **Severity**: Critical (Suspended users can still use the service via phone/webhook).
+
 ## Observations
 - The application requires `itsdangerous` and `python-multipart` to be installed.
 - "Statistiche" in the spec refers to the "Analytics" section in the UI.
