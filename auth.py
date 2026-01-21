@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from db import get_db
 from models import User
+import secrets
+import string
 
 # Set up the password hashing context using bcrypt
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -21,6 +23,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Verifies a plain text password against its hashed version.
     """
     return pwd_context.verify(plain_password, hashed_password)
+
+
+def generate_random_password(length: int = 12) -> str:
+    """
+    Generates a cryptographically secure random password.
+    """
+    alphabet = string.ascii_letters + string.digits + string.punctuation
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:

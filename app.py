@@ -457,6 +457,15 @@ async def admin_create_subscription(user_id: int, plan_code: str = Form(...), db
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/admin/users/{user_id}/reset-password")
+async def admin_reset_user_password(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db, admin.username)
+    try:
+        service.reset_password_random(user_id)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/admin/sync-clients-json")
 async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     service = AdminService(db, admin.username)

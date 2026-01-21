@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import os
 from sqlalchemy.orm import Session
 from models import User, Agent, Plan, Subscription, PhoneNumber
-from auth import hash_password
+from auth import hash_password, generate_random_password
 from mailer import send_email
 from audit_logger import log_admin_action
 import csv
@@ -209,6 +209,23 @@ class AdminService:
         self.db.commit()
 
         log_admin_action(self.admin_username, f"Reset password for user {user.username} (ID: {user_id})")
+        return user
+
+    def reset_password_random(self, user_id: int) -> User:
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        new_password = generate_random_password()
+        user.password_hash = hash_password(new_password)
+        self.db.commit()
+
+        # Send email with new password
+        subject = "Your password has been reset"
+        body = f"<p>Your password has been reset by an administrator.</p><p>New Password: <b>{new_password}</b></p>"
+        send_email(user.email, subject, body)
+
+        log_admin_action(self.admin_username, f"Reset password (random) for user {user.username} (ID: {user_id})")
         return user
 
     def export_clients_csv(self) -> str:
