@@ -562,6 +562,20 @@ async def billing_change_plan(
         logger.exception("Error changing plan")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/billing/portal")
+async def billing_portal(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        session = StripeService.create_customer_portal_session(current_user, db)
+        return {"url": session.url}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Error creating portal session")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/stripe/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
