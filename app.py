@@ -25,6 +25,7 @@ from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
 from client_service import ClientService
 from billing_service import BillingService
+from stripe_service import StripeService
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -487,6 +488,39 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+class CheckoutRequest(BaseModel):
+    plan_code: str
+
+@app.post("/billing/checkout")
+async def billing_checkout(
+    payload: CheckoutRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    plan_code = payload.plan_code.lower()
+
+    if plan_code == "basic":
+        price_id = os.getenv("STRIPE_PRICE_BASIC")
+    elif plan_code == "pro":
+        price_id = os.getenv("STRIPE_PRICE_PRO")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid plan code")
+
+    if not price_id:
+         raise HTTPException(status_code=500, detail=f"Price ID for {plan_code} not configured")
+
+    metadata = {
+        "user_id": str(current_user.id),
+        "username": current_user.username
+    }
+
+    try:
+        session = StripeService.create_checkout_session(current_user, price_id, db, metadata)
+        return {"checkout_url": session.url}
+    except Exception as e:
+        logger.exception("Error creating checkout session")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ================== WEBHOOK ELEVENLABS ==================

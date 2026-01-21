@@ -8,33 +8,53 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 class StripeService:
     @staticmethod
-    def create_customer_if_missing(user):
+    def create_customer_if_missing(user, db):
         """
         Ensures a Stripe customer exists for the given user.
-        Since we cannot modify the User model to store stripe_customer_id,
-        we rely on searching by email.
+        Updates user.stripe_customer_id in the DB.
         """
+        if user.stripe_customer_id:
+             # Verify it still exists in Stripe? Maybe overkill for now, but good practice.
+             # For now, just return a dummy object with the ID to save API calls,
+             # OR actually retrieve it if we need details.
+             # But for create_checkout_session we only need the ID.
+             # Let's verify it exists if we want to be robust, or just trust the DB.
+             # Trusting the DB is faster.
+
+             # Use a simple object to mimic the Stripe Customer object structure expected by callers
+             class SimpleCustomer:
+                 def __init__(self, id):
+                     self.id = id
+             return SimpleCustomer(user.stripe_customer_id)
+
         if not user.email:
             raise ValueError("User must have an email address")
 
-        # Search for existing customer by email
+        # Search for existing customer by email in Stripe
         existing_customers = stripe.Customer.list(email=user.email, limit=1)
         if existing_customers.data:
-            return existing_customers.data[0]
+            customer = existing_customers.data[0]
+        else:
+            # Create new customer if not found
+            customer = stripe.Customer.create(
+                email=user.email,
+                metadata={"user_id": str(user.id)}
+            )
 
-        # Create new customer if not found
-        customer = stripe.Customer.create(
-            email=user.email,
-            metadata={"user_id": str(user.id)}
-        )
+        # Save to DB
+        user.stripe_customer_id = customer.id
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
         return customer
 
     @staticmethod
-    def create_checkout_session(user, price_id, metadata=None):
+    def create_checkout_session(user, price_id, db, metadata=None):
         """
         Creates a Stripe Checkout Session for a subscription.
         """
-        customer = StripeService.create_customer_if_missing(user)
+        customer = StripeService.create_customer_if_missing(user, db)
 
         success_url = os.getenv("STRIPE_SUCCESS_URL")
         cancel_url = os.getenv("STRIPE_CANCEL_URL")
@@ -62,11 +82,11 @@ class StripeService:
         return checkout_session
 
     @staticmethod
-    def create_customer_portal_session(user):
+    def create_customer_portal_session(user, db):
         """
         Creates a Billing Portal session for the user to manage their subscription.
         """
-        customer = StripeService.create_customer_if_missing(user)
+        customer = StripeService.create_customer_if_missing(user, db)
 
         # We use STRIPE_SUCCESS_URL as the return_url, assuming it leads back to a useful place (e.g. dashboard).
         # Alternatively, we could use STRIPE_CANCEL_URL or a dedicated STRIPE_PORTAL_RETURN_URL if it existed.
