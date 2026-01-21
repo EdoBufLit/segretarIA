@@ -38,6 +38,7 @@ class User(Base):
     agents = relationship(
         "Agent", secondary=UserAgentAccess, back_populates="users"
     )
+    phone_numbers = relationship("PhoneNumber", back_populates="user")
 
 class Agent(Base):
     __tablename__ = "agents"
@@ -98,3 +99,20 @@ class UsageEvent(Base):
     subscription = relationship("Subscription", back_populates="usage_events")
     user = relationship("User", back_populates="usage_events")
     agent = relationship("Agent", back_populates="usage_events")
+
+class PhoneNumber(Base):
+    __tablename__ = "phone_numbers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    e164 = Column(String, unique=True, index=True, nullable=False)
+    provider = Column(String, nullable=False, default="ehiweb")
+    monthly_cost_cents = Column(Integer, nullable=False, default=200)
+    status = Column(String, nullable=False, default="active") # active, pending_deprovision, released
+    deprovision_at = Column(DateTime, nullable=True)
+    released_at = Column(DateTime, nullable=True)
+    last_notified_at = Column(DateTime, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="phone_numbers")

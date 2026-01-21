@@ -5,9 +5,8 @@ from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Request, Body, Query
 from fastapi.responses import HTMLResponse
-from email.message import EmailMessage
-import smtplib
 from dotenv import load_dotenv
+from mailer import send_email
 from openai import OpenAI
 import logging
 from pathlib import Path
@@ -377,36 +376,6 @@ def build_email_body_html(
     return html
 
 
-def send_email(to_addr: str, subject: str, html_body: str):
-    """
-    Invia una mail in formato HTML + fallback text.
-    """
-
-    if not all([EMAIL_FROM, SMTP_HOST, SMTP_USER, SMTP_PASSWORD]):
-        raise RuntimeError("Configurazione SMTP incompleta (controlla .env).")
-
-    if not to_addr:
-        raise RuntimeError("Destinatario email mancante (to_addr).")
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = EMAIL_FROM
-    msg["To"] = to_addr
-
-    # Fallback text (in caso il client non supporti HTML)
-    msg.set_content("La tua email richiede un client che supporta HTML.")
-
-    # Parte HTML
-    msg.add_alternative(html_body, subtype="html")
-
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.send_message(msg)
-
-    logger.info(f"[EMAIL] Inviata email a {to_addr} con subject='{subject}'")
-
-
 # ================== ENDPOINT DI TEST ==================
 
 @app.get("/")
@@ -466,6 +435,39 @@ async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = D
     service = AdminService(db)
     summary = service.sync_clients_to_json()
     return {"status": "ok", **summary}
+
+@app.get("/admin/phone-numbers", response_class=HTMLResponse)
+async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    numbers = service.get_all_phone_numbers()
+    return templates.TemplateResponse("admin_phonenumbers.html", {"request": request, "numbers": numbers})
+
+@app.post("/admin/phone-numbers/create") # Temporary for testing
+async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        phone = service.create_phone_number(e164, user_id)
+        return {"status": "ok", "phone_number_id": phone.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/phone-numbers/{phone_id}/mark-released")
+async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        service.mark_phone_number_released(phone_id)
+        return RedirectResponse(url="/admin/phone-numbers", status_code=303)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/admin/phone-numbers/{phone_id}/cancel-deprovision")
+async def admin_cancel_deprovision(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        service.cancel_phone_number_deprovisioning(phone_id)
+        return RedirectResponse(url="/admin/phone-numbers", status_code=303)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # ================== CLIENT ENDPOINTS ==================

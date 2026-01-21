@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
+import os
 from sqlalchemy.orm import Session
-from models import User, Agent, Plan, Subscription
+from models import User, Agent, Plan, Subscription, PhoneNumber
 from auth import hash_password
+from mailer import send_email
 
 class AdminService:
     def __init__(self, db: Session):
@@ -90,6 +92,18 @@ class AdminService:
 
         self.db.commit()
         self.db.refresh(subscription)
+
+        phone_number = self.db.query(PhoneNumber).filter_by(user_id=user_id, status="pending_deprovision").first()
+        if phone_number and phone_number.deprovision_at > datetime.utcnow():
+            phone_number.status = "active"
+            phone_number.deprovision_at = None
+            self.db.commit()
+
+            admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+            subject = f"[REACTIVATE] Disdetta numero annullata per {phone_number.e164}"
+            body = f"<p>La disdetta del numero <b>{phone_number.e164}</b> per il cliente {client.studio_name or client.username} è stata annullata a seguito della riattivazione della sottoscrizione.</p>"
+            send_email(admin_email, subject, body)
+
         return subscription
 
     def sync_clients_to_json(self):
@@ -126,3 +140,44 @@ class AdminService:
             json.dump(clients_data, f, indent=2, ensure_ascii=False)
 
         return {"created": created_count, "updated": updated_count}
+
+    def get_all_phone_numbers(self):
+        return self.db.query(PhoneNumber).all()
+
+    def create_phone_number(self, e164: str, user_id: int):
+        user = self.db.query(User).filter_by(id=user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        new_phone = PhoneNumber(e164=e164, user_id=user_id)
+        self.db.add(new_phone)
+        self.db.commit()
+        self.db.refresh(new_phone)
+        return new_phone
+
+    def mark_phone_number_released(self, phone_id: int):
+        phone = self.db.query(PhoneNumber).filter_by(id=phone_id).first()
+        if not phone:
+            raise ValueError("Phone number not found")
+
+        phone.status = "released"
+        phone.released_at = datetime.utcnow()
+        self.db.commit()
+        return phone
+
+    def cancel_phone_number_deprovisioning(self, phone_id: int):
+        phone = self.db.query(PhoneNumber).filter_by(id=phone_id).first()
+        if not phone:
+            raise ValueError("Phone number not found")
+
+        if phone.status == "pending_deprovision":
+            phone.status = "active"
+            phone.deprovision_at = None
+            self.db.commit()
+
+            admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+            subject = f"[REACTIVATE] Disdetta numero annullata per {phone.e164}"
+            body = f"<p>La disdetta del numero <b>{phone.e164}</b> è stata annullata manualmente dall'amministratore.</p>"
+            send_email(admin_email, subject, body)
+
+        return phone
