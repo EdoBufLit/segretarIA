@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from db import SessionLocal
 from models import User, Plan
-from auth_utils import hash_password
+from auth import hash_password
 
 # Load environment variables from .env file
 load_dotenv()

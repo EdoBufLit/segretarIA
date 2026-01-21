@@ -16,8 +16,12 @@ from datetime import datetime, date, timedelta
 from openai import OpenAI
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse
-from fastapi import Form
+from fastapi import Form, Depends
 import httpx
+from sqlalchemy.orm import Session
+from db import get_db
+from models import User
+from auth import verify_password, get_current_user
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -893,15 +897,16 @@ async def analytics_client(agent_id: str):
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    user = request.session.get("user")
-    if not user:
-        return RedirectResponse(url="/login", status_code=302)
-
-    maybe_reload_clients()
-    with open("templates/dashboard.html", "r", encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(content=html)
+async def dashboard(request: Request, current_user: User = Depends(get_current_user)):
+    if current_user.role == "admin":
+        maybe_reload_clients()
+        with open("templates/dashboard.html", "r", encoding="utf-8") as f:
+            html = f.read()
+        return HTMLResponse(content=html)
+    else:
+        with open("templates/client_dashboard.html", "r", encoding="utf-8") as f:
+            html = f.read()
+        return HTMLResponse(content=html)
 
 
 @app.get("/logout")
@@ -909,6 +914,14 @@ async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/login", status_code=302)
 
+
+@app.get("/me")
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    return {
+        "username": current_user.username,
+        "role": current_user.role,
+        "studio_name": current_user.studio_name,
+    }
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -923,14 +936,20 @@ async def login_form(request: Request):
 async def login_submit(
     request: Request,
     username: str = Form(...),
-    password: str = Form(...)
+    password: str = Form(...),
+    db: Session = Depends(get_db)
 ):
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-        request.session["user"] = username
-        return RedirectResponse(url="/dashboard", status_code=302)
-    else:
-        # credenziali sbagliate → rimando al login con ?error=1
+    user = db.query(User).filter(User.username == username).first()
+
+    if not user or not user.is_active or not verify_password(password, user.password_hash):
         return RedirectResponse(url="/login?error=1", status_code=302)
+
+    request.session["user"] = {
+        "user_id": user.id,
+        "username": user.username,
+        "role": user.role,
+    }
+    return RedirectResponse(url="/dashboard", status_code=302)
 
 
 @app.get("/logs/{agent_id}/list")
