@@ -34,6 +34,17 @@
 - **Console Errors**: NONE
 - **Note**: The 'Clients' section mentioned in the spec does not appear in the sidebar navigation for the test user (Role: Admin). It might be restricted or removed. The sidebar contains: Dashboard, Logs, Analytics, Settings.
 
+## Security Test: Rate Limiting
+- **Test Script**: `tests/rate_limit_test.sh`
+- **Target**: `POST /login` and `GET /admin/clients`
+- **Requests**: 10 rapid requests (threshold expected: 5/min)
+- **Result**: FAIL
+    - `POST /login`: 10 requests returned 302 (Redirect)
+    - `GET /admin/clients`: 10 requests returned 302 (Redirect)
+- **Observation**: No `429 Too Many Requests` response received.
+- **Root Cause**: `RateLimitMiddleware` is missing from `app.py`.
+- **Severity**: High (Security Feature Missing)
+
 ## Observations
 - The application requires `itsdangerous` and `python-multipart` to be installed.
 - "Statistiche" in the spec refers to the "Analytics" section in the UI.
