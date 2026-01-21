@@ -57,6 +57,16 @@ function renderDashboardUI() {
                         <th class="py-3 px-4 text-left">Agent ID</th>
                         <th class="py-3 px-4 text-left">Studio</th>
                         <th class="py-3 px-4 text-left">Email</th>
+<<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+                        <th class="py-3 px-4 text-center">Stato</th>
+=======
+>>>>>>> origin/block-suspended-users-1543456083889213456
+=======
+>>>>>>> origin/feature/stripe-integration-14308306324681726244
+=======
+>>>>>>> origin/landing-page-11717745976152594883
                         <th class="py-3 px-4 text-right">Azioni</th>
                     </tr>
                 </thead>
@@ -135,6 +145,42 @@ async function loadClients() {
 
     for (const id in clients) {
         const c = clients[id];
+<<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+        const statusBadge = c.is_active
+            ? `<span class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded">Attivo</span>`
+            : `<span class="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded">Sospeso</span>`;
+
+        const toggleBtnLabel = c.is_active ? "Sospendi" : "Attiva";
+        const toggleBtnClass = c.is_active ? "bg-yellow-500 hover:bg-yellow-600" : "bg-green-500 hover:bg-green-600";
+
+        // Show toggle button only if we have a user_id (meaning mapped to DB)
+        const toggleBtn = c.user_id
+            ? `<button onclick="toggleActive('${c.user_id}')" class="${toggleBtnClass} text-white px-3 py-1 rounded text-xs transition-colors">${toggleBtnLabel}</button>`
+            : `<span class="text-xs text-gray-400">N/A</span>`;
+
+        tbody.innerHTML += `
+            <tr class="border-b">
+                <td class="py-2 px-4 text-sm font-mono">${id}</td>
+                <td class="py-2 px-4">${c.studio_name}</td>
+                <td class="py-2 px-4">${c.email_to}</td>
+                <td class="py-2 px-4 text-center">${statusBadge}</td>
+
+                <td class="py-2 px-4 text-right space-x-2 flex justify-end items-center">
+                    ${toggleBtn}
+                    ${c.user_id ?
+                    `<button onclick="resetPassword(${c.user_id})"
+                        class="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 text-xs">
+                        Reset Pw
+                    </button>` : ''}
+                    <button onclick="removeClient('${id}')"
+                        class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 text-xs">
+=======
+=======
+>>>>>>> origin/feature/stripe-integration-14308306324681726244
+=======
+>>>>>>> origin/landing-page-11717745976152594883
 
         tbody.innerHTML += `
             <tr class="border-b">
@@ -145,6 +191,13 @@ async function loadClients() {
                 <td class="py-2 px-4 text-right space-x-2">
                     <button onclick="removeClient('${id}')"
                         class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
+<<<<<<< HEAD
+<<<<<<< HEAD
+>>>>>>> origin/block-suspended-users-1543456083889213456
+=======
+>>>>>>> origin/feature/stripe-integration-14308306324681726244
+=======
+>>>>>>> origin/landing-page-11717745976152594883
                         Rimuovi
                     </button>
                 </td>
@@ -152,6 +205,63 @@ async function loadClients() {
     }
 }
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+async function resetPassword(userId) {
+    if (!userId) {
+        alert("ID utente non disponibile.");
+        return;
+    }
+
+    showConfirm(
+        'Reset Password',
+        'Sei sicuro di voler resettare la password? Una nuova password verrà generata e inviata via email all\'utente.',
+        async () => {
+            try {
+                const res = await fetch(`/admin/users/${userId}/reset-password`, {
+                    method: "POST"
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    alert("Successo: " + data.message);
+                } else {
+                    alert("Errore: " + (data.detail || "Impossibile resettare la password"));
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Errore di rete.");
+            }
+        }
+    );
+}
+
+async function toggleActive(userId) {
+    if (!confirm("Sei sicuro di voler modificare lo stato di questo utente?")) return;
+
+    try {
+        const res = await fetch(`/admin/users/${userId}/toggle-active`, {
+            method: "POST"
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            await loadClients(); // Reload to update UI
+        } else {
+            alert("Errore: " + (data.detail || "Impossibile aggiornare stato."));
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Errore di comunicazione col server.");
+    }
+}
+
+=======
+>>>>>>> origin/block-suspended-users-1543456083889213456
+=======
+>>>>>>> origin/feature/stripe-integration-14308306324681726244
+=======
+>>>>>>> origin/landing-page-11717745976152594883
 async function addClient() {
     const agent_id = document.getElementById("agent_id").value;
     const studio_name = document.getElementById("studio_name").value;
@@ -263,6 +373,177 @@ async function initSettingsSection() {
         opt.textContent = `${cfg.studio_name || agentId}`;
         select.appendChild(opt);
     }
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+
+    // Carica stato billing
+    loadBillingStatus();
+}
+
+async function loadBillingStatus() {
+    const loadingEl = document.getElementById("billing-loading");
+    const infoEl = document.getElementById("billing-info");
+    const planEl = document.getElementById("billing-plan-name");
+    const statusEl = document.getElementById("billing-status");
+    const detailsEl = document.getElementById("billing-details");
+    const cycleEndEl = document.getElementById("billing-cycle-end");
+    const usageEl = document.getElementById("billing-usage");
+    const actionsEl = document.getElementById("billing-actions");
+
+    try {
+        const res = await fetch("/subscription/status");
+        const data = await res.json();
+
+        loadingEl.classList.add("hidden");
+        infoEl.classList.remove("hidden");
+
+        const status = data.status || "inactive"; // "active", "past_due", "canceled", "inactive"
+        // Note: endpoint might return { "status": "inactive" } OR full object with "state" property.
+        // Let's check format: ClientService.get_subscription_status returns {"state": ...} OR {"status": "inactive"}
+
+        const state = data.state || data.status || "inactive";
+        const planCode = data.plan_code || "Nessuno";
+
+        planEl.textContent = planCode === "basic" ? "Basic" : (planCode === "pro" ? "Pro" : planCode);
+        statusEl.textContent = translateStatus(state);
+
+        // Colors for status
+        statusEl.className = "text-lg font-bold capitalize " + getStatusColor(state);
+
+        if (state === "active" || state === "past_due") {
+            detailsEl.classList.remove("hidden");
+            if (data.cycle_end) {
+                cycleEndEl.textContent = new Date(data.cycle_end).toLocaleDateString();
+            }
+            if (data.minutes_used !== undefined && data.minutes_total !== undefined) {
+                usageEl.textContent = `${data.minutes_used} / ${data.minutes_total}`;
+            }
+        } else {
+            detailsEl.classList.add("hidden");
+        }
+
+        // ACTIONS
+        actionsEl.innerHTML = "";
+
+        if (state === "inactive" || state === "canceled") {
+            // Show Activate Buttons
+            const btnBasic = document.createElement("button");
+            btnBasic.className = "px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded shadow text-sm font-medium";
+            btnBasic.textContent = "Attiva Basic";
+            btnBasic.onclick = () => billingCheckout("basic");
+            actionsEl.appendChild(btnBasic);
+
+            const btnPro = document.createElement("button");
+            btnPro.className = "px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded shadow text-sm font-medium";
+            btnPro.textContent = "Attiva Pro";
+            btnPro.onclick = () => billingCheckout("pro");
+            actionsEl.appendChild(btnPro);
+        } else {
+            // Active or Past Due
+
+            // Change Plan (only if active)
+            if (state === "active") {
+                const targetPlan = planCode === "basic" ? "pro" : "basic";
+                const btnChange = document.createElement("button");
+                btnChange.className = "px-4 py-2 border border-blue-500 text-blue-400 hover:bg-blue-500/10 rounded text-sm font-medium";
+                btnChange.textContent = `Passa a ${targetPlan === 'basic' ? 'Basic' : 'Pro'}`;
+                btnChange.onclick = () => billingChangePlan(targetPlan);
+                actionsEl.appendChild(btnChange);
+            }
+
+            // Manage Payment (Portal)
+            const btnPortal = document.createElement("button");
+            btnPortal.className = "px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded shadow text-sm font-medium";
+            btnPortal.textContent = "Gestisci pagamento";
+            btnPortal.onclick = () => billingPortal();
+            actionsEl.appendChild(btnPortal);
+        }
+
+    } catch (e) {
+        console.error("Error loading billing status:", e);
+        loadingEl.textContent = "Errore nel caricamento stato.";
+    }
+}
+
+function translateStatus(s) {
+    const map = {
+        'active': 'Attivo',
+        'past_due': 'Pagamento Fallito',
+        'canceled': 'Cancellato',
+        'inactive': 'Inattivo',
+        'trialing': 'In Prova'
+    };
+    return map[s] || s;
+}
+
+function getStatusColor(s) {
+    if (s === 'active') return 'text-green-400';
+    if (s === 'past_due') return 'text-red-400';
+    if (s === 'canceled') return 'text-gray-400';
+    return 'text-white';
+}
+
+async function billingCheckout(planCode) {
+    try {
+        const res = await fetch("/billing/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ plan_code: planCode })
+        });
+        const data = await res.json();
+        if (data.checkout_url) {
+            window.open(data.checkout_url, "_blank");
+        } else {
+            alert("Errore: " + (data.detail || "Impossibile creare checkout session"));
+        }
+    } catch (e) {
+        alert("Errore di rete");
+    }
+}
+
+async function billingChangePlan(targetPlan) {
+    showConfirm(
+        "Cambio Piano",
+        `Vuoi davvero cambiare il tuo piano a ${targetPlan.toUpperCase()}?`,
+        async () => {
+            try {
+                const res = await fetch("/billing/change-plan", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ plan_code: targetPlan })
+                });
+                const data = await res.json();
+                if (data.status === "ok") {
+                    alert("Richiesta inviata. Il piano verrà aggiornato a breve.");
+                    loadBillingStatus();
+                } else {
+                    alert("Errore: " + (data.detail || "Impossibile cambiare piano"));
+                }
+            } catch (e) {
+                alert("Errore di rete");
+            }
+        }
+    );
+}
+
+async function billingPortal() {
+    try {
+        const res = await fetch("/billing/portal", {
+            method: "POST"
+        });
+        const data = await res.json();
+        if (data.url) {
+            window.open(data.url, "_blank");
+        } else {
+            alert("Errore: " + (data.detail || "Impossibile aprire il portale"));
+        }
+    } catch (e) {
+        alert("Errore di rete");
+    }
+>>>>>>> origin/feature/stripe-integration-14308306324681726244
+=======
+>>>>>>> origin/landing-page-11717745976152594883
 }
 
 async function loadClientSettings() {
@@ -607,5 +888,43 @@ function closeLogDetail() {
     modal.classList.remove("flex");
 }
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+<<<<<<< HEAD
+function exportLogs() {
+    const client = document.getElementById("log-filter-client").value;
+    const from = document.getElementById("log-filter-from").value;
+    const to = document.getElementById("log-filter-to").value;
+
+    const params = new URLSearchParams();
+    if (client) params.append("client", client);
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+
+    window.location.href = `/admin/export/logs?${params.toString()}`;
+}
+
+function exportMinutes() {
+    const from = document.getElementById("log-filter-from").value;
+    const to = document.getElementById("log-filter-to").value;
+
+    if (!from || !to) {
+        alert("Seleziona data inizio e fine.");
+        return;
+    }
+
+    const params = new URLSearchParams({ from, to });
+    window.location.href = `/admin/export/minutes?${params.toString()}`;
+}
+=======
 
 
+>>>>>>> origin/block-suspended-users-1543456083889213456
+=======
+
+
+>>>>>>> origin/feature/stripe-integration-14308306324681726244
+=======
+
+
+>>>>>>> origin/landing-page-11717745976152594883

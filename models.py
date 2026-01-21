@@ -30,6 +30,10 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     studio_name = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
+<<<<<<< HEAD
+    stripe_customer_id = Column(String, nullable=True, index=True)
+=======
+>>>>>>> origin/landing-page-11717745976152594883
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relationships
@@ -77,6 +81,14 @@ class Subscription(Base):
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     cancel_requested_at = Column(DateTime, nullable=True)
 
+<<<<<<< HEAD
+    # Stripe metadata
+    stripe_subscription_id = Column(String, nullable=True, unique=True, index=True)
+    stripe_price_id = Column(String, nullable=True, index=True)
+    last_payment_status = Column(String, nullable=True)
+
+=======
+>>>>>>> origin/landing-page-11717745976152594883
     # Relationships
     user = relationship("User", back_populates="subscriptions")
     plan = relationship("Plan", back_populates="subscriptions")
