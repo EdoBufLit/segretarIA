@@ -25,6 +25,7 @@ from models import User
 from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
 from client_service import ClientService
+from billing_service import BillingService
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -655,6 +656,23 @@ async def elevenlabs_webhook(request: Request):
         return {"status": "error", "reason": f"email error: {e}"}
 
     logger.info(f"[WEBHOOK] Chiamata gestita correttamente per {studio_name} ({agent_id})")
+
+    # Meter the call
+    if duration_secs and agent_id:
+        call_id = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
+        if call_id:
+            with SessionLocal() as db:
+                billing_service = BillingService(db)
+                billing_service.meter_call(
+                    agent_id=agent_id,
+                    duration_secs=int(duration_secs),
+                    call_id=call_id,
+                    started_at=datetime.fromisoformat(started_at) if started_at else datetime.utcnow() - timedelta(seconds=duration_secs),
+                    ended_at=datetime.fromisoformat(ended_at) if ended_at else datetime.utcnow()
+                )
+        else:
+            logger.warning("[METERING] No unique call_id found in webhook payload.")
+
     return {"status": "ok", "message": "Webhook ricevuto e email inviata."}
 
 @app.get("/clients")

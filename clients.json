@@ -14,5 +14,9 @@
   "verify_agent": {
     "studio_name": "Updated Verify Studio",
     "email_to": "verify@test.com"
+  },
+  "metering_agent": {
+    "studio_name": "Metering Studio",
+    "email_to": "metering@test.com"
   }
 }
