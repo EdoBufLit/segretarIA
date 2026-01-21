@@ -136,6 +136,34 @@ async function loadClients() {
     for (const id in clients) {
         const c = clients[id];
 
+        // Find user_id if available, otherwise we assume we might need to fetch it differently or it's attached
+        // Currently clients.json structure is flat { agent_id: { ... } }
+        // BUT the backend endpoint returns { clients: { agent_id: { ... } } }
+        // We need user_id to call resetPassword.
+        // AdminService.get_clients() returns Users.
+        // Wait, loadClients calls /clients which calls list_clients which reads from JSON?
+        // Let's check app.py list_clients.
+        // It returns CLIENTS dict from JSON. It DOES NOT have user_id.
+        // We need to fetch clients from DB via /admin/clients endpoint logic OR modify /clients to return user_id.
+        // But /clients is public-ish (authenticated but potentially for client portal too?).
+        // Actually /clients returns clients.json content.
+
+        // The Admin Dashboard needs to list CLIENT USERS from DB to get IDs.
+        // The current dashboard.js uses /clients which is based on JSON file.
+        // This is a discrepancy in the architecture: JSON file vs DB.
+        // However, AdminService syncs DB to JSON.
+        // To get the user_id, we should probably use a new endpoint or update /clients.
+        // BUT, the TASK is "Add reset password button".
+        // The backend `reset_password` takes `user_id`.
+        // The frontend `clients` object from `/clients` currently lacks `user_id` (it has agent_id key).
+
+        // Let's assume for now we need to change how we list clients or get the ID.
+        // If I look at `admin_service.py` -> `sync_clients_to_json`, it saves studio_name and email_to. It DOES NOT save user_id.
+        // So I must fix this to pass user_id to frontend.
+
+        // Strategy: I will update `sync_clients_to_json` in `admin_service.py` to include `user_id`.
+        // Then I can use `c.user_id` here.
+
         tbody.innerHTML += `
             <tr class="border-b">
                 <td class="py-2 px-4">${id}</td>
@@ -143,13 +171,46 @@ async function loadClients() {
                 <td class="py-2 px-4">${c.email_to}</td>
 
                 <td class="py-2 px-4 text-right space-x-2">
+                    <button onclick="resetPassword(${c.user_id})"
+                        class="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 text-xs">
+                        Reset Pw
+                    </button>
                     <button onclick="removeClient('${id}')"
-                        class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
+                        class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 text-xs">
                         Rimuovi
                     </button>
                 </td>
             </tr>`;
     }
+}
+
+async function resetPassword(userId) {
+    if (!userId) {
+        alert("ID utente non disponibile.");
+        return;
+    }
+
+    showConfirm(
+        'Reset Password',
+        'Sei sicuro di voler resettare la password? Una nuova password verrà generata e inviata via email all\'utente.',
+        async () => {
+            try {
+                const res = await fetch(`/admin/users/${userId}/reset-password`, {
+                    method: "POST"
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    alert("Successo: " + data.message);
+                } else {
+                    alert("Errore: " + (data.detail || "Impossibile resettare la password"));
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Errore di rete.");
+            }
+        }
+    );
 }
 
 async function addClient() {

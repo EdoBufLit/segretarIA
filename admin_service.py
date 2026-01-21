@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 from sqlalchemy.orm import Session
 from models import User, Agent, Plan, Subscription, PhoneNumber
-from auth import hash_password
+from auth import hash_password, generate_random_password
 from mailer import send_email
 
 LOGS_DIR = Path("logs")
@@ -141,7 +141,8 @@ class AdminService:
                 clients_data[agent_id_str] = {
                     **clients_data.get(agent_id_str, {}),
                     "studio_name": user.studio_name,
-                    "email_to": user.email
+                    "email_to": user.email,
+                    "user_id": user.id
                 }
 
         with open(clients_json_path, "w") as f:
@@ -199,6 +200,30 @@ class AdminService:
         user.is_active = not user.is_active
         self.db.commit()
         self.db.refresh(user)
+        return user
+
+    def reset_password_random(self, user_id: int):
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        new_password = generate_random_password()
+        user.password_hash = hash_password(new_password)
+        self.db.commit()
+
+        # Send email
+        subject = "Reset Password - Segreteria IA"
+        body = f"""
+        <p>Ciao {user.username},</p>
+        <p>La tua password è stata resettata dall'amministratore.</p>
+        <p>Ecco le tue nuove credenziali:</p>
+        <ul>
+            <li><b>Username:</b> {user.username}</li>
+            <li><b>Password:</b> {new_password}</li>
+        </ul>
+        <p>Ti consigliamo di cambiarla al primo accesso.</p>
+        """
+        send_email(user.email, subject, body)
         return user
 
     def export_logs_csv(self, date_from: Optional[date] = None, date_to: Optional[date] = None, agent_id: Optional[str] = None) -> str:

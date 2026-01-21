@@ -502,6 +502,15 @@ async def admin_toggle_user_active(user_id: int, db: Session = Depends(get_db), 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+@app.post("/admin/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        service.reset_password_random(user_id)
+        return {"status": "ok", "message": "Password reset and emailed to user."}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 @app.get("/admin/export/logs")
 async def admin_export_logs(
     from_date: str = Query(None, alias="from"),
