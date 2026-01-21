@@ -3,8 +3,8 @@ import json
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Request, Body, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, Body, Query, Depends
+from fastapi.responses import HTMLResponse, JSONResponse
 from email.message import EmailMessage
 import smtplib
 from dotenv import load_dotenv
@@ -130,8 +130,21 @@ def log_call(agent_id: str, data: Dict[str, Any]):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     logger.info(f"[LOG] Salvata chiamata in {log_path}")
 
+def check_client_suspended(agent_id: str):
+    maybe_reload_clients()
+    if agent_id not in CLIENTS:
+        # If client doesn't exist, we usually 404, but here we check suspension.
+        # Let the endpoint handle 404.
+        return
 
-@app.get("/clients/{agent_id}")
+    client_data = CLIENTS[agent_id]
+    # Default to True if is_active is missing (backward compatibility)
+    is_active = client_data.get("is_active", True)
+
+    if not is_active:
+        raise HTTPException(status_code=403, detail="Client suspended")
+
+@app.get("/clients/{agent_id}", dependencies=[Depends(check_client_suspended)])
 async def get_client(agent_id: str):
     maybe_reload_clients()
     if agent_id not in CLIENTS:
@@ -139,7 +152,7 @@ async def get_client(agent_id: str):
     return {"status": "ok", "client": CLIENTS[agent_id]}
 
 
-@app.post("/clients/{agent_id}/update")
+@app.post("/clients/{agent_id}/update", dependencies=[Depends(check_client_suspended)])
 async def update_client(agent_id: str, payload: ClientSettingsUpdate):
     maybe_reload_clients()
     if agent_id not in CLIENTS:
@@ -476,6 +489,14 @@ async def elevenlabs_webhook(request: Request):
 
     # 3b) Agent ID (chi identifica il cliente)
     agent_id: Optional[str] = data.get("agent_id")
+
+    # === CHECK SUSPENSION ===
+    if agent_id and agent_id in CLIENTS:
+        client_data = CLIENTS[agent_id]
+        if not client_data.get("is_active", True):
+             logger.info(f"[WEBHOOK] Client {agent_id} suspended. Blocking request.")
+             return {"status": "suspended"}
+
     client_cfg = get_client_config(agent_id)
     studio_name = client_cfg["studio_name"]
     email_to = client_cfg["email_to"]
@@ -651,7 +672,7 @@ async def remove_client(body: RemoveClientRequest):
     return {"status": "ok", "message": f"Client {agent_id} rimosso correttamente."}
 
 
-@app.get("/logs/{agent_id}/list")
+@app.get("/logs/{agent_id}/list", dependencies=[Depends(check_client_suspended)])
 async def view_logs_list(
     agent_id: str,
     limit: int = 50,
@@ -712,7 +733,7 @@ async def view_logs_list(
         "total": total
     }
 
-@app.get("/logs/{agent_id}")
+@app.get("/logs/{agent_id}", dependencies=[Depends(check_client_suspended)])
 async def view_logs(agent_id: str):
     """
     Restituisce lo storico completo (legacy endpoint, o per debug).
@@ -865,7 +886,7 @@ async def analytics_global():
 
 
 
-@app.get("/analytics/{agent_id}")
+@app.get("/analytics/{agent_id}", dependencies=[Depends(check_client_suspended)])
 async def analytics_client(agent_id: str):
     """
     Statistiche temporali solo per un client.
@@ -1016,8 +1037,6 @@ async def get_logs_filtered(
 
     return {"status": "ok", "total": total, "items": items}
 
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 def enrich_call_with_ai(transcript: str) -> dict:
     """
     Usa OpenAI per estrarre info strutturate dalla chiamata.
@@ -1069,7 +1088,7 @@ def enrich_call_with_ai(transcript: str) -> dict:
 
     # …qui il tuo log_call(entry, agent_id) o simile…
     # …e la parte di email che già hai…
-@app.post("/clients/{agent_id}/test-call")
+@app.post("/clients/{agent_id}/test-call", dependencies=[Depends(check_client_suspended)])
 async def test_call(agent_id: str):
     """
     Avvia una chiamata di test tramite ElevenLabs/Twilio verso il numero di test
