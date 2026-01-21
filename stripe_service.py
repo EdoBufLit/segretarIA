@@ -171,6 +171,11 @@ class StripeService:
             user.stripe_customer_id = stripe_customer_id
             db.add(user)
 
+        # Ensure user is active upon payment
+        if not user.is_active:
+            user.is_active = True
+            db.add(user)
+
         # Map price_id to internal Plan (assuming we have Plans in DB or mapping logic)
         # For this context, we might check env vars or logic
         # Simple logic: check if plan exists, else use default or create dummy
