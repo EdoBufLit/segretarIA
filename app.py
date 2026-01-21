@@ -378,9 +378,9 @@ def build_email_body_html(
 
 # ================== ENDPOINT DI TEST ==================
 
-@app.get("/")
-async def root():
-    return {"status": "ok", "message": "Segreteria IA ElevenLabs backend attivo."}
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 # ================== ADMIN ENDPOINTS ==================
