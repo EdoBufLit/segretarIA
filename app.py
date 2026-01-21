@@ -491,7 +491,7 @@ async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = D
     return {"status": "ok", **summary}
 
 @app.get("/admin/export/minutes")
-async def admin_export_minutes(
+def admin_export_minutes(
     from_date: str = Query(..., alias="from"),
     to_date: str = Query(..., alias="to"),
     db: Session = Depends(get_db),
@@ -520,7 +520,7 @@ async def admin_export_minutes(
          raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/export/logs")
-async def admin_export_logs(
+def admin_export_logs(
     client: str = Query(None),
     from_date: str = Query(None, alias="from"),
     to_date: str = Query(None, alias="to"),

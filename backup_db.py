@@ -18,7 +18,13 @@ def backup_database():
     backup_filename = f"backup_{timestamp}.db"
     destination = os.path.join(BACKUP_DIR, backup_filename)
 
+    if os.path.exists(destination):
+        print(f"Backup already exists: {destination}. Skipping.")
+        return
+
     try:
+        # Use a temporary file to avoid partial writes if multiple processes attempt (though OS specific)
+        # But simply checking exists first is 99% enough for this scope.
         shutil.copy2(DB_FILE, destination)
         print(f"Database backup created successfully: {destination}")
     except Exception as e:

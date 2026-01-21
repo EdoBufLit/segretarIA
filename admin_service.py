@@ -319,7 +319,11 @@ class AdminService:
         # Determine which files to read
         files_to_read = []
         if client_id:
-            files_to_read.append(f"{client_id}.log")
+            # Security check: client_id should be safe filename
+            safe_id = os.path.basename(client_id)
+            if safe_id != client_id or ".." in client_id or "/" in client_id or "\\" in client_id:
+                 raise ValueError("Invalid client_id")
+            files_to_read.append(f"{safe_id}.log")
         else:
             if os.path.exists(LOGS_DIR):
                 files_to_read = [f for f in os.listdir(LOGS_DIR) if f.endswith(".log")]
