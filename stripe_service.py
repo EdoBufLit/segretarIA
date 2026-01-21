@@ -293,4 +293,10 @@ class StripeService:
         sub = db.query(Subscription).filter(Subscription.stripe_subscription_id == stripe_subscription_id).first()
         if sub:
             sub.state = 'canceled'
+
+            # Stop service immediately
+            if sub.user.is_active:
+                sub.user.is_active = False
+                db.add(sub.user)
+
             db.commit()
