@@ -519,6 +519,35 @@ async def admin_export_minutes(
     except Exception as e:
          raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/admin/export/logs")
+async def admin_export_logs(
+    client: str = Query(None),
+    from_date: str = Query(None, alias="from"),
+    to_date: str = Query(None, alias="to"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db, admin.username)
+    try:
+        dt_from = datetime.fromisoformat(from_date) if from_date else None
+        dt_to = datetime.fromisoformat(to_date) if to_date else None
+
+        if dt_to and "T" not in to_date and len(to_date) == 10:
+             dt_to = dt_to + timedelta(hours=23, minutes=59, seconds=59)
+
+        csv_content = service.export_logs_csv(client, dt_from, dt_to)
+
+        filename = f"logs_{client or 'all'}_{from_date or 'start'}_{to_date or 'end'}.csv"
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid format: " + str(e))
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/admin/phone-numbers", response_class=HTMLResponse)
 async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     service = AdminService(db, admin.username)

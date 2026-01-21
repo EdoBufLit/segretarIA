@@ -8,6 +8,7 @@ from audit_logger import log_admin_action
 from sqlalchemy import func
 import csv
 import io
+import json
 
 class AdminService:
     def __init__(self, db: Session, current_admin_username: str = "system"):
@@ -305,4 +306,71 @@ class AdminService:
             ])
 
         log_admin_action(self.admin_username, f"Exported minutes CSV ({period_str})")
+        return output.getvalue()
+
+    def export_logs_csv(self, client_id: str = None, from_date: datetime = None, to_date: datetime = None) -> str:
+        # Since logs are in JSON files in logs/ directory, we need to read them.
+        # This might be slow for many files, but for now it's okay.
+        # We'll reuse logic similar to app.py's view_logs_list but aggregating.
+
+        LOGS_DIR = "logs"
+        all_logs = []
+
+        # Determine which files to read
+        files_to_read = []
+        if client_id:
+            files_to_read.append(f"{client_id}.log")
+        else:
+            if os.path.exists(LOGS_DIR):
+                files_to_read = [f for f in os.listdir(LOGS_DIR) if f.endswith(".log")]
+
+        for filename in files_to_read:
+            filepath = os.path.join(LOGS_DIR, filename)
+            if not os.path.exists(filepath):
+                continue
+
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                        ts_str = entry.get("timestamp")
+                        if not ts_str:
+                            continue
+                        ts = datetime.fromisoformat(ts_str)
+
+                        # Filter by date
+                        if from_date and ts < from_date:
+                            continue
+                        if to_date and ts > to_date:
+                            continue
+
+                        # Add to list
+                        all_logs.append(entry)
+                    except:
+                        continue
+
+        # Sort by timestamp desc
+        all_logs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        headers = ["timestamp", "agent_id", "caller_number", "status", "duration_secs", "summary"]
+        writer.writerow(headers)
+
+        for entry in all_logs:
+            data = entry.get("data", {})
+            analysis = data.get("analysis", {})
+            metadata = data.get("metadata", {})
+
+            writer.writerow([
+                entry.get("timestamp"),
+                entry.get("agent_id"),
+                data.get("caller_number") or metadata.get("caller_number"),
+                data.get("status") or "success",
+                data.get("duration_secs") or metadata.get("call_duration_secs"),
+                entry.get("summary") or analysis.get("summary") or analysis.get("transcript_summary")
+            ])
+
+        log_admin_action(self.admin_username, "Exported logs CSV")
         return output.getvalue()

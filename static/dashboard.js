@@ -640,5 +640,30 @@ function closeLogDetail() {
     modal.classList.remove("flex");
 }
 
+function exportLogs() {
+    const client = document.getElementById("log-filter-client").value;
+    const from = document.getElementById("log-filter-from").value;
+    const to = document.getElementById("log-filter-to").value;
+
+    const params = new URLSearchParams();
+    if (client) params.append("client", client);
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+
+    window.location.href = `/admin/export/logs?${params.toString()}`;
+}
+
+function exportMinutes() {
+    const from = document.getElementById("log-filter-from").value;
+    const to = document.getElementById("log-filter-to").value;
+
+    if (!from || !to) {
+        alert("Seleziona data inizio e fine.");
+        return;
+    }
+
+    const params = new URLSearchParams({ from, to });
+    window.location.href = `/admin/export/minutes?${params.toString()}`;
+}
 
 

@@ -431,6 +431,15 @@
                             class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-sm font-medium shadow">
                             Filtra
                         </button>
+                        <div class="h-6 w-[1px] bg-[var(--border)] mx-2"></div>
+                        <button onclick="exportLogs()"
+                            class="bg-[var(--panel)] border border-[var(--border)] text-white hover:bg-white/5 px-3 py-1.5 rounded text-sm flex items-center gap-2">
+                            <i data-feather="download" class="w-4 h-4"></i> Export Log
+                        </button>
+                        <button onclick="exportMinutes()"
+                            class="bg-[var(--panel)] border border-[var(--border)] text-white hover:bg-white/5 px-3 py-1.5 rounded text-sm flex items-center gap-2">
+                            <i data-feather="clock" class="w-4 h-4"></i> Export Minuti
+                        </button>
                     </div>
 
                     <!-- Table Container -->
