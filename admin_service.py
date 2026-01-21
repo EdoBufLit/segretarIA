@@ -2,8 +2,9 @@ from datetime import datetime, timedelta
 import os
 from sqlalchemy.orm import Session
 from models import User, Agent, Plan, Subscription, PhoneNumber
-from auth import hash_password
+from auth import hash_password, generate_random_password
 from mailer import send_email
+import audit_logger
 
 class AdminService:
     def __init__(self, db: Session):
@@ -183,3 +184,41 @@ class AdminService:
             send_email(admin_email, subject, body)
 
         return phone
+
+    def reset_password_random(self, user_id: int, admin_username: str) -> str:
+        """
+        Resets a user's password to a random one.
+        Returns the new plaintext password.
+        """
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        new_password = generate_random_password()
+        user.password_hash = hash_password(new_password)
+        self.db.commit()
+
+        # Audit Log
+        audit_logger.log_action(
+            admin_username=admin_username,
+            action="reset_password",
+            target=f"user_id={user_id} ({user.username})",
+            details="Password reset to random value"
+        )
+
+        # Email the user
+        subject = f"Reset Password - {user.studio_name or user.username}"
+        body = f"""
+        <p>Ciao {user.username},</p>
+        <p>La tua password è stata resettata dall'amministratore.</p>
+        <p>Nuova password: <b>{new_password}</b></p>
+        <p>Ti consigliamo di cambiarla al primo accesso.</p>
+        """
+        try:
+            send_email(user.email, subject, body)
+        except Exception as e:
+            # We log the error but don't fail the transaction, as the PW is already changed.
+            # However, the admin needs to know the PW to communicate it manually if email fails.
+            print(f"Failed to send reset email: {e}")
+
+        return new_password
