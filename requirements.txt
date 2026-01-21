@@ -3,3 +3,12 @@ uvicorn[standard]
 python-dotenv
 websockets
 openai
+<<<<<<< HEAD
+
+=======
+sqlalchemy
+alembic
+passlib
+bcrypt==4.0.1
+jinja2
+>>>>>>> origin/feat/db-setup-11543017062117725203

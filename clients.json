@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
     "agent_3701kf9cccx0eprrwmp5wgds8grv": {
         "studio_name": "Studio Avv. Litrico",
         "email_to": "avvlitrico@gmail.com",
@@ -7,4 +8,26 @@
         "agent_phone_number_id": "phnum_1701kf9d2jh6ez98rhwx0dd2v7vf",
         "test_phone_number": "+393404244452"
     }
+=======
+  "agent_3701kf9cccx0eprrwmp5wgds8grv": {
+    "studio_name": "Studio Avv. Litrico",
+    "email_to": "avvlitrico@gmail.com",
+    "greeting": "",
+    "notes": "",
+    "agent_phone_number_id": "phnum_1701kf9d2jh6ez98rhwx0dd2v7vf",
+    "test_phone_number": "+393404244452"
+  },
+  "sync_test_agent": {
+    "studio_name": "Sync Test Studio",
+    "email_to": "sync@test.com"
+  },
+  "verify_agent": {
+    "studio_name": "Updated Verify Studio",
+    "email_to": "verify@test.com"
+  },
+  "metering_agent": {
+    "studio_name": "Metering Studio",
+    "email_to": "metering@test.com"
+  }
+>>>>>>> origin/feat/db-setup-11543017062117725203
 }
