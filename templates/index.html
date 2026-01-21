@@ -48,6 +48,7 @@
                 <div class="flex-shrink-0 flex items-center gap-2">
                     <span class="text-xl font-bold text-blue-600">Segreteria IA</span>
                 </div>
+                <!-- Desktop Menu -->
                 <div class="hidden md:flex space-x-8">
                     <a href="#funzioni" class="text-slate-600 hover:text-blue-600 font-medium transition-colors">Funzioni</a>
                     <a href="#come-funziona" class="text-slate-600 hover:text-blue-600 font-medium transition-colors">Come Funziona</a>
@@ -55,7 +56,7 @@
                     <a href="#prezzi" class="text-slate-600 hover:text-blue-600 font-medium transition-colors">Prezzi</a>
                     <a href="#faq" class="text-slate-600 hover:text-blue-600 font-medium transition-colors">FAQ</a>
                 </div>
-                <div>
+                <div class="hidden md:block">
                     {% if user %}
                     <a href="/dashboard" class="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm">
                         Dashboard
@@ -66,9 +67,53 @@
                     </a>
                     {% endif %}
                 </div>
+                <!-- Mobile Menu Button -->
+                <div class="md:hidden flex items-center">
+                    <button id="mobile-menu-btn" class="text-slate-600 hover:text-blue-600 focus:outline-none">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="hidden md:hidden bg-white border-t border-slate-100">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#funzioni" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Funzioni</a>
+                <a href="#come-funziona" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Come Funziona</a>
+                <a href="#sicurezza" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Sicurezza</a>
+                <a href="#prezzi" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Prezzi</a>
+                <a href="#faq" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">FAQ</a>
+                <div class="pt-4 pb-2">
+                    {% if user %}
+                    <a href="/dashboard" class="block w-full text-center bg-blue-600 text-white px-5 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                        Dashboard
+                    </a>
+                    {% else %}
+                    <a href="/login" class="block w-full text-center bg-blue-600 text-white px-5 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                        Accedi
+                    </a>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </nav>
+    <script>
+        const btn = document.getElementById('mobile-menu-btn');
+        const menu = document.getElementById('mobile-menu');
+
+        btn.addEventListener('click', () => {
+            menu.classList.toggle('hidden');
+        });
+
+        // Close menu when clicking a link
+        menu.querySelectorAll('a').forEach(link => {
+            link.addEventListener('click', () => {
+                menu.classList.add('hidden');
+            });
+        });
+    </script>
 
     <!-- Hero Section -->
     <section class="hero-bg pt-32 pb-20 lg:pt-48 lg:pb-32 relative">
