@@ -49,12 +49,17 @@ async def rate_limit_middleware(request: Request, call_next):
     now = time.time()
 
     # Filter out timestamps older than the window
-    rate_limit_data[client_ip] = [t for t in rate_limit_data[client_ip] if now - t < RATE_LIMIT_WINDOW]
+    valid_timestamps = [t for t in rate_limit_data[client_ip] if now - t < RATE_LIMIT_WINDOW]
+    rate_limit_data[client_ip] = valid_timestamps
 
-    if len(rate_limit_data[client_ip]) >= RATE_LIMIT_COUNT:
+    if len(valid_timestamps) >= RATE_LIMIT_COUNT:
         return JSONResponse(status_code=429, content={"error": "Too many attempts"})
 
     rate_limit_data[client_ip].append(now)
+
+    # Cleanup empty keys to prevent memory leak
+    if not rate_limit_data[client_ip]:
+        del rate_limit_data[client_ip]
 
     response = await call_next(request)
     return response
@@ -485,6 +490,15 @@ async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(
     try:
         service.mark_phone_number_released(phone_id)
         return RedirectResponse(url="/admin/phone-numbers", status_code=303)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/admin/users/{user_id}/toggle-active")
+async def admin_toggle_user_active(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        user = service.toggle_user_active_status(user_id)
+        return {"status": "ok", "user_id": user.id, "is_active": user.is_active}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

@@ -183,3 +183,13 @@ class AdminService:
             send_email(admin_email, subject, body)
 
         return phone
+
+    def toggle_user_active_status(self, user_id: int) -> User:
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        user.is_active = not user.is_active
+        self.db.commit()
+        self.db.refresh(user)
+        return user
