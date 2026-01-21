@@ -222,7 +222,12 @@ class AdminService:
 
         # Send email with new password
         subject = "Your password has been reset"
-        body = f"<p>Your password has been reset by an administrator.</p><p>New Password: <b>{new_password}</b></p>"
+        body = (
+            f"<p>Hello {user.username},</p>"
+            f"<p>Your password has been reset by an administrator.</p>"
+            f"<p>New Password: <b>{new_password}</b></p>"
+            f"<p>We strongly suggest you change this password after logging in.</p>"
+        )
         send_email(user.email, subject, body)
 
         log_admin_action(self.admin_username, f"Reset password (random) for user {user.username} (ID: {user_id})")
