@@ -168,6 +168,52 @@
         </div>
     </section>
 
+    <!-- Attivazione Guidata Section -->
+    <section class="py-20 bg-blue-600 text-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 class="text-3xl font-bold mb-6">Attivazione Guidata</h2>
+            <p class="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
+                Ti attiviamo noi in 24h. Configuriamo il tuo agente e l'inoltro delle chiamate per farti partire subito.
+            </p>
+
+            <div class="flex flex-col md:flex-row justify-center items-center gap-8 mb-10">
+                <div class="flex items-center gap-3">
+                    <div class="bg-blue-500 p-2 rounded-full">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    <span class="font-medium">Configurazione Agente</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="bg-blue-500 p-2 rounded-full">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    <span class="font-medium">Inoltro Chiamate</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="bg-blue-500 p-2 rounded-full">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    <span class="font-medium">Dashboard + Email Recap</span>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row justify-center gap-4">
+                {% if user %}
+                <a href="/dashboard" class="bg-white text-blue-600 px-8 py-3.5 rounded-lg text-lg font-bold hover:bg-blue-50 transition-colors shadow-lg">
+                    Vai alla Dashboard
+                </a>
+                {% else %}
+                <a href="/login" class="bg-white text-blue-600 px-8 py-3.5 rounded-lg text-lg font-bold hover:bg-blue-50 transition-colors shadow-lg">
+                    Accedi per attivare
+                </a>
+                {% endif %}
+                <a href="mailto:info@segreteriaia.it" class="bg-transparent border-2 border-white text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-white/10 transition-colors">
+                    Contattaci
+                </a>
+            </div>
+        </div>
+    </section>
+
     <!-- Sicurezza Section -->
     <section id="sicurezza" class="py-20 bg-white">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
