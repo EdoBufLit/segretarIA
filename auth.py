@@ -1,11 +1,5 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
 import secrets
 import string
-=======
->>>>>>> origin/feature/stripe-integration-14308306324681726244
-=======
->>>>>>> origin/landing-page-11717745976152594883
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -31,8 +25,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 def generate_random_password(length: int = 12) -> str:
     """
     Generates a secure random password with at least one uppercase,
@@ -60,10 +52,6 @@ def generate_random_password(length: int = 12) -> str:
     return "".join(password)
 
 
-=======
->>>>>>> origin/feature/stripe-integration-14308306324681726244
-=======
->>>>>>> origin/landing-page-11717745976152594883
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """
     A dependency to get the current user from the session.

@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
 from datetime import datetime, timedelta, date
 import os
 import csv
@@ -20,23 +18,6 @@ class AdminService:
     def __init__(self, db: Session, current_admin_username: str = "system"):
         self.db = db
         self.admin_username = current_admin_username
-=======
-=======
->>>>>>> origin/landing-page-11717745976152594883
-from datetime import datetime, timedelta
-import os
-from sqlalchemy.orm import Session
-from models import User, Agent, Plan, Subscription, PhoneNumber
-from auth import hash_password
-from mailer import send_email
-
-class AdminService:
-    def __init__(self, db: Session):
-        self.db = db
-<<<<<<< HEAD
->>>>>>> origin/feature/stripe-integration-14308306324681726244
-=======
->>>>>>> origin/landing-page-11717745976152594883
 
     def get_clients(self):
         return self.db.query(User).filter(User.role == "client").all()
@@ -163,16 +144,8 @@ class AdminService:
                 clients_data[agent_id_str] = {
                     **clients_data.get(agent_id_str, {}),
                     "studio_name": user.studio_name,
-<<<<<<< HEAD
-<<<<<<< HEAD
                     "email_to": user.email,
                     "user_id": user.id
-=======
-                    "email_to": user.email
->>>>>>> origin/feature/stripe-integration-14308306324681726244
-=======
-                    "email_to": user.email
->>>>>>> origin/landing-page-11717745976152594883
                 }
 
         with open(clients_json_path, "w") as f:
@@ -221,8 +194,6 @@ class AdminService:
             send_email(admin_email, subject, body)
 
         return phone
-<<<<<<< HEAD
-<<<<<<< HEAD
 
     def suspend_client(self, user_id: int):
         user = self.db.query(User).filter(User.id == user_id, User.role == "client").first()
@@ -423,7 +394,3 @@ class AdminService:
 
         log_admin_action(self.admin_username, "Exported logs CSV")
         return output.getvalue()
-=======
->>>>>>> origin/feature/stripe-integration-14308306324681726244
-=======
->>>>>>> origin/landing-page-11717745976152594883

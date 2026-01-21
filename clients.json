@@ -1,11 +1,4 @@
 {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> origin/feature/stripe-integration-14308306324681726244
-=======
->>>>>>> origin/landing-page-11717745976152594883
   "agent_3701kf9cccx0eprrwmp5wgds8grv": {
     "studio_name": "Studio Avv. Litrico",
     "email_to": "avvlitrico@gmail.com",
@@ -25,8 +18,6 @@
   "metering_agent": {
     "studio_name": "Metering Studio",
     "email_to": "metering@test.com"
-<<<<<<< HEAD
-<<<<<<< HEAD
   },
   "toggle_agent": {
     "studio_name": "Toggle Studio",
@@ -37,22 +28,3 @@
     "email_to": "suspended@qa.test"
   }
 }
-=======
-    "agent_3701kf9cccx0eprrwmp5wgds8grv": {
-        "studio_name": "Studio Avv. Litrico",
-        "email_to": "avvlitrico@gmail.com",
-        "greeting": "",
-        "notes": "",
-        "agent_phone_number_id": "phnum_1701kf9d2jh6ez98rhwx0dd2v7vf",
-        "test_phone_number": "+393404244452"
-    }
-}
->>>>>>> origin/block-suspended-users-1543456083889213456
-=======
-  }
-}
->>>>>>> origin/feature/stripe-integration-14308306324681726244
-=======
-  }
-}
->>>>>>> origin/landing-page-11717745976152594883

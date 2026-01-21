@@ -1,14 +1,6 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
 import math
 from datetime import datetime, timedelta
 from sqlalchemy import func
-=======
-from datetime import datetime, timedelta
->>>>>>> origin/feature/stripe-integration-14308306324681726244
-=======
-from datetime import datetime, timedelta
->>>>>>> origin/landing-page-11717745976152594883
 from sqlalchemy.orm import Session
 from models import User, Agent, Subscription, UsageEvent
 
@@ -16,8 +8,6 @@ class BillingService:
     def __init__(self, db: Session):
         self.db = db
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     def calculate_usage_minutes(self, user_id: int, start_date: datetime, end_date: datetime) -> int:
         """
         Calculates total minutes used by a user within a date range.
@@ -31,10 +21,6 @@ class BillingService:
 
         return math.ceil(total_seconds / 60)
 
-=======
->>>>>>> origin/feature/stripe-integration-14308306324681726244
-=======
->>>>>>> origin/landing-page-11717745976152594883
     def meter_call(self, agent_id: str, duration_secs: int, call_id: str, started_at: datetime, ended_at: datetime):
         # 1. Resolve tenant from agent_id
         agent = self.db.query(Agent).filter_by(agent_id=agent_id).first()
