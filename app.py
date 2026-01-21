@@ -25,6 +25,32 @@ from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
 from client_service import ClientService
 from billing_service import BillingService
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+import time
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app):
+        super().__init__(app)
+        self.rate_limit_records = {}
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/login" or request.url.path.startswith("/admin/"):
+            client_ip = request.client.host if request.client else "unknown"
+            key = client_ip
+            now = time.time()
+
+            # Filter out timestamps older than 60 seconds
+            self.rate_limit_records.setdefault(key, [])
+            self.rate_limit_records[key] = [t for t in self.rate_limit_records[key] if now - t < 60]
+
+            if len(self.rate_limit_records[key]) >= 5:
+                return JSONResponse(status_code=429, content={"detail": "Too many requests"})
+
+            self.rate_limit_records[key].append(now)
+
+        return await call_next(request)
+
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -35,6 +61,7 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "super-secret-change-me"),
 )
+app.add_middleware(RateLimitMiddleware)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 # Logger (va nei log di uvicorn)
