@@ -20,7 +20,7 @@ from fastapi.templating import Jinja2Templates
 import httpx
 from sqlalchemy.orm import Session
 from db import get_db
-from models import User
+from models import User, Agent
 from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
 from client_service import ClientService
@@ -570,6 +570,15 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/admin/users/{user_id}/toggle-active")
+async def admin_toggle_user_active(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db, admin.username)
+    try:
+        user = service.toggle_client_active(user_id)
+        return {"status": "ok", "is_active": user.is_active}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 
 # ================== WEBHOOK ELEVENLABS ==================
 
@@ -761,15 +770,41 @@ async def elevenlabs_webhook(request: Request):
     return {"status": "ok", "message": "Webhook ricevuto e email inviata."}
 
 @app.get("/clients")
-async def list_clients():
+async def list_clients(db: Session = Depends(get_db)):
     """
     Restituisce la lista dei client configurati (agent_id -> dati).
     Prima ricarica dinamicamente clients.json se è cambiato.
+    Enriches with DB status (user_id, is_active).
     """
     maybe_reload_clients()
 
     from copy import deepcopy
     visible_clients = deepcopy(CLIENTS)
+
+    # Enrich with DB data
+    # Map agent_id -> user
+    agents = db.query(Agent).all()
+    agent_map = {a.agent_id: a for a in agents}
+
+    # We need to find the user for each agent
+    # Agent <-> User is M2M but typically 1:1 or N:1 in this logic
+    # We can iterate users instead?
+    # Let's iterate visible_clients and find associated user data
+
+    for agent_id, cfg in visible_clients.items():
+        # Default status
+        cfg["is_active"] = True
+        cfg["user_id"] = None
+
+        agent_db = agent_map.get(agent_id)
+        if agent_db:
+            # Get associated user. For simplicity, grab first user if M2M.
+            # In current AdminService logic, we assign agent to client.
+            # So agent.users should have the client.
+            if agent_db.users:
+                user = agent_db.users[0] # Assuming one user owner
+                cfg["is_active"] = user.is_active
+                cfg["user_id"] = user.id
 
     return {
         "status": "ok",

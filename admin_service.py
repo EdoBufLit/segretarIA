@@ -201,6 +201,18 @@ class AdminService:
         log_admin_action(self.admin_username, f"Suspended user {user.username} (ID: {user_id})")
         return user
 
+    def toggle_client_active(self, user_id: int) -> User:
+        user = self.db.query(User).filter(User.id == user_id, User.role == "client").first()
+        if not user:
+            raise ValueError("Client not found")
+
+        user.is_active = not user.is_active
+        self.db.commit()
+
+        action = "Reactivated" if user.is_active else "Suspended"
+        log_admin_action(self.admin_username, f"{action} user {user.username} (ID: {user_id})")
+        return user
+
     def reset_password(self, user_id: int, new_password: str):
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
