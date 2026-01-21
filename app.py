@@ -1,3 +1,4 @@
+import stripe
 import os
 import json
 from datetime import datetime
@@ -521,6 +522,38 @@ async def billing_checkout(
     except Exception as e:
         logger.exception("Error creating checkout session")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+
+    try:
+        event = StripeService.construct_event(payload, sig_header)
+    except ValueError as e:
+        # Invalid payload
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    try:
+        StripeService.handle_webhook_event(event, db)
+    except Exception as e:
+        logger.exception(f"Error handling Stripe webhook event: {e}")
+        # Return 200 to acknowledge receipt even if handling failed, to prevent retries loop if bug?
+        # Or 500 to retry? Standard Stripe practice: 200 if business logic fail but message received?
+        # Usually 500 triggers retry. If it's a code bug, retry won't help.
+        # But if it's a DB lock, it might.
+        # For now, let's log and return 200 to keep Stripe happy, or 500 if we want retries.
+        # Let's return 200 and log error.
+        return {"status": "error", "reason": str(e)}
+
+    return {"status": "success"}
 
 
 # ================== WEBHOOK ELEVENLABS ==================
