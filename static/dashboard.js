@@ -263,6 +263,171 @@ async function initSettingsSection() {
         opt.textContent = `${cfg.studio_name || agentId}`;
         select.appendChild(opt);
     }
+
+    // Carica stato billing
+    loadBillingStatus();
+}
+
+async function loadBillingStatus() {
+    const loadingEl = document.getElementById("billing-loading");
+    const infoEl = document.getElementById("billing-info");
+    const planEl = document.getElementById("billing-plan-name");
+    const statusEl = document.getElementById("billing-status");
+    const detailsEl = document.getElementById("billing-details");
+    const cycleEndEl = document.getElementById("billing-cycle-end");
+    const usageEl = document.getElementById("billing-usage");
+    const actionsEl = document.getElementById("billing-actions");
+
+    try {
+        const res = await fetch("/subscription/status");
+        const data = await res.json();
+
+        loadingEl.classList.add("hidden");
+        infoEl.classList.remove("hidden");
+
+        const status = data.status || "inactive"; // "active", "past_due", "canceled", "inactive"
+        // Note: endpoint might return { "status": "inactive" } OR full object with "state" property.
+        // Let's check format: ClientService.get_subscription_status returns {"state": ...} OR {"status": "inactive"}
+
+        const state = data.state || data.status || "inactive";
+        const planCode = data.plan_code || "Nessuno";
+
+        planEl.textContent = planCode === "basic" ? "Basic" : (planCode === "pro" ? "Pro" : planCode);
+        statusEl.textContent = translateStatus(state);
+
+        // Colors for status
+        statusEl.className = "text-lg font-bold capitalize " + getStatusColor(state);
+
+        if (state === "active" || state === "past_due") {
+            detailsEl.classList.remove("hidden");
+            if (data.cycle_end) {
+                cycleEndEl.textContent = new Date(data.cycle_end).toLocaleDateString();
+            }
+            if (data.minutes_used !== undefined && data.minutes_total !== undefined) {
+                usageEl.textContent = `${data.minutes_used} / ${data.minutes_total}`;
+            }
+        } else {
+            detailsEl.classList.add("hidden");
+        }
+
+        // ACTIONS
+        actionsEl.innerHTML = "";
+
+        if (state === "inactive" || state === "canceled") {
+            // Show Activate Buttons
+            const btnBasic = document.createElement("button");
+            btnBasic.className = "px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded shadow text-sm font-medium";
+            btnBasic.textContent = "Attiva Basic";
+            btnBasic.onclick = () => billingCheckout("basic");
+            actionsEl.appendChild(btnBasic);
+
+            const btnPro = document.createElement("button");
+            btnPro.className = "px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded shadow text-sm font-medium";
+            btnPro.textContent = "Attiva Pro";
+            btnPro.onclick = () => billingCheckout("pro");
+            actionsEl.appendChild(btnPro);
+        } else {
+            // Active or Past Due
+
+            // Change Plan (only if active)
+            if (state === "active") {
+                const targetPlan = planCode === "basic" ? "pro" : "basic";
+                const btnChange = document.createElement("button");
+                btnChange.className = "px-4 py-2 border border-blue-500 text-blue-400 hover:bg-blue-500/10 rounded text-sm font-medium";
+                btnChange.textContent = `Passa a ${targetPlan === 'basic' ? 'Basic' : 'Pro'}`;
+                btnChange.onclick = () => billingChangePlan(targetPlan);
+                actionsEl.appendChild(btnChange);
+            }
+
+            // Manage Payment (Portal)
+            const btnPortal = document.createElement("button");
+            btnPortal.className = "px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded shadow text-sm font-medium";
+            btnPortal.textContent = "Gestisci pagamento";
+            btnPortal.onclick = () => billingPortal();
+            actionsEl.appendChild(btnPortal);
+        }
+
+    } catch (e) {
+        console.error("Error loading billing status:", e);
+        loadingEl.textContent = "Errore nel caricamento stato.";
+    }
+}
+
+function translateStatus(s) {
+    const map = {
+        'active': 'Attivo',
+        'past_due': 'Pagamento Fallito',
+        'canceled': 'Cancellato',
+        'inactive': 'Inattivo',
+        'trialing': 'In Prova'
+    };
+    return map[s] || s;
+}
+
+function getStatusColor(s) {
+    if (s === 'active') return 'text-green-400';
+    if (s === 'past_due') return 'text-red-400';
+    if (s === 'canceled') return 'text-gray-400';
+    return 'text-white';
+}
+
+async function billingCheckout(planCode) {
+    try {
+        const res = await fetch("/billing/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ plan_code: planCode })
+        });
+        const data = await res.json();
+        if (data.checkout_url) {
+            window.open(data.checkout_url, "_blank");
+        } else {
+            alert("Errore: " + (data.detail || "Impossibile creare checkout session"));
+        }
+    } catch (e) {
+        alert("Errore di rete");
+    }
+}
+
+async function billingChangePlan(targetPlan) {
+    showConfirm(
+        "Cambio Piano",
+        `Vuoi davvero cambiare il tuo piano a ${targetPlan.toUpperCase()}?`,
+        async () => {
+            try {
+                const res = await fetch("/billing/change-plan", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ plan_code: targetPlan })
+                });
+                const data = await res.json();
+                if (data.status === "ok") {
+                    alert("Richiesta inviata. Il piano verrà aggiornato a breve.");
+                    loadBillingStatus();
+                } else {
+                    alert("Errore: " + (data.detail || "Impossibile cambiare piano"));
+                }
+            } catch (e) {
+                alert("Errore di rete");
+            }
+        }
+    );
+}
+
+async function billingPortal() {
+    try {
+        const res = await fetch("/billing/portal", {
+            method: "POST"
+        });
+        const data = await res.json();
+        if (data.url) {
+            window.open(data.url, "_blank");
+        } else {
+            alert("Errore: " + (data.detail || "Impossibile aprire il portale"));
+        }
+    } catch (e) {
+        alert("Errore di rete");
+    }
 }
 
 async function loadClientSettings() {
