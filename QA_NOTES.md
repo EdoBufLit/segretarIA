@@ -57,6 +57,15 @@
     - **Admin API**: FAIL (Endpoint `POST /admin/users/{id}/toggle-active` is missing).
 - **Severity**: Critical (Suspended users can still use the service via phone/webhook).
 
+## Admin Tooling: Reset Password
+- **Feature**: Reset Password for Client (Admin Action).
+- **Expected Endpoint**: `POST /admin/users/{id}/reset-password`.
+- **Result**: FAIL (Endpoint Missing - 404 Not Found).
+- **Verification**:
+    - Code search in `app.py` and `admin_service.py` confirmed absence of reset password logic.
+    - Test script `tests/qa_admin_tools.py` returned 404.
+- **Impact**: Admins cannot reset user passwords.
+
 ## Observations
 - The application requires `itsdangerous` and `python-multipart` to be installed.
 - "Statistiche" in the spec refers to the "Analytics" section in the UI.
