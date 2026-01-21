@@ -49,3 +49,13 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         )
 
     return user
+
+
+def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    """
+    A dependency to get the current user, ensuring they are an admin.
+    If the user is not an admin, it raises a 403 Forbidden error.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+    return current_user

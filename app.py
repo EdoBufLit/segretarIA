@@ -17,14 +17,17 @@ from openai import OpenAI
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi import Form, Depends
+from fastapi.templating import Jinja2Templates
 import httpx
 from sqlalchemy.orm import Session
 from db import get_db
 from models import User
-from auth import verify_password, get_current_user
+from auth import verify_password, get_current_user, get_current_admin_user
+from admin_service import AdminService
 # ================== CONFIG BASE ==================
 
 load_dotenv()
+templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
 app.add_middleware(
@@ -407,6 +410,51 @@ def send_email(to_addr: str, subject: str, html_body: str):
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "Segreteria IA ElevenLabs backend attivo."}
+
+
+# ================== ADMIN ENDPOINTS ==================
+
+@app.get("/admin/clients", response_class=HTMLResponse)
+async def admin_get_clients(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    clients = service.get_clients()
+    return templates.TemplateResponse("admin_clients.html", {"request": request, "clients": clients})
+
+@app.post("/admin/clients/create")
+async def admin_create_client(username: str = Form(...), email: str = Form(...), password: str = Form(...), studio_name: str = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        client = service.create_client(username, email, password, studio_name)
+        return {"status": "ok", "client_id": client.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/agents/create")
+async def admin_create_agent(agent_id: str = Form(...), display_name: str = Form(...), phone_number_id: str = Form(None), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        agent = service.create_agent(agent_id, display_name, phone_number_id)
+        return {"status": "ok", "agent_id": agent.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/clients/{user_id}/assign-agent")
+async def admin_assign_agent(user_id: int, agent_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        client = service.assign_agent_to_client(user_id, agent_id)
+        return {"status": "ok", "client_id": client.id, "assigned_agents": [a.id for a in client.agents]}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/clients/{user_id}/create-subscription")
+async def admin_create_subscription(user_id: int, plan_code: str = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        subscription = service.create_or_update_subscription(user_id, plan_code)
+        return {"status": "ok", "subscription_id": subscription.id, "state": subscription.state}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ================== WEBHOOK ELEVENLABS ==================

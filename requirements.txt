@@ -7,3 +7,4 @@ sqlalchemy
 alembic
 passlib
 bcrypt==4.0.1
+jinja2
