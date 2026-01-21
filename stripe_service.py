@@ -98,6 +98,88 @@ class StripeService:
         return session
 
     @staticmethod
+    def change_subscription_plan(user, new_price_id, db):
+        """
+        Changes the subscription plan for the user.
+        Upgrade: Immediate with proration.
+        Downgrade: Scheduled at the end of the billing cycle (via Subscription Schedule).
+        """
+        # Find active subscription
+        sub = db.query(Subscription).filter(
+            Subscription.user_id == user.id,
+            Subscription.state.in_(['active', 'past_due'])
+        ).first()
+
+        if not sub or not sub.stripe_subscription_id:
+            raise ValueError("No active Stripe subscription found for this user.")
+
+        stripe_sub_id = sub.stripe_subscription_id
+
+        # Retrieve subscription from Stripe to check current price and items
+        stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+        current_price_id = stripe_sub['items']['data'][0]['price']['id']
+        subscription_item_id = stripe_sub['items']['data'][0]['id']
+
+        if current_price_id == new_price_id:
+            return # No change needed
+
+        # Determine upgrade or downgrade
+        # We need price amounts. Retrieve prices if not cached.
+        # Ideally we store amounts in env or DB, but here we might need to fetch.
+        # Or compare Plan codes?
+        # Let's assume fetching prices is safer.
+        current_price = stripe.Price.retrieve(current_price_id)
+        new_price = stripe.Price.retrieve(new_price_id)
+
+        is_upgrade = new_price.unit_amount > current_price.unit_amount
+
+        if is_upgrade:
+            # Immediate update with proration
+            stripe.Subscription.modify(
+                stripe_sub_id,
+                items=[{
+                    "id": subscription_item_id,
+                    "price": new_price_id,
+                }],
+                proration_behavior='always_invoice',
+            )
+            return "upgraded"
+        else:
+            # Downgrade: Scheduled next billing cycle
+            # Use Subscription Schedule
+            # 1. Create schedule from subscription if not exists
+            schedule = stripe.SubscriptionSchedule.create(
+                from_subscription=stripe_sub_id
+            )
+
+            # 2. Update schedule to change phase at end of current period
+            # We assume the current phase is the active one.
+            # We want to replace the NEXT phase or append a phase?
+            # Creating from subscription creates a schedule with one phase (current).
+            # We need to update it.
+
+            # Actually, if we just want to update the subscription at period end,
+            # we can try `proration_behavior='none'` and `billing_cycle_anchor='unchanged'`? No.
+            # The cleanest way is Subscription Schedule updates.
+
+            # Update the schedule
+            stripe.SubscriptionSchedule.modify(
+                schedule.id,
+                phases=[
+                    {
+                        "start_date": stripe_sub['current_period_start'],
+                        "end_date": stripe_sub['current_period_end'],
+                        "items": [{"price": current_price_id, "quantity": 1}],
+                    },
+                    {
+                        "start_date": stripe_sub['current_period_end'],
+                        "items": [{"price": new_price_id, "quantity": 1}],
+                    }
+                ]
+            )
+            return "downgrade_scheduled"
+
+    @staticmethod
     def construct_event(payload, sig_header):
         """
         Verifies the Stripe webhook signature and constructs the event.
@@ -125,6 +207,8 @@ class StripeService:
             StripeService._handle_invoice_payment_failed(event, db)
         elif event_type == 'customer.subscription.deleted':
             StripeService._handle_subscription_deleted(event, db)
+        elif event_type == 'customer.subscription.updated':
+             StripeService._handle_subscription_updated(event, db)
         # Add more handlers as needed
         else:
             # Unhandled event type
@@ -300,3 +384,37 @@ class StripeService:
                 db.add(sub.user)
 
             db.commit()
+
+    @staticmethod
+    def _handle_subscription_updated(event, db: Session):
+        # Handle plan changes (upgrades/downgrades) synced from Stripe
+        stripe_sub = event['data']['object']
+        stripe_subscription_id = stripe_sub.get('id')
+
+        sub = db.query(Subscription).filter(Subscription.stripe_subscription_id == stripe_subscription_id).first()
+        if not sub:
+            return
+
+        # Update price and dates
+        price_id = stripe_sub['items']['data'][0]['price']['id']
+        sub.stripe_price_id = price_id
+        sub.cycle_start = datetime.utcfromtimestamp(stripe_sub['current_period_start'])
+        sub.cycle_end = datetime.utcfromtimestamp(stripe_sub['current_period_end'])
+        sub.state = stripe_sub['status']
+
+        # Update plan_id based on price_id
+        price_basic = os.getenv("STRIPE_PRICE_BASIC")
+        price_pro = os.getenv("STRIPE_PRICE_PRO")
+
+        plan_code = None
+        if price_id == price_pro:
+            plan_code = "pro"
+        elif price_id == price_basic:
+            plan_code = "basic"
+
+        if plan_code:
+            plan = db.query(Plan).filter(Plan.code == plan_code).first()
+            if plan:
+                sub.plan_id = plan.id
+
+        db.commit()

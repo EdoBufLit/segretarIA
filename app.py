@@ -523,6 +523,45 @@ async def billing_checkout(
         logger.exception("Error creating checkout session")
         raise HTTPException(status_code=500, detail=str(e))
 
+class ChangePlanRequest(BaseModel):
+    plan_code: str
+
+@app.post("/billing/change-plan")
+async def billing_change_plan(
+    payload: ChangePlanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    plan_code = payload.plan_code.lower()
+
+    if plan_code == "basic":
+        new_price_id = os.getenv("STRIPE_PRICE_BASIC")
+    elif plan_code == "pro":
+        new_price_id = os.getenv("STRIPE_PRICE_PRO")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid plan code")
+
+    if not new_price_id:
+         raise HTTPException(status_code=500, detail=f"Price ID for {plan_code} not configured")
+
+    try:
+        result = StripeService.change_subscription_plan(current_user, new_price_id, db)
+
+        # Send admin email about change
+        # Assuming current plan was different (checked in service), we send alert
+        if result:
+             admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+             subject = f"[PLAN CHANGE] User {current_user.username} switched to {plan_code}"
+             body = f"<p>User <b>{current_user.username}</b> (ID: {current_user.id}) changed plan to {plan_code}.</p><p>Status: {result}</p>"
+             send_email(admin_email, subject, body)
+
+        return {"status": "ok", "message": "Plan change initiated", "result": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Error changing plan")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/stripe/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
