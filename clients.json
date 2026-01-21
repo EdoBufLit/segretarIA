@@ -18,13 +18,5 @@
   "metering_agent": {
     "studio_name": "Metering Studio",
     "email_to": "metering@test.com"
-  },
-  "toggle_agent": {
-    "studio_name": "Toggle Studio",
-    "email_to": "toggle@test.com"
-  },
-  "suspended_agent_qa": {
-    "studio_name": "Suspended Studio",
-    "email_to": "suspended@qa.test"
   }
 }

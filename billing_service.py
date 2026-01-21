@@ -1,25 +1,10 @@
-import math
 from datetime import datetime, timedelta
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 from models import User, Agent, Subscription, UsageEvent
 
 class BillingService:
     def __init__(self, db: Session):
         self.db = db
-
-    def calculate_usage_minutes(self, user_id: int, start_date: datetime, end_date: datetime) -> int:
-        """
-        Calculates total minutes used by a user within a date range.
-        Rounds up the total minutes.
-        """
-        total_seconds = self.db.query(func.sum(UsageEvent.billed_seconds)).filter(
-            UsageEvent.user_id == user_id,
-            UsageEvent.started_at >= start_date,
-            UsageEvent.started_at <= end_date
-        ).scalar() or 0
-
-        return math.ceil(total_seconds / 60)
 
     def meter_call(self, agent_id: str, duration_secs: int, call_id: str, started_at: datetime, ended_at: datetime):
         # 1. Resolve tenant from agent_id

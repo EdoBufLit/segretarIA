@@ -1,23 +1,13 @@
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 import os
-import csv
-import io
-import json
-from pathlib import Path
-from typing import Optional
 from sqlalchemy.orm import Session
-from models import User, Agent, Plan, Subscription, PhoneNumber, UsageEvent
-from auth import hash_password, generate_random_password
+from models import User, Agent, Plan, Subscription, PhoneNumber
+from auth import hash_password
 from mailer import send_email
-from audit_logger import log_admin_action
-from sqlalchemy import func
-
-LOGS_DIR = Path("logs")
 
 class AdminService:
-    def __init__(self, db: Session, current_admin_username: str = "system"):
+    def __init__(self, db: Session):
         self.db = db
-        self.admin_username = current_admin_username
 
     def get_clients(self):
         return self.db.query(User).filter(User.role == "client").all()
@@ -144,8 +134,7 @@ class AdminService:
                 clients_data[agent_id_str] = {
                     **clients_data.get(agent_id_str, {}),
                     "studio_name": user.studio_name,
-                    "email_to": user.email,
-                    "user_id": user.id
+                    "email_to": user.email
                 }
 
         with open(clients_json_path, "w") as f:
@@ -194,203 +183,3 @@ class AdminService:
             send_email(admin_email, subject, body)
 
         return phone
-
-    def suspend_client(self, user_id: int):
-        user = self.db.query(User).filter(User.id == user_id, User.role == "client").first()
-        if not user:
-            raise ValueError("Client not found")
-
-        user.is_active = False
-        self.db.commit()
-
-        log_admin_action(self.admin_username, f"Suspended user {user.username} (ID: {user_id})")
-        return user
-
-    def toggle_client_active(self, user_id: int) -> User:
-        user = self.db.query(User).filter(User.id == user_id, User.role == "client").first()
-        if not user:
-            raise ValueError("Client not found")
-
-        user.is_active = not user.is_active
-        self.db.commit()
-
-        action = "Reactivated" if user.is_active else "Suspended"
-        log_admin_action(self.admin_username, f"{action} user {user.username} (ID: {user_id})")
-        return user
-
-    def toggle_user_active_status(self, user_id: int) -> User:
-        # Alias for legacy or tests
-        return self.toggle_client_active(user_id)
-
-    def reset_password(self, user_id: int, new_password: str):
-        user = self.db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise ValueError("User not found")
-
-        user.password_hash = hash_password(new_password)
-        self.db.commit()
-
-        log_admin_action(self.admin_username, f"Reset password for user {user.username} (ID: {user_id})")
-        return user
-
-    def reset_password_random(self, user_id: int) -> User:
-        user = self.db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise ValueError("User not found")
-
-        new_password = generate_random_password()
-        user.password_hash = hash_password(new_password)
-        self.db.commit()
-
-        # Send email with new password
-        subject = "Your password has been reset"
-        body = (
-            f"<p>Hello {user.username},</p>"
-            f"<p>Your password has been reset by an administrator.</p>"
-            f"<p>New Password: <b>{new_password}</b></p>"
-            f"<p>We strongly suggest you change this password after logging in.</p>"
-        )
-        send_email(user.email, subject, body)
-
-        log_admin_action(self.admin_username, f"Reset password (random) for user {user.username} (ID: {user_id})")
-        return user
-
-    def export_clients_csv(self) -> str:
-        clients = self.get_clients()
-        output = io.StringIO()
-        writer = csv.writer(output)
-
-        headers = ["id", "username", "email", "studio_name", "is_active", "created_at"]
-        writer.writerow(headers)
-
-        for client in clients:
-            writer.writerow([
-                client.id,
-                client.username,
-                client.email,
-                client.studio_name,
-                client.is_active,
-                client.created_at
-            ])
-
-        log_admin_action(self.admin_username, "Exported clients CSV")
-        return output.getvalue()
-
-    def export_minutes_csv(self, from_date: datetime, to_date: datetime) -> str:
-        # Group usage by user and agent
-        results = (
-            self.db.query(
-                User.username,
-                Agent.agent_id,
-                func.sum(UsageEvent.billed_seconds).label("total_seconds")
-            )
-            .join(UsageEvent, User.id == UsageEvent.user_id)
-            .join(Agent, Agent.id == UsageEvent.agent_id)
-            .filter(UsageEvent.started_at >= from_date)
-            .filter(UsageEvent.started_at <= to_date)
-            .group_by(User.id, Agent.id)
-            .all()
-        )
-
-        output = io.StringIO()
-        writer = csv.writer(output)
-
-        headers = ["user", "agent_id", "minuti_usati", "periodo"]
-        writer.writerow(headers)
-
-        period_str = f"{from_date.date()} - {to_date.date()}"
-
-        for row in results:
-            username = row.username
-            agent_id = row.agent_id
-            total_seconds = row.total_seconds or 0
-            minutes = round(total_seconds / 60, 2)
-
-            writer.writerow([
-                username,
-                agent_id,
-                minutes,
-                period_str
-            ])
-
-        log_admin_action(self.admin_username, f"Exported minutes CSV ({period_str})")
-        return output.getvalue()
-
-    def export_logs_csv(self, client_id: str = None, from_date: datetime = None, to_date: datetime = None) -> str:
-        # Since logs are in JSON files in logs/ directory, we need to read them.
-        # This might be slow for many files, but for now it's okay.
-        # We'll reuse logic similar to app.py's view_logs_list but aggregating.
-
-        all_logs = []
-
-        # Determine which files to read
-        files_to_read = []
-        if client_id:
-            # Security check: client_id should be safe filename
-            safe_id = os.path.basename(client_id)
-            if safe_id != client_id or ".." in client_id or "/" in client_id or "\\" in client_id:
-                 raise ValueError("Invalid client_id")
-            files_to_read.append(f"{safe_id}.log")
-        else:
-            if os.path.exists(LOGS_DIR):
-                files_to_read = [f for f in os.listdir(LOGS_DIR) if f.endswith(".log")]
-
-        for filename in files_to_read:
-            filepath = os.path.join(LOGS_DIR, filename)
-            if not os.path.exists(filepath):
-                continue
-
-            with open(filepath, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                        ts_str = entry.get("timestamp")
-                        if not ts_str:
-                            continue
-                        ts = datetime.fromisoformat(ts_str)
-
-                        # Filter by date
-                        if from_date:
-                            # ensure type compatibility
-                            if isinstance(from_date, date) and not isinstance(from_date, datetime):
-                                ts_date = ts.date()
-                                if ts_date < from_date: continue
-                            elif ts < from_date:
-                                continue
-                        if to_date:
-                            if isinstance(to_date, date) and not isinstance(to_date, datetime):
-                                ts_date = ts.date()
-                                if ts_date > to_date: continue
-                            elif ts > to_date:
-                                continue
-
-                        # Add to list
-                        all_logs.append(entry)
-                    except:
-                        continue
-
-        # Sort by timestamp desc
-        all_logs.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-
-        output = io.StringIO()
-        writer = csv.writer(output)
-
-        headers = ["timestamp", "agent_id", "caller_number", "status", "duration_secs", "summary"]
-        writer.writerow(headers)
-
-        for entry in all_logs:
-            data = entry.get("data", {})
-            analysis = data.get("analysis", {})
-            metadata = data.get("metadata", {})
-
-            writer.writerow([
-                entry.get("timestamp"),
-                entry.get("agent_id"),
-                data.get("caller_number") or metadata.get("caller_number"),
-                data.get("status") or "success",
-                data.get("duration_secs") or metadata.get("call_duration_secs"),
-                entry.get("summary") or analysis.get("summary") or analysis.get("transcript_summary")
-            ])
-
-        log_admin_action(self.admin_username, "Exported logs CSV")
-        return output.getvalue()

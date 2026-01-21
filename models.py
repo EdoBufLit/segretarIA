@@ -30,7 +30,6 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     studio_name = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
-    stripe_customer_id = Column(String, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relationships
@@ -77,11 +76,6 @@ class Subscription(Base):
     cycle_end = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     cancel_requested_at = Column(DateTime, nullable=True)
-
-    # Stripe metadata
-    stripe_subscription_id = Column(String, nullable=True, unique=True, index=True)
-    stripe_price_id = Column(String, nullable=True, index=True)
-    last_payment_status = Column(String, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="subscriptions")

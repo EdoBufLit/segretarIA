@@ -57,7 +57,6 @@ function renderDashboardUI() {
                         <th class="py-3 px-4 text-left">Agent ID</th>
                         <th class="py-3 px-4 text-left">Studio</th>
                         <th class="py-3 px-4 text-left">Email</th>
-                        <th class="py-3 px-4 text-center">Stato</th>
                         <th class="py-3 px-4 text-right">Azioni</th>
                     </tr>
                 </thead>
@@ -136,86 +135,20 @@ async function loadClients() {
 
     for (const id in clients) {
         const c = clients[id];
-        const statusBadge = c.is_active
-            ? `<span class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded">Attivo</span>`
-            : `<span class="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded">Sospeso</span>`;
-
-        const toggleBtnLabel = c.is_active ? "Sospendi" : "Attiva";
-        const toggleBtnClass = c.is_active ? "bg-yellow-500 hover:bg-yellow-600" : "bg-green-500 hover:bg-green-600";
-
-        // Show toggle button only if we have a user_id (meaning mapped to DB)
-        const toggleBtn = c.user_id
-            ? `<button onclick="toggleActive('${c.user_id}')" class="${toggleBtnClass} text-white px-3 py-1 rounded text-xs transition-colors">${toggleBtnLabel}</button>`
-            : `<span class="text-xs text-gray-400">N/A</span>`;
 
         tbody.innerHTML += `
             <tr class="border-b">
-                <td class="py-2 px-4 text-sm font-mono">${id}</td>
+                <td class="py-2 px-4">${id}</td>
                 <td class="py-2 px-4">${c.studio_name}</td>
                 <td class="py-2 px-4">${c.email_to}</td>
-                <td class="py-2 px-4 text-center">${statusBadge}</td>
 
-                <td class="py-2 px-4 text-right space-x-2 flex justify-end items-center">
-                    ${toggleBtn}
-                    ${c.user_id ?
-                    `<button onclick="resetPassword(${c.user_id})"
-                        class="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 text-xs">
-                        Reset Pw
-                    </button>` : ''}
+                <td class="py-2 px-4 text-right space-x-2">
                     <button onclick="removeClient('${id}')"
-                        class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 text-xs">
+                        class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
                         Rimuovi
                     </button>
                 </td>
             </tr>`;
-    }
-}
-
-async function resetPassword(userId) {
-    if (!userId) {
-        alert("ID utente non disponibile.");
-        return;
-    }
-
-    showConfirm(
-        'Reset Password',
-        'Sei sicuro di voler resettare la password? Una nuova password verrà generata e inviata via email all\'utente.',
-        async () => {
-            try {
-                const res = await fetch(`/admin/users/${userId}/reset-password`, {
-                    method: "POST"
-                });
-                const data = await res.json();
-
-                if (res.ok) {
-                    alert("Successo: " + data.message);
-                } else {
-                    alert("Errore: " + (data.detail || "Impossibile resettare la password"));
-                }
-            } catch (e) {
-                console.error(e);
-                alert("Errore di rete.");
-            }
-        }
-    );
-}
-
-async function toggleActive(userId) {
-    if (!confirm("Sei sicuro di voler modificare lo stato di questo utente?")) return;
-
-    try {
-        const res = await fetch(`/admin/users/${userId}/toggle-active`, {
-            method: "POST"
-        });
-        const data = await res.json();
-        if (data.status === "ok") {
-            await loadClients(); // Reload to update UI
-        } else {
-            alert("Errore: " + (data.detail || "Impossibile aggiornare stato."));
-        }
-    } catch (e) {
-        console.error(e);
-        alert("Errore di comunicazione col server.");
     }
 }
 
@@ -674,28 +607,5 @@ function closeLogDetail() {
     modal.classList.remove("flex");
 }
 
-function exportLogs() {
-    const client = document.getElementById("log-filter-client").value;
-    const from = document.getElementById("log-filter-from").value;
-    const to = document.getElementById("log-filter-to").value;
 
-    const params = new URLSearchParams();
-    if (client) params.append("client", client);
-    if (from) params.append("from", from);
-    if (to) params.append("to", to);
 
-    window.location.href = `/admin/export/logs?${params.toString()}`;
-}
-
-function exportMinutes() {
-    const from = document.getElementById("log-filter-from").value;
-    const to = document.getElementById("log-filter-to").value;
-
-    if (!from || !to) {
-        alert("Seleziona data inizio e fine.");
-        return;
-    }
-
-    const params = new URLSearchParams({ from, to });
-    window.location.href = `/admin/export/minutes?${params.toString()}`;
-}
