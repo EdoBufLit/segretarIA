@@ -24,6 +24,7 @@ from db import get_db
 from models import User
 from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
+from client_service import ClientService
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -425,6 +426,7 @@ async def admin_create_client(username: str = Form(...), email: str = Form(...),
     service = AdminService(db)
     try:
         client = service.create_client(username, email, password, studio_name)
+        service.sync_clients_to_json()
         return {"status": "ok", "client_id": client.id}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -434,6 +436,7 @@ async def admin_create_agent(agent_id: str = Form(...), display_name: str = Form
     service = AdminService(db)
     try:
         agent = service.create_agent(agent_id, display_name, phone_number_id)
+        service.sync_clients_to_json()
         return {"status": "ok", "agent_id": agent.id}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -443,6 +446,7 @@ async def admin_assign_agent(user_id: int, agent_id: int = Form(...), db: Sessio
     service = AdminService(db)
     try:
         client = service.assign_agent_to_client(user_id, agent_id)
+        service.sync_clients_to_json()
         return {"status": "ok", "client_id": client.id, "assigned_agents": [a.id for a in client.agents]}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -453,6 +457,30 @@ async def admin_create_subscription(user_id: int, plan_code: str = Form(...), db
     try:
         subscription = service.create_or_update_subscription(user_id, plan_code)
         return {"status": "ok", "subscription_id": subscription.id, "state": subscription.state}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/sync-clients-json")
+async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    summary = service.sync_clients_to_json()
+    return {"status": "ok", **summary}
+
+
+# ================== CLIENT ENDPOINTS ==================
+
+@app.get("/subscription/status")
+async def get_subscription_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = ClientService(db, current_user)
+    status = service.get_subscription_status()
+    return status
+
+@app.post("/subscription/cancel")
+async def cancel_subscription(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = ClientService(db, current_user)
+    try:
+        result = service.cancel_subscription()
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -952,9 +980,7 @@ async def dashboard(request: Request, current_user: User = Depends(get_current_u
             html = f.read()
         return HTMLResponse(content=html)
     else:
-        with open("templates/client_dashboard.html", "r", encoding="utf-8") as f:
-            html = f.read()
-        return HTMLResponse(content=html)
+        return templates.TemplateResponse("client_portal.html", {"request": request})
 
 
 @app.get("/logout")

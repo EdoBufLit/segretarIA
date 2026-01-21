@@ -74,6 +74,7 @@ class Subscription(Base):
     cycle_start = Column(DateTime, nullable=False)
     cycle_end = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    cancel_requested_at = Column(DateTime, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="subscriptions")
