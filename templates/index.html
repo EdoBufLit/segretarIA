@@ -56,9 +56,15 @@
                     <a href="#faq" class="text-slate-600 hover:text-blue-600 font-medium transition-colors">FAQ</a>
                 </div>
                 <div>
+                    {% if user %}
+                    <a href="/dashboard" class="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm">
+                        Dashboard
+                    </a>
+                    {% else %}
                     <a href="/login" class="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm">
                         Accedi
                     </a>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -74,9 +80,15 @@
                 Segreteria IA risponde alle chiamate 24/7, trascrive le conversazioni, invia report via email e ti permette di gestire tutto da una dashboard intelligente. Non perdere mai più un cliente.
             </p>
             <div class="flex flex-col sm:flex-row justify-center gap-4">
-                <a href="/login" class="bg-blue-600 text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors shadow-md">
-                    Accedi alla Dashboard
+                {% if user %}
+                <a href="/dashboard" class="bg-blue-600 text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors shadow-md">
+                    Vai alla Dashboard
                 </a>
+                {% else %}
+                <a href="/login" class="bg-blue-600 text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors shadow-md">
+                    Accedi
+                </a>
+                {% endif %}
                 <a href="#come-funziona" class="bg-white text-blue-600 px-8 py-3.5 rounded-lg text-lg font-semibold border border-blue-200 hover:border-blue-300 hover:bg-slate-50 transition-all shadow-sm">
                     Vedi come funziona
                 </a>

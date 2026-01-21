@@ -380,7 +380,8 @@ def build_email_body_html(
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    user = request.session.get("user")
+    return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
 
 # ================== ADMIN ENDPOINTS ==================
