@@ -4,9 +4,14 @@ from sqlalchemy.orm import Session
 from models import User, Agent, Plan, Subscription, PhoneNumber
 from auth import hash_password
 from mailer import send_email
+from audit_logger import log_admin_action
+import csv
+import io
 
 class AdminService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, current_admin_username: str = "system"):
+        self.db = db
+        self.admin_username = current_admin_username
         self.db = db
 
     def get_clients(self):
@@ -183,3 +188,46 @@ class AdminService:
             send_email(admin_email, subject, body)
 
         return phone
+
+    def suspend_client(self, user_id: int):
+        user = self.db.query(User).filter(User.id == user_id, User.role == "client").first()
+        if not user:
+            raise ValueError("Client not found")
+
+        user.is_active = False
+        self.db.commit()
+
+        log_admin_action(self.admin_username, f"Suspended user {user.username} (ID: {user_id})")
+        return user
+
+    def reset_password(self, user_id: int, new_password: str):
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        user.password_hash = hash_password(new_password)
+        self.db.commit()
+
+        log_admin_action(self.admin_username, f"Reset password for user {user.username} (ID: {user_id})")
+        return user
+
+    def export_clients_csv(self) -> str:
+        clients = self.get_clients()
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        headers = ["id", "username", "email", "studio_name", "is_active", "created_at"]
+        writer.writerow(headers)
+
+        for client in clients:
+            writer.writerow([
+                client.id,
+                client.username,
+                client.email,
+                client.studio_name,
+                client.is_active,
+                client.created_at
+            ])
+
+        log_admin_action(self.admin_username, "Exported clients CSV")
+        return output.getvalue()

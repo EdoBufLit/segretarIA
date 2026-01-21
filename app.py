@@ -414,13 +414,13 @@ async def root():
 
 @app.get("/admin/clients", response_class=HTMLResponse)
 async def admin_get_clients(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     clients = service.get_clients()
     return templates.TemplateResponse("admin_clients.html", {"request": request, "clients": clients})
 
 @app.post("/admin/clients/create")
 async def admin_create_client(username: str = Form(...), email: str = Form(...), password: str = Form(...), studio_name: str = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         client = service.create_client(username, email, password, studio_name)
         service.sync_clients_to_json()
@@ -430,7 +430,7 @@ async def admin_create_client(username: str = Form(...), email: str = Form(...),
 
 @app.post("/admin/agents/create")
 async def admin_create_agent(agent_id: str = Form(...), display_name: str = Form(...), phone_number_id: str = Form(None), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         agent = service.create_agent(agent_id, display_name, phone_number_id)
         service.sync_clients_to_json()
@@ -440,7 +440,7 @@ async def admin_create_agent(agent_id: str = Form(...), display_name: str = Form
 
 @app.post("/admin/clients/{user_id}/assign-agent")
 async def admin_assign_agent(user_id: int, agent_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         client = service.assign_agent_to_client(user_id, agent_id)
         service.sync_clients_to_json()
@@ -450,7 +450,7 @@ async def admin_assign_agent(user_id: int, agent_id: int = Form(...), db: Sessio
 
 @app.post("/admin/clients/{user_id}/create-subscription")
 async def admin_create_subscription(user_id: int, plan_code: str = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         subscription = service.create_or_update_subscription(user_id, plan_code)
         return {"status": "ok", "subscription_id": subscription.id, "state": subscription.state}
@@ -459,19 +459,19 @@ async def admin_create_subscription(user_id: int, plan_code: str = Form(...), db
 
 @app.post("/admin/sync-clients-json")
 async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     summary = service.sync_clients_to_json()
     return {"status": "ok", **summary}
 
 @app.get("/admin/phone-numbers", response_class=HTMLResponse)
 async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     numbers = service.get_all_phone_numbers()
     return templates.TemplateResponse("admin_phonenumbers.html", {"request": request, "numbers": numbers})
 
 @app.post("/admin/phone-numbers/create") # Temporary for testing
 async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         phone = service.create_phone_number(e164, user_id)
         return {"status": "ok", "phone_number_id": phone.id}
@@ -480,7 +480,7 @@ async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(.
 
 @app.post("/admin/phone-numbers/{phone_id}/mark-released")
 async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         service.mark_phone_number_released(phone_id)
         return RedirectResponse(url="/admin/phone-numbers", status_code=303)
@@ -489,7 +489,7 @@ async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(
 
 @app.post("/admin/phone-numbers/{phone_id}/cancel-deprovision")
 async def admin_cancel_deprovision(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         service.cancel_phone_number_deprovisioning(phone_id)
         return RedirectResponse(url="/admin/phone-numbers", status_code=303)
