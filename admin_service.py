@@ -1,9 +1,16 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import os
+import csv
+import io
+import json
+from pathlib import Path
+from typing import Optional
 from sqlalchemy.orm import Session
 from models import User, Agent, Plan, Subscription, PhoneNumber
 from auth import hash_password
 from mailer import send_email
+
+LOGS_DIR = Path("logs")
 
 class AdminService:
     def __init__(self, db: Session):
@@ -193,3 +200,60 @@ class AdminService:
         self.db.commit()
         self.db.refresh(user)
         return user
+
+    def export_logs_csv(self, date_from: Optional[date] = None, date_to: Optional[date] = None, agent_id: Optional[str] = None) -> str:
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Header
+        writer.writerow(["timestamp", "client", "durata", "categoria", "urgenza", "stato"])
+
+        if not LOGS_DIR.exists():
+            return output.getvalue()
+
+        # Iterate over log files
+        for log_file in LOGS_DIR.glob("*.log"):
+            current_agent_id = log_file.stem
+
+            # Filter by agent_id
+            if agent_id and current_agent_id != agent_id:
+                continue
+
+            with log_file.open("r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+
+                        # Date Filter
+                        ts_str = entry.get("timestamp")
+                        if not ts_str:
+                            continue
+
+                        try:
+                            entry_date = datetime.fromisoformat(ts_str).date()
+                        except ValueError:
+                            continue
+
+                        if date_from and entry_date < date_from:
+                            continue
+                        if date_to and entry_date > date_to:
+                            continue
+
+                        # Extract Data
+                        data = entry.get("data", {})
+                        analysis = data.get("analysis", {})
+
+                        # CSV columns: timestamp, client, durata, categoria, urgenza, stato
+                        row = [
+                            ts_str,
+                            entry.get("agent_id", current_agent_id),
+                            data.get("duration_secs", ""),
+                            analysis.get("matter_type", ""),
+                            analysis.get("urgency", ""),
+                            data.get("status", "")
+                        ]
+                        writer.writerow(row)
+                    except json.JSONDecodeError:
+                        continue
+
+        return output.getvalue()

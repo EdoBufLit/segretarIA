@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Request, Body, Query
+from fastapi import FastAPI, HTTPException, Request, Body, Query, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from dotenv import load_dotenv
 from collections import defaultdict
@@ -501,6 +501,38 @@ async def admin_toggle_user_active(user_id: int, db: Session = Depends(get_db), 
         return {"status": "ok", "user_id": user.id, "is_active": user.is_active}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+@app.get("/admin/export/logs")
+async def admin_export_logs(
+    from_date: str = Query(None, alias="from"),
+    to_date: str = Query(None, alias="to"),
+    client: str = Query(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+
+    d_from = None
+    if from_date:
+        try:
+            d_from = datetime.fromisoformat(from_date).date()
+        except ValueError:
+            pass # Ignore invalid date or handle error
+
+    d_to = None
+    if to_date:
+        try:
+            d_to = datetime.fromisoformat(to_date).date()
+        except ValueError:
+            pass
+
+    csv_content = service.export_logs_csv(date_from=d_from, date_to=d_to, agent_id=client)
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=logs.csv"}
+    )
 
 @app.post("/admin/phone-numbers/{phone_id}/cancel-deprovision")
 async def admin_cancel_deprovision(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
