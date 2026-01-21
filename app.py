@@ -28,6 +28,8 @@ from billing_service import BillingService
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 import time
+import asyncio
+from backup_db import backup_database
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
@@ -66,6 +68,22 @@ app.add_middleware(RateLimitMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 # Logger (va nei log di uvicorn)
 logger = logging.getLogger("uvicorn.error")
+
+async def daily_backup_task():
+    while True:
+        try:
+            logger.info("Running daily database backup...")
+            # Run backup in a separate thread to avoid blocking the event loop
+            await asyncio.to_thread(backup_database)
+        except Exception as e:
+            logger.error(f"Backup failed: {e}")
+
+        # Wait for 24 hours
+        await asyncio.sleep(86400)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(daily_backup_task())
 
 # OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
