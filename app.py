@@ -57,9 +57,9 @@ async def rate_limit_middleware(request: Request, call_next):
 
     rate_limit_data[client_ip].append(now)
 
-    # Cleanup empty keys to prevent memory leak
-    if not rate_limit_data[client_ip]:
-        del rate_limit_data[client_ip]
+    # Prevent memory leak by limiting the number of tracked IPs
+    if len(rate_limit_data) > 10000:
+        rate_limit_data.clear()
 
     response = await call_next(request)
     return response
