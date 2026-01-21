@@ -121,6 +121,8 @@ class StripeService:
             StripeService._handle_checkout_session_completed(event, db)
         elif event_type == 'invoice.payment_succeeded':
             StripeService._handle_invoice_payment_succeeded(event, db)
+        elif event_type == 'invoice.payment_failed':
+            StripeService._handle_invoice_payment_failed(event, db)
         elif event_type == 'customer.subscription.deleted':
             StripeService._handle_subscription_deleted(event, db)
         # Add more handlers as needed
@@ -262,6 +264,26 @@ class StripeService:
                 db.commit()
             except Exception as e:
                 print(f"Error updating subscription {stripe_subscription_id}: {e}")
+
+    @staticmethod
+    def _handle_invoice_payment_failed(event, db: Session):
+        invoice = event['data']['object']
+        stripe_subscription_id = invoice.get('subscription')
+
+        if not stripe_subscription_id:
+            return
+
+        sub = db.query(Subscription).filter(Subscription.stripe_subscription_id == stripe_subscription_id).first()
+        if sub:
+            sub.state = 'past_due'
+            sub.last_payment_status = 'failed'
+
+            # Stop service immediately
+            if sub.user.is_active:
+                sub.user.is_active = False
+                db.add(sub.user)
+
+            db.commit()
 
     @staticmethod
     def _handle_subscription_deleted(event, db: Session):

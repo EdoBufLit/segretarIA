@@ -574,28 +574,13 @@ def extract_transcript_text(payload: dict) -> str:
     return "\n".join(lines)
 
 @app.post("/elevenlabs/webhook")
-async def elevenlabs_webhook(request: Request):
+async def elevenlabs_webhook(request: Request, db: Session = Depends(get_db)):
     """
     Webhook ElevenLabs.
     """
     # Controlla se clients.json è cambiato e, se sì, ricarica
     maybe_reload_clients()
-    raw_body = await request.body()
-    payload = json.loads(raw_body.decode("utf-8"))
 
-    # estrai transcript
-    transcript_text = extract_transcript_text(payload)
-
-    # arricchimento AI
-    ai_data = enrich_call_with_ai(transcript_text)
-
-    # quando costruisci l'entry di log:
-    entry = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "data": payload,
-        "transcript_text": transcript_text,
-        "ai_enrichment": ai_data,
-    }
     # 1) Body grezzo
     try:
         raw_body = await request.body()
@@ -615,6 +600,12 @@ async def elevenlabs_webhook(request: Request):
         logger.exception("[WEBHOOK] JSON non valido")
         return {"status": "ignored", "reason": f"invalid json: {e}"}
 
+    # estrai transcript
+    transcript_text = extract_transcript_text(payload)
+
+    # arricchimento AI
+    ai_data = enrich_call_with_ai(transcript_text)
+
     logger.info("[WEBHOOK] Payload ElevenLabs ricevuto")
 
     # 3) Tipo evento
@@ -627,6 +618,19 @@ async def elevenlabs_webhook(request: Request):
 
     # 3b) Agent ID (chi identifica il cliente)
     agent_id: Optional[str] = data.get("agent_id")
+
+    # Check suspension
+    from models import Agent
+    agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
+    if agent:
+        # Check associated user
+        # We assume 1 user per agent or check all? Usually 1 client user.
+        # Use UserAgentAccess table or relationship
+        for user in agent.users:
+            if not user.is_active:
+                logger.warning(f"[WEBHOOK] Blocked call for suspended user {user.username} (agent {agent_id})")
+                return {"status": "suspended", "reason": "User is inactive"}
+
     client_cfg = get_client_config(agent_id)
     studio_name = client_cfg["studio_name"]
     email_to = client_cfg["email_to"]
