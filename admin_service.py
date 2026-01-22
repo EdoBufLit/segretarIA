@@ -248,7 +248,7 @@ class AdminService:
             events = self.db.query(UsageEvent).join(User).join(Agent).filter(
                 UsageEvent.started_at >= from_date,
                 UsageEvent.started_at <= to_date
-            ).offset(offset).limit(batch_size).all()
+            ).order_by(UsageEvent.id).offset(offset).limit(batch_size).all()
 
             if not events:
                 break
