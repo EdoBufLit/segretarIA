@@ -1,7 +1,12 @@
 from datetime import datetime, timedelta
 import os
+import json
+import csv
+from io import StringIO
+from typing import Optional
 from sqlalchemy.orm import Session
-from models import User, Agent, Plan, Subscription, PhoneNumber
+from sqlalchemy import func
+from models import User, Agent, Plan, Subscription, PhoneNumber, UsageEvent
 from auth import hash_password, generate_random_password
 from mailer import send_email
 import audit_logger
@@ -222,3 +227,102 @@ class AdminService:
             print(f"Failed to send reset email: {e}")
 
         return new_password
+
+    def export_minutes_csv(self, from_date: datetime, to_date: datetime) -> str:
+        """
+        Exports usage minutes (UsageEvents) to a CSV string.
+        Cols: UserID, ClientName, AgentID, Date, CallDuration(s), CallID
+        """
+        events = self.db.query(UsageEvent).join(User).join(Agent).filter(
+            UsageEvent.started_at >= from_date,
+            UsageEvent.started_at <= to_date
+        ).all()
+
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["UserID", "ClientName", "AgentID", "Date", "DurationSec", "CallID"])
+
+        for event in events:
+            writer.writerow([
+                event.user_id,
+                event.user.studio_name or event.user.username,
+                event.agent.agent_id,
+                event.started_at.isoformat(),
+                event.billed_seconds,
+                event.call_id
+            ])
+
+        return output.getvalue()
+
+    def export_logs_csv(self, from_date: datetime, to_date: datetime, client_filter: Optional[str] = None) -> str:
+        """
+        Exports logs from logs directory to a CSV string.
+        Cols: Timestamp, AgentID, Caller, Status, Duration, Summary
+        """
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Timestamp", "AgentID", "Caller", "Status", "Duration", "Summary"])
+
+        logs_dir = "logs"
+        if not os.path.exists(logs_dir):
+            return output.getvalue()
+
+        # Gather agent_ids to check
+        agent_ids = []
+        if client_filter:
+            agent_ids = [client_filter]
+        else:
+            # List all .log files
+            for filename in os.listdir(logs_dir):
+                if filename.endswith(".log"):
+                    agent_ids.append(filename[:-4])
+
+        for agent_id in agent_ids:
+            log_path = os.path.join(logs_dir, f"{agent_id}.log")
+            if not os.path.exists(log_path):
+                continue
+
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                        ts_str = entry.get("timestamp")
+                        if not ts_str:
+                            continue
+
+                        ts_dt = datetime.fromisoformat(ts_str)
+                        # Filter by date range
+                        # We compare aware vs aware or naive vs naive.
+                        # Usually from_date/to_date might be naive or aware depending on how they are constructed.
+                        # Assuming they are naive UTC or similar, we should ensure compatibility.
+                        # For simplicity, if ts_dt has timezone, remove it or compare properly.
+                        # Let's strip timezone for comparison if inputs are naive
+                        if from_date.tzinfo is None and ts_dt.tzinfo is not None:
+                            ts_dt = ts_dt.replace(tzinfo=None)
+
+                        if not (from_date <= ts_dt <= to_date):
+                            continue
+
+                        data = entry.get("data", {})
+
+                        # Extract fields
+                        caller = data.get("caller_number", "N/D")
+
+                        # Status check
+                        status = data.get("status", "success") # default success
+
+                        duration = data.get("duration_secs", "")
+                        summary = data.get("summary") or data.get("analysis", {}).get("summary", "")
+
+                        writer.writerow([
+                            ts_str,
+                            agent_id,
+                            caller,
+                            status,
+                            duration,
+                            summary
+                        ])
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+
+        return output.getvalue()

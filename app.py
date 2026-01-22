@@ -483,6 +483,80 @@ async def admin_reset_password(user_id: int, db: Session = Depends(get_db), admi
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/admin/export/minutes")
+async def admin_export_minutes(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    """
+    Exports usage minutes to CSV.
+    """
+    service = AdminService(db)
+    try:
+        # Parse dates (expecting ISO or YYYY-MM-DD)
+        # If they come as YYYY-MM-DD, we can assume start of day / end of day
+        try:
+            fd = datetime.fromisoformat(from_date)
+        except ValueError:
+            fd = datetime.strptime(from_date, "%Y-%m-%d")
+
+        try:
+            td = datetime.fromisoformat(to_date)
+        except ValueError:
+            td = datetime.strptime(to_date, "%Y-%m-%d")
+            # Set to end of day if only date is provided
+            td = td.replace(hour=23, minute=59, second=59)
+
+        csv_content = service.export_minutes_csv(fd, td)
+
+        return HTMLResponse(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=minutes_{from_date}_{to_date}.csv"}
+        )
+    except Exception as e:
+        logger.exception("Export minutes failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/admin/export/logs")
+async def admin_export_logs(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    client: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    """
+    Exports logs to CSV.
+    """
+    service = AdminService(db)
+    try:
+        try:
+            fd = datetime.fromisoformat(from_date)
+        except ValueError:
+            fd = datetime.strptime(from_date, "%Y-%m-%d")
+
+        try:
+            td = datetime.fromisoformat(to_date)
+        except ValueError:
+            td = datetime.strptime(to_date, "%Y-%m-%d")
+            td = td.replace(hour=23, minute=59, second=59)
+
+        csv_content = service.export_logs_csv(fd, td, client)
+
+        return HTMLResponse(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=logs_{from_date}_{to_date}.csv"}
+        )
+    except Exception as e:
+        logger.exception("Export logs failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ================== CLIENT ENDPOINTS ==================
 
 @app.get("/subscription/status")
