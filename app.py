@@ -986,43 +986,62 @@ async def logout(request: Request):
 
 @app.get("/me")
 async def read_users_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Find active subscription (or just the latest one)
-    # We prioritize 'active' status. If none active, we take the most recent one.
-    subscription_data = None
+    try:
+        # Find active subscription (or just the latest one)
+        # We prioritize 'active' status. If none active, we take the most recent one.
+        subscription_data = None
 
-    # Simple query for active subscription first
-    sub = db.query(Subscription).filter(
-        Subscription.user_id == current_user.id,
-        Subscription.state == "active"
-    ).first()
-
-    if not sub:
-        # Fallback to any latest subscription
+        # Simple query for active subscription first
         sub = db.query(Subscription).filter(
-            Subscription.user_id == current_user.id
-        ).order_by(Subscription.created_at.desc()).first()
+            Subscription.user_id == current_user.id,
+            Subscription.state == "active"
+        ).first()
 
-    if sub:
-        subscription_data = {
-            "state": sub.state,
-            "plan_code": sub.plan.code if sub.plan else None,
-            "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
-            "stripe_subscription_id": sub.stripe_subscription_id,
-            "stripe_price_id": sub.stripe_price_id
+        if not sub:
+            # Fallback to any latest subscription
+            # Subscription model does not have created_at, using id instead
+            sub = db.query(Subscription).filter(
+                Subscription.user_id == current_user.id
+            ).order_by(Subscription.id.desc()).first()
+
+        if sub:
+            subscription_data = {
+                "state": sub.state,
+                "plan_code": sub.plan.code if sub.plan else None,
+                "cycle_start": sub.cycle_start.isoformat() if sub.cycle_start else None,
+                "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
+                "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
+                "stripe_subscription_id": sub.stripe_subscription_id,
+                "stripe_price_id": sub.stripe_price_id
+            }
+
+        return {
+            "user": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "role": current_user.role,
+                "studio_name": current_user.studio_name,
+                "is_active": current_user.is_active,
+                "stripe_customer_id": current_user.stripe_customer_id
+            },
+            "subscription": subscription_data
         }
-
-    return {
-        "user": {
-            "id": current_user.id,
-            "username": current_user.username,
-            "email": current_user.email,
-            "role": current_user.role,
-            "studio_name": current_user.studio_name,
-            "is_active": current_user.is_active,
-            "stripe_customer_id": current_user.stripe_customer_id
-        },
-        "subscription": subscription_data
-    }
+    except Exception as e:
+        logger.exception("Error in /me endpoint")
+        # Return valid user object even if subscription fetch fails
+        return {
+            "user": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "role": current_user.role,
+                "studio_name": current_user.studio_name,
+                "is_active": current_user.is_active,
+                "stripe_customer_id": current_user.stripe_customer_id
+            },
+            "subscription": None
+        }
 
 
 @app.get("/login", response_class=HTMLResponse)
