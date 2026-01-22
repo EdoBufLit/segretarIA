@@ -344,6 +344,37 @@ async function saveClientSettings() {
     await renderGlobalChart();
 }
 
+// =========================
+// EXPORT LOGIC
+// =========================
+
+function triggerExport(type) {
+    const fromEl = document.getElementById("export-from");
+    const toEl = document.getElementById("export-to");
+
+    if (!fromEl || !toEl) return;
+
+    const fromVal = fromEl.value;
+    const toVal = toEl.value;
+
+    if (!fromVal || !toVal) {
+        alert("Seleziona data inizio e fine.");
+        return;
+    }
+
+    showToast("Download avviato...", "info");
+
+    // Build URL
+    // /admin/export/minutes?from=YYYY-MM-DD&to=YYYY-MM-DD
+    // /admin/export/logs?from=YYYY-MM-DD&to=YYYY-MM-DD
+
+    const url = `/admin/export/${type}?from=${fromVal}&to=${toVal}`;
+
+    // Trigger download via hidden iframe or new window, or just window.location
+    // Using window.location works for downloads and allows browser to handle it.
+    window.location.href = url;
+}
+
 async function triggerTestCall() {
     const agentId = window.currentSettingsAgentId;
     if (!agentId) {

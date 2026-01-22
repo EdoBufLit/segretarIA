@@ -320,6 +320,27 @@
 
                 <!-- CONTENT -->
                 <div id="dashboard-content"></div>
+
+                <!-- EXPORT SECTION -->
+                <div class="bg-[var(--panel2)] p-6 rounded-lg shadow border border-[var(--border)] mb-10 text-white">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Esportazione Dati</h2>
+                    <div class="flex flex-wrap gap-4 items-end">
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Dal</label>
+                            <input type="date" id="export-from" class="w-full mt-1 p-2 rounded bg-black/20 border border-[var(--border)] text-white">
+                        </div>
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Al</label>
+                            <input type="date" id="export-to" class="w-full mt-1 p-2 rounded bg-black/20 border border-[var(--border)] text-white">
+                        </div>
+                        <button onclick="triggerExport('minutes')" class="mt-auto px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium shadow transition-colors flex items-center gap-2">
+                            <i data-feather="download"></i> Export Minuti (CSV)
+                        </button>
+                        <button onclick="triggerExport('logs')" class="mt-auto px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded font-medium shadow transition-colors flex items-center gap-2">
+                            <i data-feather="file-text"></i> Export Log (CSV)
+                        </button>
+                    </div>
+                </div>
             </section>
 
             <section id="section-analytics" class="section hidden w-full">
