@@ -228,49 +228,79 @@ class AdminService:
 
         return new_password
 
-    def export_minutes_csv(self, from_date: datetime, to_date: datetime) -> str:
+    def export_minutes_csv_generator(self, from_date: datetime, to_date: datetime):
         """
-        Exports usage minutes (UsageEvents) to a CSV string.
+        Exports usage minutes (UsageEvents) as a CSV generator.
         Cols: UserID, ClientName, AgentID, Date, CallDuration(s), CallID
         """
-        events = self.db.query(UsageEvent).join(User).join(Agent).filter(
-            UsageEvent.started_at >= from_date,
-            UsageEvent.started_at <= to_date
-        ).all()
-
+        # Yield header
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow(["UserID", "ClientName", "AgentID", "Date", "DurationSec", "CallID"])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
 
-        for event in events:
-            writer.writerow([
-                event.user_id,
-                event.user.studio_name or event.user.username,
-                event.agent.agent_id,
-                event.started_at.isoformat(),
-                event.billed_seconds,
-                event.call_id
-            ])
+        # Batch query to avoid OOM
+        batch_size = 1000
+        offset = 0
+        while True:
+            events = self.db.query(UsageEvent).join(User).join(Agent).filter(
+                UsageEvent.started_at >= from_date,
+                UsageEvent.started_at <= to_date
+            ).offset(offset).limit(batch_size).all()
 
-        return output.getvalue()
+            if not events:
+                break
 
-    def export_logs_csv(self, from_date: datetime, to_date: datetime, client_filter: Optional[str] = None) -> str:
+            for event in events:
+                writer.writerow([
+                    event.user_id,
+                    event.user.studio_name or event.user.username,
+                    event.agent.agent_id,
+                    event.started_at.isoformat(),
+                    event.billed_seconds,
+                    event.call_id
+                ])
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+
+            offset += batch_size
+
+    def export_logs_csv_generator(self, from_date: datetime, to_date: datetime, client_filter: Optional[str] = None):
         """
-        Exports logs from logs directory to a CSV string.
+        Exports logs from logs directory as a CSV generator.
         Cols: Timestamp, AgentID, Caller, Status, Duration, Summary
         """
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow(["Timestamp", "AgentID", "Caller", "Status", "Duration", "Summary"])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
 
         logs_dir = "logs"
         if not os.path.exists(logs_dir):
-            return output.getvalue()
+            return
 
         # Gather agent_ids to check
         agent_ids = []
         if client_filter:
-            agent_ids = [client_filter]
+            # Check if client_filter is a User ID (integer)
+            try:
+                user_id = int(client_filter)
+                # Find all agents for this user
+                user = self.db.query(User).filter(User.id == user_id).first()
+                if user:
+                    agent_ids = [agent.agent_id for agent in user.agents]
+                else:
+                    return
+            except ValueError:
+                if client_filter.replace("-", "").replace("_", "").isalnum():
+                     agent_ids = [client_filter]
+                else:
+                     return
         else:
             # List all .log files
             for filename in os.listdir(logs_dir):
@@ -278,7 +308,12 @@ class AdminService:
                     agent_ids.append(filename[:-4])
 
         for agent_id in agent_ids:
-            log_path = os.path.join(logs_dir, f"{agent_id}.log")
+            # Sanitize agent_id for path safety
+            safe_agent_id = os.path.basename(agent_id)
+            if safe_agent_id != agent_id:
+                continue
+
+            log_path = os.path.join(logs_dir, f"{safe_agent_id}.log")
             if not os.path.exists(log_path):
                 continue
 
@@ -291,12 +326,6 @@ class AdminService:
                             continue
 
                         ts_dt = datetime.fromisoformat(ts_str)
-                        # Filter by date range
-                        # We compare aware vs aware or naive vs naive.
-                        # Usually from_date/to_date might be naive or aware depending on how they are constructed.
-                        # Assuming they are naive UTC or similar, we should ensure compatibility.
-                        # For simplicity, if ts_dt has timezone, remove it or compare properly.
-                        # Let's strip timezone for comparison if inputs are naive
                         if from_date.tzinfo is None and ts_dt.tzinfo is not None:
                             ts_dt = ts_dt.replace(tzinfo=None)
 
@@ -305,12 +334,8 @@ class AdminService:
 
                         data = entry.get("data", {})
 
-                        # Extract fields
                         caller = data.get("caller_number", "N/D")
-
-                        # Status check
-                        status = data.get("status", "success") # default success
-
+                        status = data.get("status", "success")
                         duration = data.get("duration_secs", "")
                         summary = data.get("summary") or data.get("analysis", {}).get("summary", "")
 
@@ -322,7 +347,9 @@ class AdminService:
                             duration,
                             summary
                         ])
+                        yield output.getvalue()
+                        output.seek(0)
+                        output.truncate(0)
+
                     except (json.JSONDecodeError, ValueError):
                         continue
-
-        return output.getvalue()

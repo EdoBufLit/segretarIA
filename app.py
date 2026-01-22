@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Request, Body, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from dotenv import load_dotenv
 from mailer import send_email
 from openai import OpenAI
@@ -25,6 +25,7 @@ from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
 from client_service import ClientService
 from billing_service import BillingService
+from backup_db import perform_backup, enforce_retention
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -39,6 +40,20 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 # Logger (va nei log di uvicorn)
 logger = logging.getLogger("uvicorn.error")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Run database backup and retention policy on application startup.
+    """
+    try:
+        logger.info("Starting database backup...")
+        perform_backup()
+        enforce_retention()
+        logger.info("Database backup and retention policy enforcement completed.")
+    except Exception as e:
+        logger.error(f"Error during database backup on startup: {e}")
 
 # OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -509,10 +524,8 @@ async def admin_export_minutes(
             # Set to end of day if only date is provided
             td = td.replace(hour=23, minute=59, second=59)
 
-        csv_content = service.export_minutes_csv(fd, td)
-
-        return HTMLResponse(
-            content=csv_content,
+        return StreamingResponse(
+            service.export_minutes_csv_generator(fd, td),
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename=minutes_{from_date}_{to_date}.csv"}
         )
@@ -545,10 +558,8 @@ async def admin_export_logs(
             td = datetime.strptime(to_date, "%Y-%m-%d")
             td = td.replace(hour=23, minute=59, second=59)
 
-        csv_content = service.export_logs_csv(fd, td, client)
-
-        return HTMLResponse(
-            content=csv_content,
+        return StreamingResponse(
+            service.export_logs_csv_generator(fd, td, client),
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename=logs_{from_date}_{to_date}.csv"}
         )
