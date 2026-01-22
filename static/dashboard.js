@@ -243,20 +243,36 @@ async function initLogsSection() {
     const select = document.getElementById("log-filter-client");
     select.innerHTML = "";
 
-    const res = await fetch("/clients");
-    const data = await res.json();
+    try {
+        const res = await fetch("/clients");
+        if (res.status === 401 || res.status === 403) {
+            // Client mode: hide dropdown
+            window.isClientUser = true;
+            document.querySelector("label[for='log-filter-client']").parentElement.classList.add("hidden");
+            loadLogsTable(0);
+            return;
+        }
 
-    const clientsObj = data.clients || {};
+        const data = await res.json();
+        const clientsObj = data.clients || {};
 
-    for (const agentId in clientsObj) {
-        const cfg = clientsObj[agentId];
-        const op = document.createElement("option");
-        op.value = agentId;
-        op.textContent = cfg.studio_name || agentId;
-        select.appendChild(op);
+        for (const agentId in clientsObj) {
+            const cfg = clientsObj[agentId];
+            const op = document.createElement("option");
+            op.value = agentId;
+            op.textContent = cfg.studio_name || agentId;
+            select.appendChild(op);
+        }
+
+        loadLogsTable(0);
+
+    } catch (e) {
+        console.warn("Could not load clients list", e);
+        // Fallback for client mode on error?
+        window.isClientUser = true;
+        document.querySelector("label[for='log-filter-client']").parentElement.classList.add("hidden");
+        loadLogsTable(0);
     }
-
-    loadLogsTable(0);
 }
 
 
@@ -626,7 +642,8 @@ async function loadLogsTable(offsetOverride = null) {
     const qEl = document.getElementById("log-filter-q");
 
     const client = clientEl.value;
-    if (!client) return;
+    // If not client mode and no client selected, return (wait for selection)
+    if (!window.isClientUser && !client) return;
 
     const params = new URLSearchParams({
         limit: logsLimit,
@@ -638,7 +655,14 @@ async function loadLogsTable(offsetOverride = null) {
     if (toEl.value) params.append("date_to", toEl.value);
     if (qEl.value) params.append("q", qEl.value);
 
-    const res = await fetch(`/logs/${client}/list?` + params.toString());
+    let url;
+    if (window.isClientUser) {
+        url = `/api/logs?` + params.toString();
+    } else {
+        url = `/logs/${client}/list?` + params.toString();
+    }
+
+    const res = await fetch(url);
     const data = await res.json();
 
     logsTotal = data.total ?? 0;
@@ -646,7 +670,7 @@ async function loadLogsTable(offsetOverride = null) {
 
     // salviamo per sicurezza se un domani ti serve
     window.currentLogItems = items;
-    window.currentLogClient = client;
+    window.currentLogClient = client || "me";
 
     const tbody = document.getElementById("logs-table");
     tbody.innerHTML = "";
@@ -657,7 +681,7 @@ async function loadLogsTable(offsetOverride = null) {
 
         tr.innerHTML = `
             <td class="border p-2">${item.timestamp}</td>
-            <td class="border p-2">${client}</td>
+            <td class="border p-2">${window.isClientUser ? "Me" : client}</td>
             <td class="border p-2">${item.caller}</td>
             <td class="border p-2 font-bold ${item.status === "failure" ? "text-red-600" : "text-green-600"}">
                 ${item.status}

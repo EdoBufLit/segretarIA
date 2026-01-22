@@ -1079,6 +1079,84 @@ async def login_submit(
     return RedirectResponse(url="/dashboard", status_code=302)
 
 
+def _read_logs(
+    agent_ids: List[str],
+    limit: int = 50,
+    offset: int = 0,
+    status: str = "all",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    q: Optional[str] = None
+):
+    """
+    Helper to read, filter, sort and paginate logs from multiple agent files.
+    """
+    items = []
+
+    df = datetime.fromisoformat(date_from).date() if date_from else None
+    dt = datetime.fromisoformat(date_to).date() if date_to else None
+
+    for agent_id in agent_ids:
+        log_path = LOGS_DIR / f"{agent_id}.log"
+        if not log_path.exists():
+            continue
+
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    raw = json.loads(line)
+                    ts = raw.get("timestamp")
+                    if not ts:
+                        continue
+                    d = datetime.fromisoformat(ts)
+                    d_date = d.date()
+
+                    # --- FILTRO DATA ---
+                    if df and d_date < df:
+                        continue
+                    if dt and d_date > dt:
+                        continue
+
+                    # --- DETERMINA SUCCESS / FAILURE ---
+                    analysis = raw.get("data", {}).get("analysis", {})
+                    call_ok = analysis.get("call_successful")
+                    is_failure = (call_ok == "failure")
+
+                    if status == "success" and is_failure:
+                        continue
+                    if status == "failure" and not is_failure:
+                        continue
+
+                    # --- COSTRUZIONE ITEM ---
+                    item = {
+                        "timestamp": ts,
+                        "caller": raw.get("data", {}).get("user_id", "unknown"),
+                        "status": "failure" if is_failure else "success",
+                        "summary": raw.get("data", {}).get("analysis", {}).get("transcript_summary", "").strip(),
+                        "duration_secs": raw.get("data", {}).get("metadata", {}).get("call_duration_secs", None),
+                        "raw": raw  # per modal dettagliata
+                    }
+
+                    # --- SEARCH ---
+                    if q:
+                        q_low = q.lower()
+                        if q_low not in json.dumps(item, ensure_ascii=False).lower():
+                            continue
+
+                    items.append(item)
+
+                except:
+                    continue
+
+    # Sort by timestamp desc
+    items.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    total = len(items)
+    paginated_items = items[offset:offset + limit]
+
+    return {"status": "ok", "total": total, "items": paginated_items}
+
+
 @app.get("/logs/{agent_id}/list")
 async def get_logs_filtered(
     agent_id: str,
@@ -1091,77 +1169,50 @@ async def get_logs_filtered(
     admin: User = Depends(get_current_admin_user)
 ):
     """
-    Ritorna i log del cliente in formato filtrabile e paginato:
-    - limit, offset
-    - status: all / success / failure
-    - date_from, date_to (YYYY-MM-DD)
-    - q: search su summary, caller, transcript
+    Ritorna i log del cliente in formato filtrabile e paginato (Admin-only).
     """
     maybe_reload_clients()
 
     if agent_id not in CLIENTS:
         raise HTTPException(status_code=404, detail="Cliente non trovato")
 
-    log_path = LOGS_DIR / f"{agent_id}.log"
-    if not log_path.exists():
+    return _read_logs([agent_id], limit, offset, status, date_from, date_to, q)
+
+
+@app.get("/api/logs")
+async def get_my_logs(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    status: str = Query("all"),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
+    q: str = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Ritorna i log dell'utente corrente (Client-scoped).
+    Recupera gli agent_id associati all'utente.
+    """
+    # Force reload user to ensure relationships are loaded
+    # Actually, current_user from get_current_user might not have relationships loaded depending on how it was queried
+    # But lazy loading should work if session is active.
+    # However, get_current_user closes session? No, it depends.
+    # Let's re-query to be safe or ensure eager loading.
+
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    agent_ids = [a.agent_id for a in user.agents]
+
+    if not agent_ids:
+        # If user has no agents assigned but relies on clients.json matching?
+        # The new model uses DB relations. If legacy relying on clients.json, we can't easily map user -> agent_id without DB.
+        # Assuming Phase 4A migration populated UserAgentAccess.
         return {"status": "ok", "total": 0, "items": []}
 
-    items = []
-
-    df = datetime.fromisoformat(date_from).date() if date_from else None
-    dt = datetime.fromisoformat(date_to).date() if date_to else None
-
-    with log_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                raw = json.loads(line)
-                ts = raw.get("timestamp")
-                if not ts:
-                    continue
-                d = datetime.fromisoformat(ts)
-                d_date = d.date()
-
-                # --- FILTRO DATA ---
-                if df and d_date < df:
-                    continue
-                if dt and d_date > dt:
-                    continue
-
-                # --- DETERMINA SUCCESS / FAILURE ---
-                analysis = raw.get("data", {}).get("analysis", {})
-                call_ok = analysis.get("call_successful")
-                is_failure = (call_ok == "failure")
-
-                if status == "success" and is_failure:
-                    continue
-                if status == "failure" and not is_failure:
-                    continue
-
-                # --- COSTRUZIONE ITEM ---
-                item = {
-                    "timestamp": ts,
-                    "caller": raw.get("data", {}).get("user_id", "unknown"),
-                    "status": "failure" if is_failure else "success",
-                    "summary": raw.get("data", {}).get("analysis", {}).get("transcript_summary", "").strip(),
-                    "duration_secs": raw.get("data", {}).get("metadata", {}).get("call_duration_secs", None),
-                    "raw": raw  # per modal dettagliata
-                }
-
-                # --- SEARCH ---
-                if q:
-                    q_low = q.lower()
-                    if q_low not in json.dumps(item, ensure_ascii=False).lower():
-                        continue
-
-                items.append(item)
-
-            except:
-                continue
-
-    total = len(items)
-    items = items[offset:offset + limit]
-
-    return {"status": "ok", "total": total, "items": items}
+    return _read_logs(agent_ids, limit, offset, status, date_from, date_to, q)
 
 
 
