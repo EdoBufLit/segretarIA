@@ -27,7 +27,7 @@ from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
 from stripe_service import StripeService
-from models import Agent
+from models import Agent, Subscription
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -730,9 +730,21 @@ async def elevenlabs_webhook(request: Request):
         if agent_obj:
             # Find owner (Client)
             user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+
+            # Check User Active
             if user and not user.is_active:
                 logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
                 return {"status": "suspended"}
+
+            # Check Subscription Active
+            if user:
+                active_sub = db.query(Subscription).filter(
+                    Subscription.user_id == user.id,
+                    Subscription.state == "active"
+                ).first()
+                if not active_sub:
+                    logger.warning(f"[WEBHOOK] No active subscription for user {user.username} (agent {agent_id}). Blocking.")
+                    return {"status": "suspended"}
 
         # IDEMPOTENCY CHECK
         if duration_secs and agent_id:
@@ -1365,6 +1377,15 @@ async def test_call(agent_id: str, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.agents.contains(agent_obj)).first()
         if user and not user.is_active:
              raise HTTPException(status_code=403, detail="Service suspended due to payment failure.")
+
+        # Check subscription
+        if user:
+            active_sub = db.query(Subscription).filter(
+                Subscription.user_id == user.id,
+                Subscription.state == "active"
+            ).first()
+            if not active_sub:
+                 raise HTTPException(status_code=403, detail="No active subscription.")
 
     maybe_reload_clients()
     if agent_id not in CLIENTS:
