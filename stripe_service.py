@@ -62,7 +62,8 @@ class StripeService:
             logger.error(f"Stripe Checkout Error: {e}")
             raise
 
-    def handle_webhook_event(self, payload: bytes, sig_header: str):
+    def verify_webhook_event(self, payload: bytes, sig_header: str):
+        """Verifies signature and returns (event_type, data)."""
         # MOCK FOR QA
         if self.webhook_secret == "mock":
              import json
@@ -76,15 +77,16 @@ class StripeService:
                     payload, sig_header, self.webhook_secret
                 )
             except ValueError as e:
-                # Invalid payload
                 raise ValueError("Invalid payload")
             except stripe.error.SignatureVerificationError as e:
-                # Invalid signature
                 raise ValueError("Invalid signature")
 
         event_type = event['type']
         data = event['data']['object']
+        return event_type, data
 
+    def process_event(self, event_type: str, data: dict):
+        """Processes the event (DB updates)."""
         if event_type == 'checkout.session.completed':
             self._handle_checkout_completed(data)
         elif event_type == 'invoice.payment_succeeded':
@@ -93,8 +95,6 @@ class StripeService:
             self._handle_payment_failed(data)
         elif event_type == 'customer.subscription.deleted':
             self._handle_subscription_deleted(data)
-
-        return {"status": "success"}
 
     def _handle_checkout_completed(self, session):
         # Activate subscription

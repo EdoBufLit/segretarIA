@@ -30,6 +30,7 @@ from stripe_service import StripeService
 from models import Agent, Subscription
 from queue_utils import get_queue
 from jobs.email_jobs import send_email_job
+from jobs.stripe_jobs import process_stripe_event_job
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -627,10 +628,27 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     service = StripeService(db)
     try:
-        service.handle_webhook_event(payload, sig_header)
-        return {"status": "success"}
+        # Verify and extract data
+        event_type, data = service.verify_webhook_event(payload, sig_header)
+
+        # Enqueue processing
+        try:
+            queue = get_queue()
+            queue.enqueue(process_stripe_event_job, event_type, data)
+            logger.info(f"[STRIPE] Job enqueued: {event_type}")
+        except Exception as e:
+            logger.error(f"[STRIPE] Failed to enqueue job (Redis down?): {e}")
+            # Fallback: Process sync if queue fails?
+            # Or just fail? For reliability, we might want sync fallback.
+            # But task says "Make Stripe webhook handler async via queue".
+            # If queue is down, we can return 500 so Stripe retries later.
+            raise HTTPException(status_code=500, detail="Queue unavailable")
+
+        return {"status": "received"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Stripe webhook failed")
         raise HTTPException(status_code=500, detail="Internal Server Error")
