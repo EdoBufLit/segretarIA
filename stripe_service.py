@@ -90,7 +90,7 @@ class StripeService:
         elif event_type == 'invoice.payment_succeeded':
             pass # Extend subscription?
         elif event_type == 'invoice.payment_failed':
-            pass # Suspend?
+            self._handle_payment_failed(data)
 
         return {"status": "success"}
 
@@ -146,5 +146,36 @@ class StripeService:
             subscription.cycle_end = datetime.utcnow() + timedelta(days=30)
             subscription.stripe_subscription_id = stripe_subscription_id
             # subscription.stripe_price_id = ...
+
+        self.db.commit()
+
+    def _handle_payment_failed(self, invoice):
+        stripe_customer_id = invoice.get('customer')
+        if not stripe_customer_id:
+            logger.error("No customer ID in invoice")
+            return
+
+        user = self.db.query(User).filter_by(stripe_customer_id=stripe_customer_id).first()
+        if not user:
+            logger.error(f"User with stripe_customer_id {stripe_customer_id} not found")
+            return
+
+        logger.info(f"Processing payment failure for user {user.id}")
+
+        # Suspend User
+        user.is_active = False
+
+        # Mark subscription past_due
+        # We need to find the subscription by stripe_subscription_id ideally, or just the active one for the user
+        subscription_id = invoice.get('subscription')
+        if subscription_id:
+            sub = self.db.query(Subscription).filter_by(stripe_subscription_id=subscription_id).first()
+            if sub:
+                sub.state = "past_due"
+        else:
+            # Fallback: update user's active subscription
+            sub = self.db.query(Subscription).filter_by(user_id=user.id, state="active").first()
+            if sub:
+                sub.state = "past_due"
 
         self.db.commit()

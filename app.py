@@ -19,7 +19,7 @@ from fastapi import Form, Depends
 from fastapi.templating import Jinja2Templates
 import httpx
 from sqlalchemy.orm import Session
-from db import get_db
+from db import get_db, SessionLocal
 from models import User
 from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
@@ -27,6 +27,7 @@ from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
 from stripe_service import StripeService
+from models import Agent
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -704,6 +705,20 @@ async def elevenlabs_webhook(request: Request):
 
     # 3b) Agent ID (chi identifica il cliente)
     agent_id: Optional[str] = data.get("agent_id")
+
+    # ENFORCEMENT: Check suspension
+    with SessionLocal() as db:
+        agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+        if agent_obj:
+            # Find owner (Client)
+            # Assuming 1 owner for now or checking all
+            # User.agents is the relationship.
+            # We need to find User where agents contains agent_obj
+            user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+            if user and not user.is_active:
+                logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
+                return {"status": "suspended"}
+
     client_cfg = get_client_config(agent_id)
     studio_name = client_cfg["studio_name"]
     email_to = client_cfg["email_to"]
@@ -1328,11 +1343,18 @@ def enrich_call_with_ai(transcript: str) -> dict:
     # …qui il tuo log_call(entry, agent_id) o simile…
     # …e la parte di email che già hai…
 @app.post("/clients/{agent_id}/test-call")
-async def test_call(agent_id: str):
+async def test_call(agent_id: str, db: Session = Depends(get_db)):
     """
     Avvia una chiamata di test tramite ElevenLabs/Twilio verso il numero di test
     configurato per questo cliente.
     """
+    # ENFORCEMENT: Check suspension
+    agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+    if agent_obj:
+        user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+        if user and not user.is_active:
+             raise HTTPException(status_code=403, detail="Service suspended due to payment failure.")
+
     maybe_reload_clients()
     if agent_id not in CLIENTS:
         raise HTTPException(status_code=404, detail="Cliente non trovato")
