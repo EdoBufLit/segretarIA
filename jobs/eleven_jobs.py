@@ -3,7 +3,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from db import SessionLocal
-from models import Agent, User
+from models import Agent, User, UsageEvent
 from billing_service import BillingService
 from jobs.email_jobs import send_email_job
 from call_utils import log_call, summarize_call, build_email_body_html, extract_transcript_text, enrich_call_with_ai
@@ -103,11 +103,6 @@ def process_elevenlabs_event_job(payload: dict):
             logger.error(f"Metering failed: {e}")
 
     # ENQUEUE EMAIL
-    # We need to find studio name / email to.
-    # In app.py we used get_client_config(agent_id) which loaded from CLIENTS.
-    # Here we don't have access to running app's CLIENTS dict easily unless we reload json.
-    # We can reload clients.json here.
-
     clients_file = os.getenv("CLIENTS_FILE", "clients.json")
     studio_name = STUDIO_NAME
     email_to = os.getenv("EMAIL_TO") # Fallback
