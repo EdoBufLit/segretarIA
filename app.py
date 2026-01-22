@@ -609,24 +609,29 @@ async def elevenlabs_webhook(request: Request):
     # ENFORCEMENT & IDEMPOTENCY
     with SessionLocal() as db:
         agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
-        if agent_obj:
-            # Find owner (Client)
-            user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+        if not agent_obj:
+            logger.warning(f"[WEBHOOK] Unknown agent_id {agent_id}. Blocking.")
+            return {"status": "ignored", "reason": "unknown_agent"}
 
-            # Check User Active
-            if user and not user.is_active:
-                logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
-                return {"status": "suspended"}
+        # Find owner (Client)
+        user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+        if not user:
+            logger.warning(f"[WEBHOOK] Agent {agent_id} has no user. Blocking.")
+            return {"status": "ignored", "reason": "orphaned_agent"}
 
-            # Check Subscription Active
-            if user:
-                active_sub = db.query(Subscription).filter(
-                    Subscription.user_id == user.id,
-                    Subscription.state == "active"
-                ).first()
-                if not active_sub:
-                    logger.warning(f"[WEBHOOK] No active subscription for user {user.username} (agent {agent_id}). Blocking.")
-                    return {"status": "suspended"}
+        # Check User Active
+        if not user.is_active:
+            logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
+            return {"status": "suspended"}
+
+        # Check Subscription Active
+        active_sub = db.query(Subscription).filter(
+            Subscription.user_id == user.id,
+            Subscription.state == "active"
+        ).first()
+        if not active_sub:
+            logger.warning(f"[WEBHOOK] No active subscription for user {user.username} (agent {agent_id}). Blocking.")
+            return {"status": "suspended", "reason": "no_active_subscription"}
 
         # IDEMPOTENCY CHECK
         if duration_secs and agent_id:
@@ -638,17 +643,17 @@ async def elevenlabs_webhook(request: Request):
                     logger.info(f"[WEBHOOK] Duplicate call_id {call_id}. Idempotency check passed. Skipping.")
                     return {"status": "ok", "message": "Duplicate event ignored"}
 
-    # Enqueue processing job
-    try:
-        queue = get_queue()
-        queue.enqueue(process_elevenlabs_event_job, payload)
-        logger.info(f"[WEBHOOK] Job enqueued for agent {agent_id}")
-    except Exception as e:
-        logger.error(f"[WEBHOOK] Failed to enqueue job (Redis down?): {e}")
-        # Fallback logic could be added here, but for now we return 200
-        # and rely on the queue. In real prod, might return 500 to trigger retry.
-        # Given requirement to return fast response, we accept queue dependency.
-        raise HTTPException(status_code=500, detail="Queue unavailable")
+        # Enqueue processing job - MOVED INSIDE VALIDATION SCOPE (or after successful checks)
+        try:
+            queue = get_queue()
+            queue.enqueue(process_elevenlabs_event_job, payload)
+            logger.info(f"[WEBHOOK] Job enqueued for agent {agent_id}")
+        except Exception as e:
+            logger.error(f"[WEBHOOK] Failed to enqueue job (Redis down?): {e}")
+            # Fallback logic could be added here, but for now we return 200
+            # and rely on the queue. In real prod, might return 500 to trigger retry.
+            # Given requirement to return fast response, we accept queue dependency.
+            raise HTTPException(status_code=500, detail="Queue unavailable")
 
     return {"status": "ok", "message": "Webhook received and processing enqueued."}
 
