@@ -653,7 +653,7 @@ async def elevenlabs_webhook(request: Request):
     return {"status": "ok", "message": "Webhook received and processing enqueued."}
 
 @app.get("/clients")
-async def list_clients():
+async def list_clients(admin: User = Depends(get_current_admin_user)):
     """
     Restituisce la lista dei client configurati (agent_id -> dati).
     Prima ricarica dinamicamente clients.json se è cambiato.
@@ -683,7 +683,8 @@ def save_clients_to_file():
 async def add_client(
     agent_id: str = Body(...),
     studio_name: str = Body(...),
-    email_to: str = Body(...)
+    email_to: str = Body(...),
+    admin: User = Depends(get_current_admin_user)
 ):
     """
     Aggiunge un nuovo cliente a clients.json.
@@ -708,7 +709,7 @@ class RemoveClientRequest(BaseModel):
     agent_id: str
 
 @app.post("/clients/remove")
-async def remove_client(body: RemoveClientRequest):
+async def remove_client(body: RemoveClientRequest, admin: User = Depends(get_current_admin_user)):
     maybe_reload_clients()
 
     agent_id = body.agent_id
@@ -733,6 +734,7 @@ async def view_logs_list(
     offset: int = 0,
     status: Optional[str] = None,
     q: Optional[str] = None,
+    admin: User = Depends(get_current_admin_user)
     # date_from, date_to ... si possono aggiungere
 ):
     """
@@ -788,7 +790,7 @@ async def view_logs_list(
     }
 
 @app.get("/logs/{agent_id}")
-async def view_logs(agent_id: str):
+async def view_logs(agent_id: str, admin: User = Depends(get_current_admin_user)):
     """
     Restituisce lo storico completo (legacy endpoint, o per debug).
     """
@@ -814,7 +816,7 @@ async def view_logs(agent_id: str):
 
 
 @app.get("/analytics/global")
-async def analytics_global():
+async def analytics_global(admin: User = Depends(get_current_admin_user)):
     """
     Ritorna statistiche aggregate da TUTTI i log:
     - chiamate totali
@@ -941,7 +943,7 @@ async def analytics_global():
 
 
 @app.get("/analytics/{agent_id}")
-async def analytics_client(agent_id: str):
+async def analytics_client(agent_id: str, admin: User = Depends(get_current_admin_user)):
     """
     Statistiche temporali solo per un client.
     Grafico linea → chiamate ordinate nel tempo.
@@ -1080,7 +1082,8 @@ async def get_logs_filtered(
     status: str = Query("all"),
     date_from: str = Query(None),
     date_to: str = Query(None),
-    q: str = Query(None)
+    q: str = Query(None),
+    admin: User = Depends(get_current_admin_user)
 ):
     """
     Ritorna i log del cliente in formato filtrabile e paginato:
@@ -1162,7 +1165,7 @@ async def get_logs_filtered(
     # …qui il tuo log_call(entry, agent_id) o simile…
     # …e la parte di email che già hai…
 @app.post("/clients/{agent_id}/test-call")
-async def test_call(agent_id: str, db: Session = Depends(get_db)):
+async def test_call(agent_id: str, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     """
     Avvia una chiamata di test tramite ElevenLabs/Twilio verso il numero di test
     configurato per questo cliente.
