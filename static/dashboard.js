@@ -445,69 +445,104 @@ async function triggerTestCall() {
 let dashboardPollInterval = null;
 
 async function updateDashboardStatus() {
+    let isActive = false;
+    let user = {};
+    let sub = {};
+    let success = false;
+
+    // 1. Try /me first
     try {
         const res = await fetch("/me");
         if (res.status === 401 || res.status === 403) {
-            // Stop polling if unauthorized
             if (dashboardPollInterval) clearInterval(dashboardPollInterval);
             window.location.href = "/login";
-            return;
+            return false;
         }
 
-        const data = await res.json();
-        const user = data.user || {};
-        const sub = data.subscription || {};
-
-        // Return active state for the caller (fast polling check)
-        // If sub.state is active, we return true
-        let isActive = (sub.state === "active");
-
-        // 1. Service Status (user.is_active)
-        const srvEl = document.getElementById("status-service");
-        if (srvEl) {
-            if (user.is_active) {
-                srvEl.textContent = "ATTIVO";
-                srvEl.className = "px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30";
-            } else {
-                srvEl.textContent = "SOSPESO";
-                srvEl.className = "px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30";
-            }
+        if (res.ok) {
+            const data = await res.json();
+            user = data.user || {};
+            sub = data.subscription || {};
+            success = true;
         }
-
-        // 2. Billing Status (sub.state)
-        const billEl = document.getElementById("status-billing");
-        if (billEl) {
-            const state = (sub.state || "unknown").toUpperCase();
-            billEl.textContent = state;
-
-            // Color coding
-            if (state === "ACTIVE") {
-                 billEl.className = "text-green-400 font-bold";
-            } else if (state === "PAST_DUE" || state === "CANCELED") {
-                 billEl.className = "text-red-400 font-bold";
-            } else {
-                 billEl.className = "text-[var(--muted)]";
-            }
-        }
-
-        // 3. Plan Label
-        const planContainer = document.getElementById("status-plan-container");
-        const planEl = document.getElementById("status-plan");
-        if (planContainer && planEl) {
-             if (sub.plan_code) {
-                 planEl.textContent = sub.plan_code.toUpperCase();
-                 planContainer.classList.remove("hidden");
-             } else {
-                 planContainer.classList.add("hidden");
-             }
-        }
-
-        return isActive;
-
     } catch (e) {
-        console.warn("Polling status failed", e);
-        return false;
+        console.warn("/me failed, trying fallback...", e);
     }
+
+    // 2. Fallback to /subscription/status if /me failed
+    if (!success) {
+        try {
+            const res = await fetch("/subscription/status");
+            if (res.status === 401 || res.status === 403) {
+                if (dashboardPollInterval) clearInterval(dashboardPollInterval);
+                window.location.href = "/login";
+                return false;
+            }
+            if (res.ok) {
+                const data = await res.json();
+                // Map fallback data to structure expected below
+                sub = {
+                    state: data.state,
+                    plan_code: data.plan_code
+                };
+                // We don't have user.is_active from this endpoint, assume active if sub is active?
+                // Or leave undefined. We'll default to '?' or similar.
+                // Assuming if they can fetch status, they are somewhat active session-wise.
+                user = { is_active: (data.state === "active") };
+            }
+        } catch (e) {
+            console.warn("Fallback polling failed", e);
+            return false;
+        }
+    }
+
+    // Update UI
+    isActive = (sub.state === "active");
+
+    // 1. Service Status (user.is_active)
+    const srvEl = document.getElementById("status-service");
+    if (srvEl) {
+        if (user.is_active === true) {
+            srvEl.textContent = "ATTIVO";
+            srvEl.className = "px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30";
+        } else if (user.is_active === false) {
+            srvEl.textContent = "SOSPESO";
+            srvEl.className = "px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30";
+        } else {
+            srvEl.textContent = "UNK";
+            srvEl.className = "px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30";
+        }
+    }
+
+    // 2. Billing Status (sub.state)
+    const billEl = document.getElementById("status-billing");
+    if (billEl) {
+        const state = (sub.state || "unknown").toUpperCase();
+        billEl.textContent = state;
+
+        // Color coding
+        if (state === "ACTIVE") {
+                billEl.className = "text-green-400 font-bold";
+        } else if (state === "PAST_DUE" || state === "CANCELED") {
+                billEl.className = "text-red-400 font-bold";
+        } else {
+                billEl.className = "text-[var(--muted)]";
+        }
+    }
+
+    // 3. Plan Label
+    const planContainer = document.getElementById("status-plan-container");
+    const planEl = document.getElementById("status-plan");
+    if (planContainer && planEl) {
+            if (sub.plan_code) {
+                planEl.textContent = sub.plan_code.toUpperCase();
+                planContainer.classList.remove("hidden");
+            } else {
+                planContainer.classList.add("hidden");
+            }
+    }
+
+    return isActive;
 }
 
 // Helper: Show Toast
