@@ -483,8 +483,8 @@ async def create_checkout_session(
     try:
         # Assuming we have a configured base URL or use request headers
         base_url = os.getenv("BASE_URL", "http://127.0.0.1:8000")
-        success_url = f"{base_url}/dashboard?checkout=success"
-        cancel_url = f"{base_url}/dashboard?checkout=cancel"
+        success_url = f"{base_url}/dashboard?billing=success"
+        cancel_url = f"{base_url}/dashboard?billing=cancel"
 
         session = service.create_checkout_session(
             user_id=current_user.id,
