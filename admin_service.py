@@ -203,12 +203,16 @@ class AdminService:
         user.password_hash = hash_password(new_password)
         self.db.commit()
 
-        # Audit Log
-        audit_logger.log_action(
-            admin_username=admin_username,
+        # Audit Log (DB + File)
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
             action="reset_password",
-            target=f"user_id={user_id} ({user.username})",
-            details="Password reset to random value"
+            entity_type="user",
+            entity_id=str(user.id),
+            meta={"admin_username": admin_username},
+            admin_username=admin_username,
+            target_str=f"user_id={user_id} ({user.username})"
         )
 
         # Email the user
@@ -228,11 +232,22 @@ class AdminService:
 
         return new_password
 
-    def export_minutes_csv_generator(self, from_date: datetime, to_date: datetime):
+    def export_minutes_csv_generator(self, from_date: datetime, to_date: datetime, admin_username: str = "system"):
         """
         Exports usage minutes (UsageEvents) as a CSV generator.
         Cols: UserID, ClientName, AgentID, Date, CallDuration(s), CallID
         """
+
+        # Audit Log (DB + File)
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
+            action="export_minutes",
+            meta={"from_date": str(from_date), "to_date": str(to_date)},
+            admin_username=admin_username,
+            target_str=f"range={from_date}..{to_date}"
+        )
+
         # Yield header
         output = StringIO()
         writer = csv.writer(output)
@@ -268,11 +283,22 @@ class AdminService:
 
             offset += batch_size
 
-    def export_logs_csv_generator(self, from_date: datetime, to_date: datetime, client_filter: Optional[str] = None):
+    def export_logs_csv_generator(self, from_date: datetime, to_date: datetime, client_filter: Optional[str] = None, admin_username: str = "system"):
         """
         Exports logs from logs directory as a CSV generator.
         Cols: Timestamp, AgentID, Caller, Status, Duration, Summary
         """
+
+        # Audit Log (DB + File)
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
+            action="export_logs",
+            meta={"from_date": str(from_date), "to_date": str(to_date), "client_filter": client_filter},
+            admin_username=admin_username,
+            target_str=f"range={from_date}..{to_date} client={client_filter}"
+        )
+
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow(["Timestamp", "AgentID", "Caller", "Status", "Duration", "Summary"])

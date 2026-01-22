@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from models import User, Subscription, Plan
 import logging
+import audit_logger
 
 logger = logging.getLogger("stripe_service")
 
@@ -151,6 +152,22 @@ class StripeService:
 
         self.db.commit()
 
+        # Audit Log
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="stripe",
+            action="subscription_activated",
+            entity_type="subscription",
+            entity_id=str(subscription.id),
+            meta={
+                "stripe_event": "checkout.session.completed",
+                "stripe_subscription_id": stripe_subscription_id,
+                "plan": plan_code
+            },
+            admin_username="stripe_webhook",
+            target_str=f"user={user.username} plan={plan_code}"
+        )
+
     def _handle_payment_failed(self, invoice):
         stripe_customer_id = invoice.get('customer')
         if not stripe_customer_id:
@@ -181,6 +198,21 @@ class StripeService:
                 sub.state = "past_due"
 
         self.db.commit()
+
+        # Audit Log
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="stripe",
+            action="payment_failed_suspended",
+            entity_type="user",
+            entity_id=str(user.id),
+            meta={
+                "stripe_event": "invoice.payment_failed",
+                "stripe_customer_id": stripe_customer_id
+            },
+            admin_username="stripe_webhook",
+            target_str=f"user={user.username} suspended"
+        )
 
     def _handle_payment_succeeded(self, invoice):
         stripe_customer_id = invoice.get('customer')
@@ -219,6 +251,21 @@ class StripeService:
 
         self.db.commit()
 
+        # Audit Log
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="stripe",
+            action="payment_succeeded_restored",
+            entity_type="user",
+            entity_id=str(user.id),
+            meta={
+                "stripe_event": "invoice.payment_succeeded",
+                "stripe_customer_id": stripe_customer_id
+            },
+            admin_username="stripe_webhook",
+            target_str=f"user={user.username} restored"
+        )
+
     def _handle_subscription_deleted(self, subscription):
         stripe_customer_id = subscription.get('customer')
         stripe_subscription_id = subscription.get('id')
@@ -249,3 +296,18 @@ class StripeService:
             sub.cancel_requested_at = datetime.utcnow() # Technically already canceled
 
         self.db.commit()
+
+        # Audit Log
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="stripe",
+            action="subscription_deleted_suspended",
+            entity_type="user",
+            entity_id=str(user.id),
+            meta={
+                "stripe_event": "customer.subscription.deleted",
+                "stripe_subscription_id": stripe_subscription_id
+            },
+            admin_username="stripe_webhook",
+            target_str=f"user={user.username} canceled"
+        )

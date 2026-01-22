@@ -110,6 +110,8 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "password123")
 CLIENTS_FILE = os.getenv("CLIENTS_FILE", "clients.json")
 CLIENTS: Dict[str, Dict[str, Any]] = {}
 CLIENTS_MTIME: Optional[float] = None
+LOGS_DIR = Path("logs")
+LOGS_DIR.mkdir(exist_ok=True)
 
 class ClientSettingsUpdate(BaseModel):
     studio_name: str | None = None
@@ -378,7 +380,7 @@ async def admin_export_minutes(
             td = td.replace(hour=23, minute=59, second=59)
 
         return StreamingResponse(
-            service.export_minutes_csv_generator(fd, td),
+            service.export_minutes_csv_generator(fd, td, admin.username),
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename=minutes_{from_date}_{to_date}.csv"}
         )
@@ -414,7 +416,7 @@ async def admin_export_logs(
             td = td.replace(hour=23, minute=59, second=59)
 
         return StreamingResponse(
-            service.export_logs_csv_generator(fd, td, client),
+            service.export_logs_csv_generator(fd, td, client, admin.username),
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename=logs_{from_date}_{to_date}.csv"}
         )

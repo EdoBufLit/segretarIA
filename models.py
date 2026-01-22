@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Table,
     func,
+    JSON,
 )
 from sqlalchemy.orm import relationship
 from db import Base
@@ -119,3 +120,15 @@ class PhoneNumber(Base):
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="phone_numbers")
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    actor_type = Column(String, nullable=False)  # 'user', 'system', 'stripe', 'admin'
+    actor_user_id = Column(Integer, nullable=True)  # if user/admin
+    action = Column(String, nullable=False) # 'login', 'reset_password', 'subscription_updated'
+    entity_type = Column(String, nullable=True) # 'user', 'subscription'
+    entity_id = Column(String, nullable=True) # ID of the entity
+    meta_json = Column(JSON, nullable=True) # Extra details
