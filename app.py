@@ -1,14 +1,17 @@
 import os
 import json
+import uuid
+import sentry_sdk
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Request, Body, Query
+from fastapi import FastAPI, HTTPException, Request, Body, Query, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from dotenv import load_dotenv
 from mailer import send_email
 from openai import OpenAI
 import logging
+from logging_config import configure_logging, correlation_id
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime, date, timedelta
@@ -38,15 +41,42 @@ from call_utils import extract_transcript_text, summarize_call, build_email_body
 load_dotenv()
 templates = Jinja2Templates(directory="templates")
 
+# Configure Logging
+configure_logging()
+# Get structlog logger? Or use stdlib which is now intercepted
+logger = logging.getLogger("app")
+
+# Sentry
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        # Set traces_sample_rate to 1.0 to capture 100%
+        # of transactions for performance monitoring.
+        traces_sample_rate=1.0,
+    )
+
 app = FastAPI()
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "super-secret-change-me"),
 )
 
+@app.middleware("http")
+async def add_correlation_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    token = correlation_id.set(request_id)
+    # Bind to Sentry
+    if SENTRY_DSN:
+        sentry_sdk.set_tag("correlation_id", request_id)
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+
+    correlation_id.reset(token)
+    return response
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
-# Logger (va nei log di uvicorn)
-logger = logging.getLogger("uvicorn.error")
 
 
 @app.on_event("startup")

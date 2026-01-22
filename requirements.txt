@@ -12,3 +12,5 @@ psycopg2-binary
 redis
 rq
 stripe
+sentry-sdk
+structlog
