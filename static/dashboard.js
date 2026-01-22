@@ -371,11 +371,91 @@ async function triggerTestCall() {
 // =========================
 
 // =========================
+// POLLING STATUS (Fase 4A Async)
+// =========================
+
+let dashboardPollInterval = null;
+
+async function updateDashboardStatus() {
+    try {
+        const res = await fetch("/me");
+        if (res.status === 401 || res.status === 403) {
+            // Stop polling if unauthorized
+            if (dashboardPollInterval) clearInterval(dashboardPollInterval);
+            window.location.href = "/login";
+            return;
+        }
+
+        const data = await res.json();
+        const user = data.user || {};
+        const sub = data.subscription || {};
+
+        // 1. Service Status (user.is_active)
+        const srvEl = document.getElementById("status-service");
+        if (srvEl) {
+            if (user.is_active) {
+                srvEl.textContent = "ATTIVO";
+                srvEl.className = "px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30";
+            } else {
+                srvEl.textContent = "SOSPESO";
+                srvEl.className = "px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30";
+            }
+        }
+
+        // 2. Billing Status (sub.state)
+        const billEl = document.getElementById("status-billing");
+        if (billEl) {
+            const state = (sub.state || "unknown").toUpperCase();
+            billEl.textContent = state;
+
+            // Color coding
+            if (state === "ACTIVE") {
+                 billEl.className = "text-green-400 font-bold";
+            } else if (state === "PAST_DUE" || state === "CANCELED") {
+                 billEl.className = "text-red-400 font-bold";
+            } else {
+                 billEl.className = "text-[var(--muted)]";
+            }
+        }
+
+        // 3. Plan Label
+        const planContainer = document.getElementById("status-plan-container");
+        const planEl = document.getElementById("status-plan");
+        if (planContainer && planEl) {
+             if (sub.plan_code) {
+                 planEl.textContent = sub.plan_code.toUpperCase();
+                 planContainer.classList.remove("hidden");
+             } else {
+                 planContainer.classList.add("hidden");
+             }
+        }
+
+    } catch (e) {
+        console.warn("Polling status failed", e);
+    }
+}
+
+// Start polling
+function startStatusPolling() {
+    // Initial call
+    updateDashboardStatus();
+    // Poll every 15s
+    dashboardPollInterval = setInterval(updateDashboardStatus, 15000);
+}
+
+
+// =========================
 // BOOTSTRAP ESPORTATO
 // =========================
 
 async function initDashboard() {
+    // Render static structure
     renderDashboardUI();
+
+    // Start Polling Status Bar
+    startStatusPolling();
+
+    // Existing Logic
     await loadClients();
     await renderGlobalChart();
 }

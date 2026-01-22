@@ -985,11 +985,43 @@ async def logout(request: Request):
 
 
 @app.get("/me")
-async def read_users_me(current_user: User = Depends(get_current_user)):
+async def read_users_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Find active subscription (or just the latest one)
+    # We prioritize 'active' status. If none active, we take the most recent one.
+    subscription_data = None
+
+    # Simple query for active subscription first
+    sub = db.query(Subscription).filter(
+        Subscription.user_id == current_user.id,
+        Subscription.state == "active"
+    ).first()
+
+    if not sub:
+        # Fallback to any latest subscription
+        sub = db.query(Subscription).filter(
+            Subscription.user_id == current_user.id
+        ).order_by(Subscription.created_at.desc()).first()
+
+    if sub:
+        subscription_data = {
+            "state": sub.state,
+            "plan_code": sub.plan.code if sub.plan else None,
+            "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
+            "stripe_subscription_id": sub.stripe_subscription_id,
+            "stripe_price_id": sub.stripe_price_id
+        }
+
     return {
-        "username": current_user.username,
-        "role": current_user.role,
-        "studio_name": current_user.studio_name,
+        "user": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "role": current_user.role,
+            "studio_name": current_user.studio_name,
+            "is_active": current_user.is_active,
+            "stripe_customer_id": current_user.stripe_customer_id
+        },
+        "subscription": subscription_data
     }
 
 
