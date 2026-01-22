@@ -22,6 +22,7 @@ from fastapi import Form, Depends
 from fastapi.templating import Jinja2Templates
 import httpx
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from db import get_db, SessionLocal
 from models import User
 from auth import verify_password, get_current_user, get_current_admin_user
@@ -31,7 +32,7 @@ from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
 from stripe_service import StripeService
 from models import Agent, Subscription
-from queue_utils import get_queue
+from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
@@ -240,7 +241,36 @@ def get_client_config(agent_id: Optional[str]) -> Dict[str, Any]:
         "email_to": email_to,
     }
 
+# ================== HEALTH ENDPOINTS ==================
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+@app.get("/ready")
+async def readiness_check(db: Session = Depends(get_db)):
+    # Check Database
+    try:
+        db.execute(text("SELECT 1"))
+        db_status = "ok"
+    except Exception as e:
+        logger.error(f"Readiness check failed (DB): {e}")
+        db_status = "failed"
+        return Response(status_code=503, content=json.dumps({"status": "failed", "db": db_status}), media_type="application/json")
+
+    # Check Redis
+    redis_status = "ok"
+    try:
+        redis = get_redis_connection()
+        redis.ping()
+    except Exception as e:
+        logger.error(f"Readiness check failed (Redis): {e}")
+        redis_status = "failed"
+        # Redis might be optional depending on config, but if configured, we should check.
+        # Assuming Redis is critical for async jobs.
+        return Response(status_code=503, content=json.dumps({"status": "failed", "db": db_status, "redis": redis_status}), media_type="application/json")
+
+    return {"status": "ok", "db": db_status, "redis": redis_status}
 
 
 # ================== ENDPOINT DI TEST ==================
