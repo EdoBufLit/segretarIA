@@ -706,18 +706,43 @@ async def elevenlabs_webhook(request: Request):
     # 3b) Agent ID (chi identifica il cliente)
     agent_id: Optional[str] = data.get("agent_id")
 
-    # ENFORCEMENT: Check suspension
+    # Metadati chiamata
+    metadata: Dict[str, Any] = data.get("metadata", {}) or {}
+    start_unix = metadata.get("start_time_unix_secs")
+    duration_secs = metadata.get("call_duration_secs")
+
+    started_at: Optional[str] = None
+    ended_at: Optional[str] = None
+
+    try:
+        if isinstance(start_unix, (int, float)):
+            started_dt = datetime.utcfromtimestamp(start_unix)
+            started_at = started_dt.isoformat()
+            if isinstance(duration_secs, (int, float)):
+                ended_dt = datetime.utcfromtimestamp(start_unix + duration_secs)
+                ended_at = ended_dt.isoformat()
+    except Exception as e:
+        logger.warning(f"[WEBHOOK] Errore calcolo orari chiamata: {e}")
+
+    # ENFORCEMENT & IDEMPOTENCY
     with SessionLocal() as db:
         agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
         if agent_obj:
             # Find owner (Client)
-            # Assuming 1 owner for now or checking all
-            # User.agents is the relationship.
-            # We need to find User where agents contains agent_obj
             user = db.query(User).filter(User.agents.contains(agent_obj)).first()
             if user and not user.is_active:
                 logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
                 return {"status": "suspended"}
+
+        # IDEMPOTENCY CHECK
+        if duration_secs and agent_id:
+            call_id = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
+            if call_id:
+                from models import UsageEvent
+                exists = db.query(UsageEvent).filter_by(call_id=call_id).first()
+                if exists:
+                    logger.info(f"[WEBHOOK] Duplicate call_id {call_id}. Idempotency check passed. Skipping.")
+                    return {"status": "ok", "message": "Duplicate event ignored"}
 
     client_cfg = get_client_config(agent_id)
     studio_name = client_cfg["studio_name"]
@@ -732,8 +757,7 @@ async def elevenlabs_webhook(request: Request):
         transcript_lines.append(f"{role}: {msg}")
     transcript_text = "\n".join(transcript_lines) if transcript_lines else "(Transcript vuoto)"
 
-    # 5) Metadati chiamata
-    metadata: Dict[str, Any] = data.get("metadata", {}) or {}
+    # 5) Metadati chiamata (Already parsed above for idempotency)
 
     caller_number = (
         metadata.get("phone_call", {}).get("external_number")
@@ -742,21 +766,6 @@ async def elevenlabs_webhook(request: Request):
         or metadata.get("phone_number")
         or "N/D"
     )
-
-    started_at: Optional[str] = None
-    ended_at: Optional[str] = None
-    start_unix = metadata.get("start_time_unix_secs")
-    duration_secs = metadata.get("call_duration_secs")
-
-    try:
-        if isinstance(start_unix, (int, float)):
-            started_dt = datetime.utcfromtimestamp(start_unix)
-            started_at = started_dt.isoformat()
-            if isinstance(duration_secs, (int, float)):
-                ended_dt = datetime.utcfromtimestamp(start_unix + duration_secs)
-                ended_at = ended_dt.isoformat()
-    except Exception as e:
-        logger.warning(f"[WEBHOOK] Errore calcolo orari chiamata: {e}")
 
     # 6) Riassunto già fornito da ElevenLabs (se presente)
     analysis_obj: Dict[str, Any] = data.get("analysis", {}) or {}
@@ -787,10 +796,14 @@ async def elevenlabs_webhook(request: Request):
     if duration_secs and duration_secs < 3:
         status = "failure"
 
+    # Extract call_id again safely if needed, or use from parsing
+    call_id_log = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
+
     log_call(agent_id, {
         "transcript_text": transcript_text,
         "analysis": analysis_structured,
         "caller_number": caller_number,
+        "call_id": call_id_log,
         "started_at": started_at,
         "ended_at": ended_at,
         "duration_secs": duration_secs,
@@ -832,8 +845,6 @@ async def elevenlabs_webhook(request: Request):
                     started_at=datetime.fromisoformat(started_at) if started_at else datetime.utcnow() - timedelta(seconds=duration_secs),
                     ended_at=datetime.fromisoformat(ended_at) if ended_at else datetime.utcnow()
                 )
-        else:
-            logger.warning("[METERING] No unique call_id found in webhook payload.")
 
     return {"status": "ok", "message": "Webhook ricevuto e email inviata."}
 
