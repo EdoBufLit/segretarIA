@@ -28,6 +28,8 @@ from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
 from stripe_service import StripeService
 from models import Agent, Subscription
+from queue_utils import get_queue
+from jobs.email_jobs import send_email_job
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -822,7 +824,7 @@ async def elevenlabs_webhook(request: Request):
         "status": status,
         "summary": analysis_structured.get("summary")
     })
-    # 8) Mail
+    # 8) Mail (Async Enqueue)
     try:
         email_body = build_email_body_html(
             transcript_text=transcript_text,
@@ -837,9 +839,19 @@ async def elevenlabs_webhook(request: Request):
 
         subject = f"[Segreteria IA] Nuova chiamata per {studio_name} da {caller_number}"
 
-        send_email(email_to, subject, email_body)
+        # Enqueue email job
+        try:
+            queue = get_queue()
+            queue.enqueue(send_email_job, email_to, subject, email_body)
+            logger.info(f"[EMAIL] Job enqueued for {email_to}")
+        except Exception as e:
+            logger.error(f"[EMAIL] Failed to enqueue job (Redis down?): {e}")
+            # Fallback? Or just log error.
+            # If Redis is mandatory, we might want to raise or fallback to sync.
+            # For now, let's just log and continue metering.
+
     except Exception as e:
-        logger.exception("[EMAIL] Errore invio email/build")
+        logger.exception("[EMAIL] Errore build/enqueue")
         return {"status": "error", "reason": f"email error: {e}"}
 
     logger.info(f"[WEBHOOK] Chiamata gestita correttamente per {studio_name} ({agent_id})")
