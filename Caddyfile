@@ -4,5 +4,32 @@
 }
 
 :80 {
+    # Redirect to HTTPS (handled automatically by Caddy usually, but explicit here for clarity or if domain is set)
+    # Actually, for ":80" specifically, Caddy assumes HTTP.
+    # If we want automatic HTTPS, we should use a domain name or just let Caddy handle port 443 with ":443" or domain.
+    # The spec asks for "Automatic TLS". Caddy does this by default if a hostname is provided.
+    # Since we don't have a specific domain in the prompt, we'll use a placeholder ":443" or keep ":80" for localhost testing
+    # BUT the spec says "Automatic TLS", which implies production domain usage.
+    # I will configure it for a generic domain block or ":443" with self-signed if local, but better to use a placeholder domain.
+    # Let's use a catch-all or specific domain env var? No, simple Caddyfile.
+    # I will use ":443" and assume Caddy's auto-https logic kicks in or self-signed.
+
+    # Wait, usually you put "example.com" and Caddy does the rest.
+    # I'll put a placeholder domain "localhost" for now which enables local HTTPS,
+    # and comment that it should be replaced with the real domain.
+}
+
+# Production block (replace 'example.com' with real domain)
+{$DOMAIN_NAME:example.com} {
     reverse_proxy web:8000
+
+    header {
+        # Basic security headers
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: https:; font-src 'self' data: https:;"
+    }
 }
