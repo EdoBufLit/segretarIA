@@ -88,7 +88,7 @@ class StripeService:
         if event_type == 'checkout.session.completed':
             self._handle_checkout_completed(data)
         elif event_type == 'invoice.payment_succeeded':
-            pass # Extend subscription?
+            self._handle_payment_succeeded(data)
         elif event_type == 'invoice.payment_failed':
             self._handle_payment_failed(data)
 
@@ -177,5 +177,42 @@ class StripeService:
             sub = self.db.query(Subscription).filter_by(user_id=user.id, state="active").first()
             if sub:
                 sub.state = "past_due"
+
+        self.db.commit()
+
+    def _handle_payment_succeeded(self, invoice):
+        stripe_customer_id = invoice.get('customer')
+        if not stripe_customer_id:
+            return
+
+        user = self.db.query(User).filter_by(stripe_customer_id=stripe_customer_id).first()
+        if not user:
+            return
+
+        logger.info(f"Processing payment success for user {user.id}. Restoring service.")
+
+        # Restore User
+        user.is_active = True
+
+        # Restore Subscription
+        subscription_id = invoice.get('subscription')
+        if subscription_id:
+            sub = self.db.query(Subscription).filter_by(stripe_subscription_id=subscription_id).first()
+            if sub:
+                sub.state = "active"
+                # Update cycle_end if period_end is present
+                lines = invoice.get('lines', {}).get('data', [])
+                if lines:
+                    period_end = lines[0].get('period', {}).get('end')
+                    if period_end:
+                        sub.cycle_end = datetime.fromtimestamp(period_end)
+        else:
+            # Fallback: find past_due subscription
+            sub = self.db.query(Subscription).filter_by(user_id=user.id, state="past_due").first()
+            if sub:
+                sub.state = "active"
+                # Extend simply by 30 days if no period data? Or leave as is if only restoring access.
+                # Assuming simple restoration logic.
+                sub.cycle_end = datetime.utcnow() + timedelta(days=30)
 
         self.db.commit()
