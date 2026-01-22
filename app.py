@@ -31,6 +31,8 @@ from models import Agent, Subscription
 from queue_utils import get_queue
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
+from jobs.eleven_jobs import process_elevenlabs_event_job
+from call_utils import extract_transcript_text, summarize_call, build_email_body_html, enrich_call_with_ai, log_call
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -60,9 +62,6 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error during database backup on startup: {e}")
 
-# OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 # Nome della TUA agency / servizio, non del singolo studio
 STUDIO_NAME = os.getenv("STUDIO_NAME", "Segreteria IA")
 
@@ -78,8 +77,6 @@ ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "password123")
 
 # ================== CONFIG MULTI-CLIENT (clients.json) ==================
-LOGS_DIR = Path("logs")
-LOGS_DIR.mkdir(exist_ok=True)
 CLIENTS_FILE = os.getenv("CLIENTS_FILE", "clients.json")
 CLIENTS: Dict[str, Dict[str, Any]] = {}
 CLIENTS_MTIME: Optional[float] = None
@@ -145,19 +142,6 @@ def maybe_reload_clients() -> None:
     if CLIENTS_MTIME is None or current_mtime != CLIENTS_MTIME:
         logger.info("[CLIENTS] Rilevato cambiamento in clients.json, ricarico...")
         CLIENTS = load_clients()
-
-def log_call(agent_id: str, data: Dict[str, Any]):
-    """Salva una riga JSON in logs/<agent_id>.log"""
-    log_path = LOGS_DIR / f"{agent_id}.log"
-    entry = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "agent_id": agent_id,
-        "data": data
-    }
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    logger.info(f"[LOG] Salvata chiamata in {log_path}")
-
 
 @app.get("/clients/{agent_id}")
 async def get_client(agent_id: str):
@@ -225,175 +209,6 @@ def get_client_config(agent_id: Optional[str]) -> Dict[str, Any]:
     }
 
 
-# ================== FUNZIONI DI SUPPORTO ==================
-
-def summarize_call(transcript: str, existing_summary: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Usa OpenAI per:
-    - creare un riassunto leggibile della chiamata
-    - estrarre metadati strutturati utili allo studio.
-    """
-
-    meta_text = ""
-    if existing_summary:
-        meta_text = f"\n\n[RIASSUNTO ORIGINALE ELEVENLABS]\n{existing_summary}"
-
-    combined_text = transcript + meta_text
-
-    instructions = f"""
-Sei un assistente per la segreteria di uno studio professionale italiano.
-Ti fornirò il transcript completo di una telefonata con un potenziale cliente.
-
-Devi:
-1. Creare un riassunto breve e chiaro (5-10 righe) per il professionista.
-2. Estrarre alcuni dati strutturati.
-
-IMPORTANTISSIMO:
-- Rispondi SOLO con un oggetto JSON valido.
-- Nessun testo prima o dopo il JSON.
-- Nessun commento, nessuna spiegazione.
-
-Struttura JSON richiesta:
-
-{{
-  "summary": "riassunto leggibile in italiano",
-  "client_name": "nome e cognome se presente, altrimenti null",
-  "client_phone": "numero di telefono se presente nel testo, altrimenti null",
-  "client_email": "email se presente, altrimenti null",
-  "matter_type": "civile/penale/lavoro/famiglia/condominio/recupero crediti/altro/ignoto",
-  "main_reason": "motivo principale in 1-2 frasi",
-  "urgency": "oggi/poche_giorni/non_urgente/ignoto",
-  "deadlines": "eventuali scadenze/udienze citate, oppure null",
-  "existing_client": "si/no/ignoto",
-  "lawyer_name": "nome avvocato o professionista se citato, altrimenti null",
-  "counterparty": "eventuale controparte (persona/azienda/ente) oppure null",
-  "suggested_followup": "cosa dovrebbe fare lo studio come prossimo passo in 1-2 frasi"
-}}
-
-Transcript:
-\"\"\"{combined_text}\"\"\"
-"""
-
-    resp = client.responses.create(
-        model="gpt-4o-mini",
-        input=instructions,
-    )
-
-    raw = resp.output_text
-
-    # Proviamo a ripulire eventuale testo extra e prendere solo il JSON
-    try:
-        start = raw.index("{")
-        end = raw.rindex("}") + 1
-        json_str = raw[start:end]
-    except ValueError:
-        json_str = raw
-
-    try:
-        data = json.loads(json_str)
-        if not isinstance(data, dict):
-            raise TypeError("Output non è un oggetto JSON")
-        return data
-    except Exception as e:
-        logger.warning(f"[OPENAI] JSON non valido, uso fallback: {e}")
-        return {
-            "summary": raw,
-            "client_name": None,
-            "client_phone": None,
-            "client_email": None,
-            "matter_type": "ignoto",
-            "main_reason": None,
-            "urgency": "ignoto",
-            "deadlines": None,
-            "existing_client": "ignoto",
-            "lawyer_name": None,
-            "counterparty": None,
-            "suggested_followup": None,
-        }
-
-
-def build_email_body_html(
-    transcript_text: str,
-    analysis: Dict[str, Any],
-    caller_number: str,
-    started_at: Optional[str],
-    ended_at: Optional[str],
-    raw_payload: Dict[str, Any],  # non usato, solo compatibilità
-    studio_name: str,
-    agency_name: str,
-) -> str:
-    """
-    Costruisce una mail HTML elegante per il singolo studio.
-    Nessun transcript, nessun raw payload.
-    Solo dati utili, puliti.
-    """
-
-    started = started_at or "N/D"
-    ended = ended_at or "N/D"
-
-    urgenza = analysis.get("urgency", "ignoto")
-
-    if urgenza == "oggi":
-        urgenza_label = "URGENTE (entro oggi)"
-        urgenza_color = "#ff3b30"
-    elif urgenza == "poche_giorni":
-        urgenza_label = "Importante (entro pochi giorni)"
-        urgenza_color = "#ff9500"
-    elif urgenza == "non_urgente":
-        urgenza_label = "Non urgente"
-        urgenza_color = "#34c759"
-    else:
-        urgenza_label = "Urgenza non chiara"
-        urgenza_color = "#8e8e93"
-
-    html = f"""
-<html>
-  <body style="font-family: Arial, sans-serif; background-color: #f7f7f7; padding: 20px;">
-    
-    <div style="max-width: 650px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
-
-      <h2 style="color: #333;">Segreteria IA – Nuova chiamata per <span style="color:#0066cc;">{studio_name}</span></h2>
-      <p style="color:#777; font-size:13px; margin-top:4px;">Servizio gestito da {agency_name}</p>
-
-      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-
-      <h3 style="color: #333; margin-bottom: 10px;">📞 Dati della chiamata</h3>
-      <p><strong>Numero chiamante:</strong> {caller_number}</p>
-      <p><strong>Inizio:</strong> {started}</p>
-      <p><strong>Fine:</strong> {ended}</p>
-
-      <div style="margin: 20px 0; padding: 12px 15px; background: {urgenza_color}; color: white; border-radius: 8px; font-size: 15px;">
-        <strong>URGENZA:</strong> {urgenza_label}
-      </div>
-
-      <h3 style="color: #333; margin-bottom: 10px;">👤 Dati cliente (estratti automaticamente)</h3>
-      <p><strong>Nome:</strong> {analysis.get('client_name')}</p>
-      <p><strong>Telefono dichiarato:</strong> {analysis.get('client_phone')}</p>
-      <p><strong>Email dichiarata:</strong> {analysis.get('client_email')}</p>
-      <p><strong>Cliente già esistente:</strong> {analysis.get('existing_client')}</p>
-      <p><strong>Professionista citato:</strong> {analysis.get('lawyer_name')}</p>
-
-      <h3 style="color: #333; margin-top: 25px;">📂 Oggetto della questione</h3>
-      <p><strong>Tipo di questione:</strong> {analysis.get('matter_type')}</p>
-      <p><strong>Motivo principale:</strong> {analysis.get('main_reason')}</p>
-      <p><strong>Controparte:</strong> {analysis.get('counterparty')}</p>
-      <p><strong>Scadenze/udienze:</strong> {analysis.get('deadlines')}</p>
-
-      <h3 style="color: #333; margin-top: 25px;">📝 Riassunto della chiamata</h3>
-      <p style="white-space: pre-line; line-height: 1.5;">{analysis.get('summary')}</p>
-
-      <h3 style="color: #333; margin-top: 25px;">👉 Prossimi passi consigliati</h3>
-      <p>{analysis.get('suggested_followup')}</p>
-
-      <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0 15px;">
-      <p style="color:#999; font-size:12px; text-align:center;">Email generata automaticamente dalla Segreteria IA.</p>
-
-    </div>
-  </body>
-</html>
-    """
-
-    return html
 
 
 # ================== ENDPOINT DI TEST ==================
@@ -656,21 +471,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
 # ================== WEBHOOK ELEVENLABS ==================
 
-def extract_transcript_text(payload: dict) -> str:
-    """
-    Unisce i messaggi 'agent' e 'user' in un testo unico, leggibile.
-    """
-    turns = payload.get("data", {}).get("transcript", [])
-    lines = []
-    for t in turns:
-        role = t.get("role")
-        msg = t.get("message", "")
-        if not msg:
-            continue
-        prefix = "Cliente: " if role == "user" else "Assistente: "
-        lines.append(prefix + msg)
-    return "\n".join(lines)
-
 @app.post("/elevenlabs/webhook")
 async def elevenlabs_webhook(request: Request):
     """
@@ -776,119 +576,19 @@ async def elevenlabs_webhook(request: Request):
                     logger.info(f"[WEBHOOK] Duplicate call_id {call_id}. Idempotency check passed. Skipping.")
                     return {"status": "ok", "message": "Duplicate event ignored"}
 
-    client_cfg = get_client_config(agent_id)
-    studio_name = client_cfg["studio_name"]
-    email_to = client_cfg["email_to"]
-
-    # 4) Transcript
-    transcript_turns = data.get("transcript", []) or []
-    transcript_lines: List[str] = []
-    for turn in transcript_turns:
-        role = str(turn.get("role", "unknown")).upper()
-        msg = turn.get("message", "")
-        transcript_lines.append(f"{role}: {msg}")
-    transcript_text = "\n".join(transcript_lines) if transcript_lines else "(Transcript vuoto)"
-
-    # 5) Metadati chiamata (Already parsed above for idempotency)
-
-    caller_number = (
-        metadata.get("phone_call", {}).get("external_number")
-        or metadata.get("from_number")
-        or metadata.get("caller_number")
-        or metadata.get("phone_number")
-        or "N/D"
-    )
-
-    # 6) Riassunto già fornito da ElevenLabs (se presente)
-    analysis_obj: Dict[str, Any] = data.get("analysis", {}) or {}
-    el_summary: Optional[str] = analysis_obj.get("transcript_summary")
-
-    # 7) OpenAI per analisi strutturata
+    # Enqueue processing job
     try:
-        analysis_structured = summarize_call(transcript_text, el_summary)
+        queue = get_queue()
+        queue.enqueue(process_elevenlabs_event_job, payload)
+        logger.info(f"[WEBHOOK] Job enqueued for agent {agent_id}")
     except Exception as e:
-        logger.exception("[OPENAI] Errore in summarize_call")
-        analysis_structured = {
-            "summary": transcript_text,
-            "client_name": None,
-            "client_phone": None,
-            "client_email": None,
-            "matter_type": "ignoto",
-            "main_reason": None,
-            "urgency": "ignoto",
-            "deadlines": None,
-            "existing_client": "ignoto",
-            "lawyer_name": None,
-            "counterparty": None,
-            "suggested_followup": None,
-        }
+        logger.error(f"[WEBHOOK] Failed to enqueue job (Redis down?): {e}")
+        # Fallback logic could be added here, but for now we return 200
+        # and rely on the queue. In real prod, might return 500 to trigger retry.
+        # Given requirement to return fast response, we accept queue dependency.
+        raise HTTPException(status_code=500, detail="Queue unavailable")
 
-    # Determinazione status
-    status = "success"
-    if duration_secs and duration_secs < 3:
-        status = "failure"
-
-    # Extract call_id again safely if needed, or use from parsing
-    call_id_log = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
-
-    log_call(agent_id, {
-        "transcript_text": transcript_text,
-        "analysis": analysis_structured,
-        "caller_number": caller_number,
-        "call_id": call_id_log,
-        "started_at": started_at,
-        "ended_at": ended_at,
-        "duration_secs": duration_secs,
-        "status": status,
-        "summary": analysis_structured.get("summary")
-    })
-    # 8) Mail (Async Enqueue)
-    try:
-        email_body = build_email_body_html(
-            transcript_text=transcript_text,
-            analysis=analysis_structured,
-            caller_number=caller_number,
-            started_at=started_at,
-            ended_at=ended_at,
-            raw_payload=payload,
-            studio_name=studio_name,
-            agency_name=STUDIO_NAME,
-        )
-
-        subject = f"[Segreteria IA] Nuova chiamata per {studio_name} da {caller_number}"
-
-        # Enqueue email job
-        try:
-            queue = get_queue()
-            queue.enqueue(send_email_job, email_to, subject, email_body)
-            logger.info(f"[EMAIL] Job enqueued for {email_to}")
-        except Exception as e:
-            logger.error(f"[EMAIL] Failed to enqueue job (Redis down?): {e}")
-            # Fallback? Or just log error.
-            # If Redis is mandatory, we might want to raise or fallback to sync.
-            # For now, let's just log and continue metering.
-
-    except Exception as e:
-        logger.exception("[EMAIL] Errore build/enqueue")
-        return {"status": "error", "reason": f"email error: {e}"}
-
-    logger.info(f"[WEBHOOK] Chiamata gestita correttamente per {studio_name} ({agent_id})")
-
-    # Meter the call
-    if duration_secs and agent_id:
-        call_id = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
-        if call_id:
-            with SessionLocal() as db:
-                billing_service = BillingService(db)
-                billing_service.meter_call(
-                    agent_id=agent_id,
-                    duration_secs=int(duration_secs),
-                    call_id=call_id,
-                    started_at=datetime.fromisoformat(started_at) if started_at else datetime.utcnow() - timedelta(seconds=duration_secs),
-                    ended_at=datetime.fromisoformat(ended_at) if ended_at else datetime.utcnow()
-                )
-
-    return {"status": "ok", "message": "Webhook ricevuto e email inviata."}
+    return {"status": "ok", "message": "Webhook received and processing enqueued."}
 
 @app.get("/clients")
 async def list_clients():
@@ -1342,53 +1042,6 @@ async def get_logs_filtered(
 
     return {"status": "ok", "total": total, "items": items}
 
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-def enrich_call_with_ai(transcript: str) -> dict:
-    """
-    Usa OpenAI per estrarre info strutturate dalla chiamata.
-    Ritorna sempre un dict Python, anche se il modello sbarella.
-    """
-    system_msg = (
-        "Sei un assistente che analizza le trascrizioni delle chiamate "
-        "a uno studio legale.\n"
-        "Devi restituire SOLO un JSON valido con queste chiavi:\n"
-        "category: string (es. 'lavoro', 'civile', 'penale', 'famiglia', 'amministrativo', 'altro')\n"
-        "urgency: string ('bassa','media','alta','estrema')\n"
-        "callback_needed: boolean\n"
-        "short_title: string (max 80 caratteri, titolo riassuntivo)\n"
-        "tags: lista di 2-5 parole chiave\n"
-        "description: breve descrizione (1-2 frasi sintetiche in italiano)\n"
-    )
-
-    user_msg = (
-        "Trascrizione completa della chiamata (in italiano):\n\n"
-        f"{transcript}"
-    )
-
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.2,
-        )
-        content = resp.choices[0].message.content
-        data = json.loads(content)
-        return data
-    except Exception as e:
-        print("AI enrichment error:", e)
-        return {
-            "category": "altro",
-            "urgency": "media",
-            "callback_needed": True,
-            "short_title": "Richiesta non classificata",
-            "tags": [],
-            "description": "Impossibile classificare la chiamata (errore interno).",
-        }
 
 
 
