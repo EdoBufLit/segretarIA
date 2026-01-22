@@ -91,6 +91,8 @@ class StripeService:
             self._handle_payment_succeeded(data)
         elif event_type == 'invoice.payment_failed':
             self._handle_payment_failed(data)
+        elif event_type == 'customer.subscription.deleted':
+            self._handle_subscription_deleted(data)
 
         return {"status": "success"}
 
@@ -214,5 +216,36 @@ class StripeService:
                 # Extend simply by 30 days if no period data? Or leave as is if only restoring access.
                 # Assuming simple restoration logic.
                 sub.cycle_end = datetime.utcnow() + timedelta(days=30)
+
+        self.db.commit()
+
+    def _handle_subscription_deleted(self, subscription):
+        stripe_customer_id = subscription.get('customer')
+        stripe_subscription_id = subscription.get('id')
+
+        if not stripe_customer_id:
+            return
+
+        user = self.db.query(User).filter_by(stripe_customer_id=stripe_customer_id).first()
+        if not user:
+            return
+
+        logger.info(f"Processing subscription deletion for user {user.id}")
+
+        # Suspend User
+        user.is_active = False
+
+        # Mark subscription canceled
+        sub = None
+        if stripe_subscription_id:
+            sub = self.db.query(Subscription).filter_by(stripe_subscription_id=stripe_subscription_id).first()
+
+        if not sub:
+             # Fallback
+             sub = self.db.query(Subscription).filter_by(user_id=user.id).order_by(Subscription.id.desc()).first()
+
+        if sub:
+            sub.state = "canceled"
+            sub.cancel_requested_at = datetime.utcnow() # Technically already canceled
 
         self.db.commit()
