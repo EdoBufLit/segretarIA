@@ -26,6 +26,7 @@ from admin_service import AdminService
 from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
+from stripe_service import StripeService
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -519,9 +520,12 @@ async def admin_export_minutes(
 
         try:
             td = datetime.fromisoformat(to_date)
+            # If input was just YYYY-MM-DD (len 10), fromisoformat returns midnight.
+            # We want inclusive end date for logs/minutes.
+            if len(to_date) == 10:
+                 td = td.replace(hour=23, minute=59, second=59)
         except ValueError:
             td = datetime.strptime(to_date, "%Y-%m-%d")
-            # Set to end of day if only date is provided
             td = td.replace(hour=23, minute=59, second=59)
 
         return StreamingResponse(
@@ -554,6 +558,8 @@ async def admin_export_logs(
 
         try:
             td = datetime.fromisoformat(to_date)
+            if len(to_date) == 10:
+                 td = td.replace(hour=23, minute=59, second=59)
         except ValueError:
             td = datetime.strptime(to_date, "%Y-%m-%d")
             td = td.replace(hour=23, minute=59, second=59)
@@ -584,6 +590,47 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/billing/checkout")
+async def create_checkout_session(
+    plan_code: str = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    service = StripeService(db)
+    try:
+        # Assuming we have a configured base URL or use request headers
+        base_url = os.getenv("BASE_URL", "http://127.0.0.1:8000")
+        success_url = f"{base_url}/dashboard?checkout=success"
+        cancel_url = f"{base_url}/dashboard?checkout=cancel"
+
+        session = service.create_checkout_session(
+            user_id=current_user.id,
+            plan_code=plan_code,
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+        return {"status": "ok", "checkout_url": session.url}
+    except Exception as e:
+        logger.exception("Checkout creation failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    service = StripeService(db)
+    try:
+        service.handle_webhook_event(payload, sig_header)
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Stripe webhook failed")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 # ================== WEBHOOK ELEVENLABS ==================
