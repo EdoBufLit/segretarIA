@@ -609,24 +609,29 @@ async def elevenlabs_webhook(request: Request):
     # ENFORCEMENT & IDEMPOTENCY
     with SessionLocal() as db:
         agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
-        if agent_obj:
-            # Find owner (Client)
-            user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+        if not agent_obj:
+            logger.warning(f"[WEBHOOK] Unknown agent_id {agent_id}. Blocking.")
+            return {"status": "ignored", "reason": "unknown_agent"}
 
-            # Check User Active
-            if user and not user.is_active:
-                logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
-                return {"status": "suspended"}
+        # Find owner (Client)
+        user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+        if not user:
+            logger.warning(f"[WEBHOOK] Agent {agent_id} has no user. Blocking.")
+            return {"status": "ignored", "reason": "orphaned_agent"}
 
-            # Check Subscription Active
-            if user:
-                active_sub = db.query(Subscription).filter(
-                    Subscription.user_id == user.id,
-                    Subscription.state == "active"
-                ).first()
-                if not active_sub:
-                    logger.warning(f"[WEBHOOK] No active subscription for user {user.username} (agent {agent_id}). Blocking.")
-                    return {"status": "suspended"}
+        # Check User Active
+        if not user.is_active:
+            logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
+            return {"status": "suspended"}
+
+        # Check Subscription Active
+        active_sub = db.query(Subscription).filter(
+            Subscription.user_id == user.id,
+            Subscription.state == "active"
+        ).first()
+        if not active_sub:
+            logger.warning(f"[WEBHOOK] No active subscription for user {user.username} (agent {agent_id}). Blocking.")
+            return {"status": "suspended", "reason": "no_active_subscription"}
 
         # IDEMPOTENCY CHECK
         if duration_secs and agent_id:
@@ -638,22 +643,22 @@ async def elevenlabs_webhook(request: Request):
                     logger.info(f"[WEBHOOK] Duplicate call_id {call_id}. Idempotency check passed. Skipping.")
                     return {"status": "ok", "message": "Duplicate event ignored"}
 
-    # Enqueue processing job
-    try:
-        queue = get_queue()
-        queue.enqueue(process_elevenlabs_event_job, payload)
-        logger.info(f"[WEBHOOK] Job enqueued for agent {agent_id}")
-    except Exception as e:
-        logger.error(f"[WEBHOOK] Failed to enqueue job (Redis down?): {e}")
-        # Fallback logic could be added here, but for now we return 200
-        # and rely on the queue. In real prod, might return 500 to trigger retry.
-        # Given requirement to return fast response, we accept queue dependency.
-        raise HTTPException(status_code=500, detail="Queue unavailable")
+        # Enqueue processing job - MOVED INSIDE VALIDATION SCOPE (or after successful checks)
+        try:
+            queue = get_queue()
+            queue.enqueue(process_elevenlabs_event_job, payload)
+            logger.info(f"[WEBHOOK] Job enqueued for agent {agent_id}")
+        except Exception as e:
+            logger.error(f"[WEBHOOK] Failed to enqueue job (Redis down?): {e}")
+            # Fallback logic could be added here, but for now we return 200
+            # and rely on the queue. In real prod, might return 500 to trigger retry.
+            # Given requirement to return fast response, we accept queue dependency.
+            raise HTTPException(status_code=500, detail="Queue unavailable")
 
     return {"status": "ok", "message": "Webhook received and processing enqueued."}
 
 @app.get("/clients")
-async def list_clients():
+async def list_clients(admin: User = Depends(get_current_admin_user)):
     """
     Restituisce la lista dei client configurati (agent_id -> dati).
     Prima ricarica dinamicamente clients.json se è cambiato.
@@ -683,7 +688,8 @@ def save_clients_to_file():
 async def add_client(
     agent_id: str = Body(...),
     studio_name: str = Body(...),
-    email_to: str = Body(...)
+    email_to: str = Body(...),
+    admin: User = Depends(get_current_admin_user)
 ):
     """
     Aggiunge un nuovo cliente a clients.json.
@@ -708,7 +714,7 @@ class RemoveClientRequest(BaseModel):
     agent_id: str
 
 @app.post("/clients/remove")
-async def remove_client(body: RemoveClientRequest):
+async def remove_client(body: RemoveClientRequest, admin: User = Depends(get_current_admin_user)):
     maybe_reload_clients()
 
     agent_id = body.agent_id
@@ -733,6 +739,7 @@ async def view_logs_list(
     offset: int = 0,
     status: Optional[str] = None,
     q: Optional[str] = None,
+    admin: User = Depends(get_current_admin_user)
     # date_from, date_to ... si possono aggiungere
 ):
     """
@@ -788,7 +795,7 @@ async def view_logs_list(
     }
 
 @app.get("/logs/{agent_id}")
-async def view_logs(agent_id: str):
+async def view_logs(agent_id: str, admin: User = Depends(get_current_admin_user)):
     """
     Restituisce lo storico completo (legacy endpoint, o per debug).
     """
@@ -814,7 +821,7 @@ async def view_logs(agent_id: str):
 
 
 @app.get("/analytics/global")
-async def analytics_global():
+async def analytics_global(admin: User = Depends(get_current_admin_user)):
     """
     Ritorna statistiche aggregate da TUTTI i log:
     - chiamate totali
@@ -941,7 +948,7 @@ async def analytics_global():
 
 
 @app.get("/analytics/{agent_id}")
-async def analytics_client(agent_id: str):
+async def analytics_client(agent_id: str, admin: User = Depends(get_current_admin_user)):
     """
     Statistiche temporali solo per un client.
     Grafico linea → chiamate ordinate nel tempo.
@@ -986,43 +993,62 @@ async def logout(request: Request):
 
 @app.get("/me")
 async def read_users_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Find active subscription (or just the latest one)
-    # We prioritize 'active' status. If none active, we take the most recent one.
-    subscription_data = None
+    try:
+        # Find active subscription (or just the latest one)
+        # We prioritize 'active' status. If none active, we take the most recent one.
+        subscription_data = None
 
-    # Simple query for active subscription first
-    sub = db.query(Subscription).filter(
-        Subscription.user_id == current_user.id,
-        Subscription.state == "active"
-    ).first()
-
-    if not sub:
-        # Fallback to any latest subscription
+        # Simple query for active subscription first
         sub = db.query(Subscription).filter(
-            Subscription.user_id == current_user.id
-        ).order_by(Subscription.created_at.desc()).first()
+            Subscription.user_id == current_user.id,
+            Subscription.state == "active"
+        ).first()
 
-    if sub:
-        subscription_data = {
-            "state": sub.state,
-            "plan_code": sub.plan.code if sub.plan else None,
-            "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
-            "stripe_subscription_id": sub.stripe_subscription_id,
-            "stripe_price_id": sub.stripe_price_id
+        if not sub:
+            # Fallback to any latest subscription
+            # Subscription model does not have created_at, using id instead
+            sub = db.query(Subscription).filter(
+                Subscription.user_id == current_user.id
+            ).order_by(Subscription.id.desc()).first()
+
+        if sub:
+            subscription_data = {
+                "state": sub.state,
+                "plan_code": sub.plan.code if sub.plan else None,
+                "cycle_start": sub.cycle_start.isoformat() if sub.cycle_start else None,
+                "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
+                "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
+                "stripe_subscription_id": sub.stripe_subscription_id,
+                "stripe_price_id": sub.stripe_price_id
+            }
+
+        return {
+            "user": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "role": current_user.role,
+                "studio_name": current_user.studio_name,
+                "is_active": current_user.is_active,
+                "stripe_customer_id": current_user.stripe_customer_id
+            },
+            "subscription": subscription_data
         }
-
-    return {
-        "user": {
-            "id": current_user.id,
-            "username": current_user.username,
-            "email": current_user.email,
-            "role": current_user.role,
-            "studio_name": current_user.studio_name,
-            "is_active": current_user.is_active,
-            "stripe_customer_id": current_user.stripe_customer_id
-        },
-        "subscription": subscription_data
-    }
+    except Exception as e:
+        logger.exception("Error in /me endpoint")
+        # Return valid user object even if subscription fetch fails
+        return {
+            "user": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "role": current_user.role,
+                "studio_name": current_user.studio_name,
+                "is_active": current_user.is_active,
+                "stripe_customer_id": current_user.stripe_customer_id
+            },
+            "subscription": None
+        }
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1053,6 +1079,84 @@ async def login_submit(
     return RedirectResponse(url="/dashboard", status_code=302)
 
 
+def _read_logs(
+    agent_ids: List[str],
+    limit: int = 50,
+    offset: int = 0,
+    status: str = "all",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    q: Optional[str] = None
+):
+    """
+    Helper to read, filter, sort and paginate logs from multiple agent files.
+    """
+    items = []
+
+    df = datetime.fromisoformat(date_from).date() if date_from else None
+    dt = datetime.fromisoformat(date_to).date() if date_to else None
+
+    for agent_id in agent_ids:
+        log_path = LOGS_DIR / f"{agent_id}.log"
+        if not log_path.exists():
+            continue
+
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    raw = json.loads(line)
+                    ts = raw.get("timestamp")
+                    if not ts:
+                        continue
+                    d = datetime.fromisoformat(ts)
+                    d_date = d.date()
+
+                    # --- FILTRO DATA ---
+                    if df and d_date < df:
+                        continue
+                    if dt and d_date > dt:
+                        continue
+
+                    # --- DETERMINA SUCCESS / FAILURE ---
+                    analysis = raw.get("data", {}).get("analysis", {})
+                    call_ok = analysis.get("call_successful")
+                    is_failure = (call_ok == "failure")
+
+                    if status == "success" and is_failure:
+                        continue
+                    if status == "failure" and not is_failure:
+                        continue
+
+                    # --- COSTRUZIONE ITEM ---
+                    item = {
+                        "timestamp": ts,
+                        "caller": raw.get("data", {}).get("user_id", "unknown"),
+                        "status": "failure" if is_failure else "success",
+                        "summary": raw.get("data", {}).get("analysis", {}).get("transcript_summary", "").strip(),
+                        "duration_secs": raw.get("data", {}).get("metadata", {}).get("call_duration_secs", None),
+                        "raw": raw  # per modal dettagliata
+                    }
+
+                    # --- SEARCH ---
+                    if q:
+                        q_low = q.lower()
+                        if q_low not in json.dumps(item, ensure_ascii=False).lower():
+                            continue
+
+                    items.append(item)
+
+                except:
+                    continue
+
+    # Sort by timestamp desc
+    items.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    total = len(items)
+    paginated_items = items[offset:offset + limit]
+
+    return {"status": "ok", "total": total, "items": paginated_items}
+
+
 @app.get("/logs/{agent_id}/list")
 async def get_logs_filtered(
     agent_id: str,
@@ -1061,80 +1165,54 @@ async def get_logs_filtered(
     status: str = Query("all"),
     date_from: str = Query(None),
     date_to: str = Query(None),
-    q: str = Query(None)
+    q: str = Query(None),
+    admin: User = Depends(get_current_admin_user)
 ):
     """
-    Ritorna i log del cliente in formato filtrabile e paginato:
-    - limit, offset
-    - status: all / success / failure
-    - date_from, date_to (YYYY-MM-DD)
-    - q: search su summary, caller, transcript
+    Ritorna i log del cliente in formato filtrabile e paginato (Admin-only).
     """
     maybe_reload_clients()
 
     if agent_id not in CLIENTS:
         raise HTTPException(status_code=404, detail="Cliente non trovato")
 
-    log_path = LOGS_DIR / f"{agent_id}.log"
-    if not log_path.exists():
+    return _read_logs([agent_id], limit, offset, status, date_from, date_to, q)
+
+
+@app.get("/api/logs")
+async def get_my_logs(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    status: str = Query("all"),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
+    q: str = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Ritorna i log dell'utente corrente (Client-scoped).
+    Recupera gli agent_id associati all'utente.
+    """
+    # Force reload user to ensure relationships are loaded
+    # Actually, current_user from get_current_user might not have relationships loaded depending on how it was queried
+    # But lazy loading should work if session is active.
+    # However, get_current_user closes session? No, it depends.
+    # Let's re-query to be safe or ensure eager loading.
+
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    agent_ids = [a.agent_id for a in user.agents]
+
+    if not agent_ids:
+        # If user has no agents assigned but relies on clients.json matching?
+        # The new model uses DB relations. If legacy relying on clients.json, we can't easily map user -> agent_id without DB.
+        # Assuming Phase 4A migration populated UserAgentAccess.
         return {"status": "ok", "total": 0, "items": []}
 
-    items = []
-
-    df = datetime.fromisoformat(date_from).date() if date_from else None
-    dt = datetime.fromisoformat(date_to).date() if date_to else None
-
-    with log_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                raw = json.loads(line)
-                ts = raw.get("timestamp")
-                if not ts:
-                    continue
-                d = datetime.fromisoformat(ts)
-                d_date = d.date()
-
-                # --- FILTRO DATA ---
-                if df and d_date < df:
-                    continue
-                if dt and d_date > dt:
-                    continue
-
-                # --- DETERMINA SUCCESS / FAILURE ---
-                analysis = raw.get("data", {}).get("analysis", {})
-                call_ok = analysis.get("call_successful")
-                is_failure = (call_ok == "failure")
-
-                if status == "success" and is_failure:
-                    continue
-                if status == "failure" and not is_failure:
-                    continue
-
-                # --- COSTRUZIONE ITEM ---
-                item = {
-                    "timestamp": ts,
-                    "caller": raw.get("data", {}).get("user_id", "unknown"),
-                    "status": "failure" if is_failure else "success",
-                    "summary": raw.get("data", {}).get("analysis", {}).get("transcript_summary", "").strip(),
-                    "duration_secs": raw.get("data", {}).get("metadata", {}).get("call_duration_secs", None),
-                    "raw": raw  # per modal dettagliata
-                }
-
-                # --- SEARCH ---
-                if q:
-                    q_low = q.lower()
-                    if q_low not in json.dumps(item, ensure_ascii=False).lower():
-                        continue
-
-                items.append(item)
-
-            except:
-                continue
-
-    total = len(items)
-    items = items[offset:offset + limit]
-
-    return {"status": "ok", "total": total, "items": items}
+    return _read_logs(agent_ids, limit, offset, status, date_from, date_to, q)
 
 
 
@@ -1143,7 +1221,7 @@ async def get_logs_filtered(
     # …qui il tuo log_call(entry, agent_id) o simile…
     # …e la parte di email che già hai…
 @app.post("/clients/{agent_id}/test-call")
-async def test_call(agent_id: str, db: Session = Depends(get_db)):
+async def test_call(agent_id: str, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     """
     Avvia una chiamata di test tramite ElevenLabs/Twilio verso il numero di test
     configurato per questo cliente.
