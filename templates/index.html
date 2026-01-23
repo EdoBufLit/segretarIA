@@ -248,13 +248,13 @@
                     Vai alla Dashboard
                 </a>
                 {% else %}
-                <a href="/login" class="bg-white text-blue-600 px-8 py-3.5 rounded-lg text-lg font-bold hover:bg-blue-50 transition-colors shadow-lg">
+                <button type="button" data-booking-open class="bg-white text-blue-600 px-8 py-3.5 rounded-lg text-lg font-bold hover:bg-blue-50 transition-colors shadow-lg">
                     Accedi per attivare
-                </a>
+                </button>
                 {% endif %}
-                <a href="mailto:info@segreteriaia.it" class="bg-transparent border-2 border-white text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-white/10 transition-colors">
+                <button type="button" data-booking-open class="bg-transparent border-2 border-white text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-white/10 transition-colors">
                     Contattaci
-                </a>
+                </button>
             </div>
         </div>
     </section>
@@ -367,7 +367,7 @@
                             Report via email
                         </li>
                     </ul>
-                    <button class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Contattaci</button>
+                    <button type="button" data-booking-open class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Contattaci</button>
                 </div>
 
                 <!-- Pro Plan -->
@@ -390,11 +390,41 @@
                             Supporto prioritario
                         </li>
                     </ul>
-                    <button class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">Contattaci</button>
+                    <button type="button" data-booking-open class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">Contattaci</button>
                 </div>
             </div>
         </div>
     </section>
+
+    <div id="booking-modal" class="fixed inset-0 hidden items-center justify-center bg-slate-950/60 z-50">
+        <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 relative">
+            <button type="button" data-booking-close class="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="Chiudi">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+            <h3 class="text-2xl font-bold text-slate-900 mb-2">Prenota una demo guidata</h3>
+            <p class="text-slate-600 mb-6">Lasciaci i tuoi dettagli e ti contattiamo entro 24 ore per l'attivazione.</p>
+            <form class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Nome e Cognome</label>
+                    <input type="text" class="w-full border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" placeholder="Mario Rossi">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                    <input type="email" class="w-full border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" placeholder="studio@esempio.it">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Telefono</label>
+                    <input type="tel" class="w-full border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" placeholder="+39 333 000 0000">
+                </div>
+                <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                    <button type="button" data-booking-close class="flex-1 border border-slate-200 rounded-lg py-2 font-semibold text-slate-600 hover:border-slate-400">Annulla</button>
+                    <button type="button" class="flex-1 bg-blue-600 text-white rounded-lg py-2 font-semibold hover:bg-blue-700">Invia richiesta</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- FAQ Section -->
     <section id="faq" class="py-20 bg-white">
@@ -453,6 +483,33 @@
             </div>
         </div>
     </footer>
+
+    <script>
+        const bookingModal = document.getElementById("booking-modal");
+        const bookingOpenButtons = document.querySelectorAll("[data-booking-open]");
+        const bookingCloseButtons = document.querySelectorAll("[data-booking-close]");
+
+        bookingOpenButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                bookingModal.classList.remove("hidden");
+                bookingModal.classList.add("flex");
+            });
+        });
+
+        bookingCloseButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+                bookingModal.classList.add("hidden");
+                bookingModal.classList.remove("flex");
+            });
+        });
+
+        bookingModal.addEventListener("click", (event) => {
+            if (event.target === bookingModal) {
+                bookingModal.classList.add("hidden");
+                bookingModal.classList.remove("flex");
+            }
+        });
+    </script>
 
 </body>
 </html>
