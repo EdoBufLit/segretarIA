@@ -35,7 +35,7 @@ from auth import (
     require_role,
 )
 from admin_service import AdminService
-from admin_seed import ensure_default_admin
+from admin_seed import ensure_default_admin, ensure_plans
 from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
@@ -95,6 +95,7 @@ async def startup_event():
     Run database backup and retention policy on application startup.
     """
     ensure_default_admin()
+    ensure_plans()
     try:
         logger.info("Starting database backup...")
         perform_backup()
@@ -518,7 +519,7 @@ async def create_checkout_session(
     service = StripeService(db)
     try:
         # Assuming we have a configured base URL or use request headers
-        base_url = os.getenv("BASE_URL", "http://127.0.0.1:8000")
+        base_url = os.getenv("PUBLIC_BASE_URL") or os.getenv("BASE_URL", "http://127.0.0.1:8000")
         success_url = f"{base_url}/dashboard?billing=success"
         cancel_url = f"{base_url}/dashboard?billing=cancel"
 

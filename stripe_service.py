@@ -35,10 +35,10 @@ class StripeService:
         # Map plan_code to Stripe Price ID
         # In a real app, this might be in DB or config.
         # For now, we mock or use env vars.
-        price_id = os.getenv(f"STRIPE_PRICE_ID_{plan_code.upper()}")
+        env_key = f"STRIPE_PRICE_ID_{plan_code.upper()}"
+        price_id = os.getenv(env_key)
         if not price_id:
-            # Fallback for testing if not in env
-            price_id = "price_mock_123"
+            raise ValueError(f"Configuration error: Missing {env_key}")
 
         try:
             checkout_session = stripe.checkout.Session.create(
@@ -71,7 +71,8 @@ class StripeService:
              event = json.loads(payload)
         else:
             if not self.webhook_secret:
-                 pass
+                 logger.error("STRIPE_WEBHOOK_SECRET is not set")
+                 raise RuntimeError("Server configuration error: missing webhook secret")
 
             try:
                 event = stripe.Webhook.construct_event(
@@ -130,6 +131,16 @@ class StripeService:
             # Fallback?
             return
 
+        # Fetch actual period end from Stripe
+        cycle_end = datetime.utcnow() + timedelta(days=30)
+        if stripe_subscription_id and self.api_key and self.api_key != "mock":
+            try:
+                stripe_sub = stripe.Subscription.retrieve(stripe_subscription_id)
+                if stripe_sub and stripe_sub.get('current_period_end'):
+                    cycle_end = datetime.fromtimestamp(stripe_sub['current_period_end'])
+            except Exception as e:
+                logger.error(f"Failed to retrieve subscription {stripe_subscription_id}: {e}")
+
         subscription = self.db.query(Subscription).filter_by(user_id=user_id).first()
         if not subscription:
             subscription = Subscription(
@@ -137,18 +148,17 @@ class StripeService:
                 plan_id=plan.id,
                 state="active",
                 cycle_start=datetime.utcnow(),
-                cycle_end=datetime.utcnow() + timedelta(days=30),
+                cycle_end=cycle_end,
                 stripe_subscription_id=stripe_subscription_id,
-                stripe_price_id=None # We might get this from items in webhook if we parse deeply, skipping for now
+                stripe_price_id=None
             )
             self.db.add(subscription)
         else:
             subscription.plan_id = plan.id
             subscription.state = "active"
             subscription.cycle_start = datetime.utcnow()
-            subscription.cycle_end = datetime.utcnow() + timedelta(days=30)
+            subscription.cycle_end = cycle_end
             subscription.stripe_subscription_id = stripe_subscription_id
-            # subscription.stripe_price_id = ...
 
         self.db.commit()
 

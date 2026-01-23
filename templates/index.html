@@ -508,7 +508,7 @@
                             Supporto
                         </li>
                     </ul>
-                    <button type="button" data-booking-open aria-label="Prenota un test guidato" class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Prenota un test</button>
+                    <button type="button" onclick="buyPlan('starter')" class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Acquista Starter</button>
                 </div>
 
                 <!-- Pro Plan -->
@@ -537,7 +537,7 @@
                             Supporto
                         </li>
                     </ul>
-                    <button type="button" data-booking-open aria-label="Prenota un test guidato" class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">Prenota un test</button>
+                    <button type="button" onclick="buyPlan('pro')" class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">Acquista Pro</button>
                 </div>
 
                 <!-- Business Plan -->
@@ -565,11 +565,50 @@
                             Supporto
                         </li>
                     </ul>
-                    <button type="button" data-booking-open aria-label="Prenota un test guidato" class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Prenota un test</button>
+                    <button type="button" onclick="buyPlan('business')" class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Acquista Business</button>
                 </div>
             </div>
         </div>
     </section>
+
+    <script>
+        async function buyPlan(planCode) {
+            try {
+                const response = await fetch('/billing/checkout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ plan_code: planCode })
+                });
+
+                // If redirected to login (e.g. 302 -> 200 OK on /login)
+                if (response.redirected && response.url.includes('/login')) {
+                    window.location.href = response.url;
+                    return;
+                }
+
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('Errore: ' + (error.detail || 'Impossibile procedere'));
+                    return;
+                }
+
+                const data = await response.json();
+                if (data.checkout_url) {
+                    window.location.href = data.checkout_url;
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Errore di connessione');
+            }
+        }
+    </script>
 
     <div id="booking-wizard" class="booking-wizard" aria-hidden="true">
         <div class="booking-wizard__backdrop" data-booking-close></div>

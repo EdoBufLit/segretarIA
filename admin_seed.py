@@ -3,7 +3,7 @@ import os
 
 from auth import hash_password
 from db import SessionLocal
-from models import User
+from models import User, Plan
 
 logger = logging.getLogger("app")
 
@@ -39,5 +39,41 @@ def ensure_default_admin() -> None:
     except Exception as exc:
         db.rollback()
         logger.warning("Unable to ensure default admin user: %s", exc)
+    finally:
+        db.close()
+
+
+def ensure_plans() -> None:
+    """
+    Seeds initial plans (Starter, Pro, Business) if they do not exist.
+    """
+    db = SessionLocal()
+    try:
+        # Define plans with their minutes per cycle
+        plans_data = [
+            {"code": "starter", "minutes_per_cycle": 60},
+            {"code": "pro", "minutes_per_cycle": 180},
+            {"code": "business", "minutes_per_cycle": 600},
+        ]
+
+        for p_data in plans_data:
+            existing = db.query(Plan).filter(Plan.code == p_data["code"]).first()
+            if not existing:
+                new_plan = Plan(
+                    code=p_data["code"],
+                    minutes_per_cycle=p_data["minutes_per_cycle"],
+                    is_active=True
+                )
+                db.add(new_plan)
+                logger.info(f"Seeding plan: {p_data['code']} ({p_data['minutes_per_cycle']} mins)")
+            else:
+                # Ensure minutes are correct if they differ?
+                # For now, let's just assume if it exists, it's fine.
+                pass
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Unable to seed plans: %s", exc)
     finally:
         db.close()
