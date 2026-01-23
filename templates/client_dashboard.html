@@ -97,6 +97,29 @@
 
         <!-- MAIN AREA -->
         <main class="main">
+            <!-- ACTIVE BANNER (Injected via JS) -->
+            <div id="activation-banner" class="hidden sticky top-0 z-40 mb-4 rounded-xl overflow-hidden shadow-2xl animate-fade-in border border-white/10">
+                <div class="bg-gradient-to-r from-indigo-900 via-purple-900 to-indigo-900 p-4 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4 relative">
+                    <!-- Glow effect -->
+                    <div class="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20 animate-pulse"></div>
+
+                    <div class="relative z-10 flex items-center gap-4">
+                        <div class="p-3 bg-white/10 rounded-full backdrop-blur-sm">
+                            <i data-feather="alert-circle" class="text-yellow-300 w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h3 id="banner-title" class="text-lg font-bold text-white leading-tight">Attiva il tuo assistente</h3>
+                            <p id="banner-desc" class="text-blue-100 text-sm">Scegli un piano per iniziare a ricevere chiamate.</p>
+                        </div>
+                    </div>
+
+                    <a href="/plans" class="relative z-10 bg-white text-indigo-900 hover:bg-blue-50 px-8 py-3 rounded-lg font-bold shadow-lg transform hover:scale-105 transition-all flex items-center gap-2 group">
+                        ATTIVA ORA
+                        <i data-feather="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
+                    </a>
+                </div>
+            </div>
+
             <!-- TOPBAR -->
             <div class="topbar">
                 <div class="flex items-center gap-4">
@@ -317,6 +340,37 @@
 
                 const sidebarPlan = document.getElementById("sidebar-plan-name");
                 if(sidebarPlan) sidebarPlan.textContent = planName;
+
+                // Banner Logic
+                const banner = document.getElementById("activation-banner");
+                const bTitle = document.getElementById("banner-title");
+                const bDesc = document.getElementById("banner-desc");
+                const bIcon = banner.querySelector("i");
+
+                if (sub.state !== "active") {
+                    banner.classList.remove("hidden");
+
+                    if (sub.state === "past_due") {
+                        bTitle.textContent = "Pagamento Scaduto";
+                        bDesc.textContent = "Aggiorna il metodo di pagamento per riattivare il servizio.";
+                        banner.querySelector("div.bg-gradient-to-r").className = "bg-gradient-to-r from-red-900 via-orange-900 to-red-900 p-4 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4 relative";
+                        if(bIcon) {
+                            bIcon.className = "text-red-300 w-6 h-6";
+                            bIcon.setAttribute("data-feather", "alert-triangle");
+                        }
+                    } else if (sub.state === "canceled") {
+                        bTitle.textContent = "Abbonamento Cancellato";
+                        bDesc.textContent = "Riattiva il tuo piano per riprendere a ricevere chiamate.";
+                         banner.querySelector("div.bg-gradient-to-r").className = "bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 p-4 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4 relative";
+                    } else {
+                        // None or incomplete
+                        bTitle.textContent = "Attiva il tuo assistente";
+                        bDesc.textContent = "Scegli un piano per iniziare a ricevere chiamate.";
+                    }
+                    feather.replace();
+                } else {
+                    banner.classList.add("hidden");
+                }
 
                 // Cycle End
                 if(sub.cycle_end) {

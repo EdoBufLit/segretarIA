@@ -1035,6 +1035,11 @@ async def client_dashboard_redirect():
     return RedirectResponse(url="/dashboard", status_code=302)
 
 
+@app.get("/plans", response_class=HTMLResponse)
+async def plans_page(request: Request, user: User = Depends(get_current_user)):
+    return templates.TemplateResponse("plans.html", {"request": request, "user": user})
+
+
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()

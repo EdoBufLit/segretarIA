@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Scegli il tuo piano – Segreteria IA</title>
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- HeroIcons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <!-- Custom Dark Theme -->
+    <link rel="stylesheet" href="/static/styles.css?v=6">
+</head>
+
+<body>
+    <div class="app">
+        <!-- SIDEBAR (Reused structure or simplified back link) -->
+        <aside class="sidebar flex flex-col">
+            <div class="flex items-center gap-3 px-2 mb-8">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                    <i data-feather="monitor" class="text-white w-5 h-5"></i>
+                </div>
+                <h1 class="font-bold text-xl tracking-tight text-white">Segreteria <span class="text-blue-400">IA</span></h1>
+            </div>
+
+            <nav class="flex-1 space-y-2">
+                <a href="/dashboard" class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="arrow-left" class="w-5 h-5"></i>
+                    <span class="font-medium">Torna alla Dashboard</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- MAIN AREA -->
+        <main class="main overflow-y-auto">
+            <div class="topbar">
+                <h2 class="text-lg font-semibold text-white">Piani di Abbonamento</h2>
+                <div class="flex-1"></div>
+                <div class="flex items-center gap-4">
+                     <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold text-xs">
+                        {{ user.username[0] | upper }}
+                    </div>
+                </div>
+            </div>
+
+            <section class="py-10">
+                <div class="max-w-7xl mx-auto px-4">
+                    <div class="text-center mb-10">
+                        <h2 class="text-3xl font-bold text-white mb-4">Attiva o Aggiorna il tuo piano</h2>
+                        <p class="text-[var(--muted)]">Scegli la soluzione più adatta alle tue esigenze.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <!-- Starter Plan -->
+                        <div class="glass-card p-8 flex flex-col">
+                            <h3 class="text-2xl font-bold text-white mb-2">Starter</h3>
+                            <div class="mb-6">
+                                <div class="text-4xl font-bold text-white">da €X<span class="text-lg font-normal text-[var(--muted)]">/mese</span></div>
+                                <p class="text-sm text-[var(--muted)] mt-1">minuti inclusi + extra a consumo</p>
+                            </div>
+                            <ul class="space-y-3 mb-8 flex-1">
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Minuti inclusi</li>
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Email recap</li>
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Dashboard</li>
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Supporto</li>
+                            </ul>
+                            <button type="button" onclick="buyPlan('starter')" class="w-full py-3 border border-[var(--border)] rounded-lg font-semibold text-white hover:bg-white/10 transition-colors">Attiva Starter</button>
+                        </div>
+
+                        <!-- Pro Plan -->
+                        <div class="glass-card p-8 relative overflow-hidden flex flex-col border-blue-500/50 shadow-lg shadow-blue-900/20">
+                            <div class="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">POPOLARE</div>
+                            <h3 class="text-2xl font-bold text-white mb-2">Pro</h3>
+                            <div class="mb-6">
+                                <div class="text-4xl font-bold text-white">da €X<span class="text-lg font-normal text-[var(--muted)]">/mese</span></div>
+                                <p class="text-sm text-[var(--muted)] mt-1">minuti inclusi + extra a consumo</p>
+                            </div>
+                            <ul class="space-y-3 mb-8 flex-1">
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Minuti inclusi</li>
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Email recap</li>
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Dashboard</li>
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Supporto</li>
+                            </ul>
+                            <button type="button" onclick="buyPlan('pro')" class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30">Attiva Pro</button>
+                        </div>
+
+                        <!-- Business Plan -->
+                        <div class="glass-card p-8 flex flex-col">
+                            <h3 class="text-2xl font-bold text-white mb-2">Business</h3>
+                            <div class="mb-6">
+                                <div class="text-4xl font-bold text-white">da €X<span class="text-lg font-normal text-[var(--muted)]">/mese</span></div>
+                                <p class="text-sm text-[var(--muted)] mt-1">minuti inclusi + extra a consumo</p>
+                            </div>
+                            <ul class="space-y-3 mb-8 flex-1">
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Minuti inclusi</li>
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Email recap</li>
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Dashboard</li>
+                                <li class="flex items-center text-[var(--text)]"><i data-feather="check" class="w-5 h-5 text-blue-500 mr-2"></i> Supporto</li>
+                            </ul>
+                            <button type="button" onclick="buyPlan('business')" class="w-full py-3 border border-[var(--border)] rounded-lg font-semibold text-white hover:bg-white/10 transition-colors">Attiva Business</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        feather.replace();
+
+        async function buyPlan(planCode) {
+            try {
+                const response = await fetch('/billing/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plan_code: planCode })
+                });
+
+                if (response.redirected && response.url.includes('/login')) {
+                    window.location.href = response.url;
+                    return;
+                }
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('Errore: ' + (error.detail || 'Impossibile procedere'));
+                    return;
+                }
+
+                const data = await response.json();
+                if (data.checkout_url) {
+                    window.location.href = data.checkout_url;
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Errore di connessione');
+            }
+        }
+    </script>
+</body>
+</html>
