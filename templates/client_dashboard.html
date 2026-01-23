@@ -190,7 +190,7 @@
                     </div>
 
                     <!-- Plan Status Card -->
-                    <div class="glass-card">
+                    <div class="glass-card relative">
                          <div class="flex justify-between items-start mb-2">
                             <div>
                                 <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-1">Abbonamento</div>
@@ -200,9 +200,12 @@
                                 <i data-feather="credit-card" class="w-5 h-5"></i>
                             </div>
                         </div>
-                        <div class="text-xs text-[var(--muted)]" id="kpi-cycle-end">
+                        <div class="text-xs text-[var(--muted)] mb-3" id="kpi-cycle-end">
                             Rinnovo: --
                         </div>
+                        <button id="manage-billing-btn" onclick="openBillingPortal()" class="hidden w-full py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-xs font-medium text-white transition-colors">
+                            Gestisci abbonamento
+                        </button>
                     </div>
                 </div>
 
@@ -297,6 +300,28 @@
     <script>
         feather.replace();
 
+        async function openBillingPortal() {
+            const btn = document.getElementById("manage-billing-btn");
+            btn.disabled = true;
+            btn.textContent = "Caricamento...";
+            try {
+                const res = await fetch("/billing/portal", { method: "POST" });
+                const data = await res.json();
+                if(data.status === "ok" && data.portal_url) {
+                    window.location.href = data.portal_url;
+                } else {
+                    alert("Errore: " + (data.detail || "Impossibile aprire il portale"));
+                    btn.disabled = false;
+                    btn.textContent = "Gestisci abbonamento";
+                }
+            } catch(e) {
+                console.error(e);
+                alert("Errore di connessione");
+                btn.disabled = false;
+                btn.textContent = "Gestisci abbonamento";
+            }
+        }
+
         function updatePageTitle(name) {
             const titles = { 'overview': 'Panoramica', 'logs': 'Storico Chiamate' };
             const el = document.getElementById('page-title');
@@ -347,8 +372,16 @@
                 const bDesc = document.getElementById("banner-desc");
                 const bIcon = banner.querySelector("i");
 
+                const manageBtn = document.getElementById("manage-billing-btn");
+
                 if (sub.state !== "active") {
                     banner.classList.remove("hidden");
+                    if (manageBtn) manageBtn.classList.add("hidden"); // Hide portal button if inactive (banner handles it)
+                    // Actually, past_due/canceled might still want portal to fix payment?
+                    // Let's show it if stripe_customer_id exists (which implied active/past history).
+                    // But requirement says "when status active".
+                    // However, for UX, past_due users NEED portal to update card.
+                    // The prompt says "se status active". I will follow prompt STRICTLY first.
 
                     if (sub.state === "past_due") {
                         bTitle.textContent = "Pagamento Scaduto";
@@ -370,6 +403,7 @@
                     feather.replace();
                 } else {
                     banner.classList.add("hidden");
+                    if(manageBtn) manageBtn.classList.remove("hidden");
                 }
 
                 // Cycle End

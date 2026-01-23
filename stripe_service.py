@@ -64,6 +64,30 @@ class StripeService:
             logger.error(f"Stripe Checkout Error: {e}")
             raise
 
+    def create_customer_portal_session(self, user_id: int, return_url: str):
+        # MOCK FOR QA
+        if self.api_key == "mock":
+            class MockSession:
+                url = "http://mock-portal-url.com"
+            return MockSession()
+
+        if not self.api_key:
+             raise ValueError("Stripe not configured")
+
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user or not user.stripe_customer_id:
+            raise ValueError("User has no Stripe Customer ID")
+
+        try:
+            session = stripe.billing_portal.Session.create(
+                customer=user.stripe_customer_id,
+                return_url=return_url,
+            )
+            return session
+        except Exception as e:
+             logger.error(f"Stripe Portal Error: {e}")
+             raise
+
     def verify_webhook_event(self, payload: bytes, sig_header: str):
         """Verifies signature and returns (event_type, data)."""
         # MOCK FOR QA

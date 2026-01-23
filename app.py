@@ -534,6 +534,26 @@ async def create_checkout_session(
         logger.exception("Checkout creation failed")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/billing/portal")
+async def create_portal_session(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    service = StripeService(db)
+    try:
+        base_url = os.getenv("PUBLIC_BASE_URL") or os.getenv("BASE_URL", "http://127.0.0.1:8000")
+        return_url = f"{base_url}/dashboard"
+
+        session = service.create_customer_portal_session(
+            user_id=current_user.id,
+            return_url=return_url
+        )
+        return {"status": "ok", "portal_url": session.url}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Portal creation failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/stripe/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
