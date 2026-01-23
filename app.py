@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import sentry_sdk
+import re
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
@@ -25,8 +26,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import get_db, SessionLocal
 from models import User
-from auth import verify_password, get_current_user, get_current_admin_user
+from auth import (
+    hash_password,
+    verify_password,
+    get_current_user,
+    get_current_admin_user,
+    require_role,
+)
 from admin_service import AdminService
+from admin_seed import ensure_default_admin
 from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
@@ -85,6 +93,7 @@ async def startup_event():
     """
     Run database backup and retention policy on application startup.
     """
+    ensure_default_admin()
     try:
         logger.info("Starting database backup...")
         perform_backup()
@@ -975,14 +984,25 @@ async def analytics_client(agent_id: str, admin: User = Depends(get_current_admi
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, current_user: User = Depends(get_current_user)):
-    if current_user.role == "admin":
-        maybe_reload_clients()
-        with open("templates/dashboard.html", "r", encoding="utf-8") as f:
-            html = f.read()
-        return HTMLResponse(content=html)
-    else:
-        return templates.TemplateResponse("client_portal.html", {"request": request})
+async def dashboard(
+    request: Request,
+    admin_user: User = Depends(get_current_admin_user),
+):
+    maybe_reload_clients()
+    with open("templates/dashboard.html", "r", encoding="utf-8") as f:
+        html = f.read()
+    return HTMLResponse(content=html)
+
+
+@app.get("/client/dashboard", response_class=HTMLResponse)
+async def client_dashboard(
+    request: Request,
+    client_user: User = Depends(require_role("client")),
+):
+    return templates.TemplateResponse(
+        "client_dashboard.html",
+        {"request": request, "user": client_user},
+    )
 
 
 @app.get("/logout")
@@ -1053,9 +1073,103 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_form(request: Request):
-    with open("templates/login.html", "r", encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(content=html)
+    just_registered = request.query_params.get("registered") == "1"
+    login_error = request.query_params.get("error") == "1"
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "just_registered": just_registered,
+            "login_error": login_error,
+        },
+    )
+
+
+def _is_valid_email(email: str) -> bool:
+    return re.match(r"^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", email) is not None
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_form(request: Request):
+    return templates.TemplateResponse(
+        "register.html",
+        {
+            "request": request,
+            "errors": {},
+            "form_data": {"username": "", "email": ""},
+        },
+    )
+
+
+@app.post("/register", response_class=HTMLResponse)
+async def register_submit(
+    request: Request,
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    errors = {}
+    clean_username = username.strip()
+    clean_email = email.strip()
+
+    if not clean_username:
+        errors["username"] = "Lo username è obbligatorio."
+
+    if not clean_email or not _is_valid_email(clean_email):
+        errors["email"] = "Inserisci un'email valida."
+
+    if len(password) < 8:
+        errors["password"] = "La password deve avere almeno 8 caratteri."
+
+    if password != password_confirm:
+        errors["password_confirm"] = "Le password non coincidono."
+
+    if clean_username:
+        existing_username = db.query(User).filter(User.username == clean_username).first()
+        if existing_username:
+            errors["username"] = "Questo username è già in uso."
+
+    if clean_email:
+        existing_email = db.query(User).filter(User.email == clean_email).first()
+        if existing_email:
+            errors["email"] = "Questa email è già in uso."
+
+    if errors:
+        return templates.TemplateResponse(
+            "register.html",
+            {
+                "request": request,
+                "errors": errors,
+                "form_data": {"username": clean_username, "email": clean_email},
+            },
+        )
+
+    new_user = User(
+        username=clean_username,
+        email=clean_email,
+        password_hash=hash_password(password),
+        role="client",
+        is_active=True,
+    )
+    try:
+        db.add(new_user)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Error creating new client user: %s", exc)
+        errors["form"] = "Errore durante la registrazione. Riprova."
+        return templates.TemplateResponse(
+            "register.html",
+            {
+                "request": request,
+                "errors": errors,
+                "form_data": {"username": clean_username, "email": clean_email},
+            },
+        )
+
+    return RedirectResponse(url="/login?registered=1", status_code=302)
 
 
 
@@ -1076,7 +1190,10 @@ async def login_submit(
         "username": user.username,
         "role": user.role,
     }
-    return RedirectResponse(url="/dashboard", status_code=302)
+
+    if user.role == "admin":
+        return RedirectResponse(url="/dashboard", status_code=302)
+    return RedirectResponse(url="/client/dashboard", status_code=302)
 
 
 def _read_logs(
