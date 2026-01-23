@@ -2,9 +2,10 @@ import stripe
 import os
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from models import User, Subscription, Plan
+from models import User, Subscription, Plan, AuditEvent
 import logging
 import audit_logger
+from mailer import send_email
 
 logger = logging.getLogger("stripe_service")
 
@@ -178,6 +179,9 @@ class StripeService:
             target_str=f"user={user.username} plan={plan_code}"
         )
 
+        # Notify Admin (Idempotent)
+        self._notify_admin_payment_success(user, plan_code, f"checkout:{session.get('id')}", "Checkout Completed")
+
     def _handle_payment_failed(self, invoice):
         stripe_customer_id = invoice.get('customer')
         if not stripe_customer_id:
@@ -275,6 +279,67 @@ class StripeService:
             admin_username="stripe_webhook",
             target_str=f"user={user.username} restored"
         )
+
+        # Notify Admin (Idempotent)
+        plan_code = "unknown"
+        if sub:
+             plan_code = sub.plan.code if sub.plan else "unknown"
+        amount_paid = invoice.get("amount_paid", 0) / 100.0
+        currency = invoice.get("currency", "eur").upper()
+
+        self._notify_admin_payment_success(
+            user,
+            plan_code,
+            f"invoice:{invoice.get('id')}",
+            f"Invoice Paid ({amount_paid} {currency})"
+        )
+
+    def _notify_admin_payment_success(self, user: User, plan_code: str, transaction_id: str, context: str):
+        """
+        Sends an email to admin on successful payment, ensuring idempotency via AuditEvents.
+        """
+        admin_email = os.getenv("ADMIN_BILLING_EMAIL")
+        if not admin_email:
+            logger.warning("ADMIN_BILLING_EMAIL not set, skipping notification.")
+            return
+
+        # Idempotency Check
+        exists = self.db.query(AuditEvent).filter_by(
+            action="admin_notification_payment_success",
+            entity_id=transaction_id
+        ).first()
+
+        if exists:
+            logger.info(f"Admin notification already sent for {transaction_id}. Skipping.")
+            return
+
+        subject = f"[PAYMENT] Nuovo pagamento: {user.studio_name or user.username} - {plan_code}"
+        body = (
+            f"<h3>Nuovo Pagamento Ricevuto</h3>"
+            f"<ul>"
+            f"<li><strong>Cliente:</strong> {user.studio_name} ({user.username})</li>"
+            f"<li><strong>Email:</strong> {user.email}</li>"
+            f"<li><strong>Piano:</strong> {plan_code}</li>"
+            f"<li><strong>Contesto:</strong> {context}</li>"
+            f"<li><strong>Riferimento:</strong> {transaction_id}</li>"
+            f"</ul>"
+        )
+
+        try:
+            send_email(admin_email, subject, body)
+
+            # Log Idempotency
+            audit_logger.log_audit_event(
+                db=self.db,
+                actor_type="system",
+                action="admin_notification_payment_success",
+                entity_type="transaction",
+                entity_id=transaction_id,
+                meta={"user_id": user.id, "email_to": admin_email}
+            )
+            logger.info(f"Admin notification sent to {admin_email} for {transaction_id}")
+        except Exception as e:
+            logger.error(f"Failed to send admin notification email: {e}")
 
     def _handle_subscription_deleted(self, subscription):
         stripe_customer_id = subscription.get('customer')
