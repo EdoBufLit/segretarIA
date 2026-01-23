@@ -143,7 +143,7 @@ const renderStep = () => {
 
         const checkboxLabel = document.createElement("label");
         checkboxLabel.setAttribute("for", inputElement.id);
-        checkboxLabel.innerHTML = `${step.text} <a href=\"#\" aria-label=\"Apri privacy policy\">Privacy</a>`;
+        checkboxLabel.innerHTML = `${step.text} <a href=\"/privacy\" target=\"_blank\" aria-label=\"Apri privacy policy\">Privacy</a>`;
 
         wrapper.appendChild(inputElement);
         wrapper.appendChild(checkboxLabel);

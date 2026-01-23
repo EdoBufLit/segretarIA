@@ -307,6 +307,16 @@ async def root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
 
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_page(request: Request):
+    return templates.TemplateResponse("privacy.html", {"request": request})
+
+
+@app.get("/termini", response_class=HTMLResponse)
+async def terms_page(request: Request):
+    return templates.TemplateResponse("terms.html", {"request": request})
+
+
 # ================== ADMIN ENDPOINTS ==================
 
 @app.get("/admin/clients", response_class=HTMLResponse)
