@@ -6,6 +6,7 @@
     <title>Segreteria IA - Segreteria Telefonica AI per Studi Legali</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/booking_wizard.css">
     <style>
         body { font-family: 'Inter', sans-serif; }
         .hero-bg {
@@ -131,6 +132,9 @@
                 Segreteria IA risponde alle chiamate 24/7, trascrive le conversazioni, invia report via email e ti permette di gestire tutto da una dashboard intelligente. Non perdere mai più un cliente.
             </p>
             <div class="flex flex-col sm:flex-row justify-center gap-4">
+                <button type="button" data-booking-open aria-label="Prenota un test" class="bg-slate-900 text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-slate-800 transition-colors shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+                    Prenota un test
+                </button>
                 {% if user %}
                 <a href="/dashboard" class="bg-blue-600 text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors shadow-md">
                     Vai alla Dashboard
@@ -402,33 +406,37 @@
         </div>
     </section>
 
-    <div id="booking-modal" class="fixed inset-0 hidden items-center justify-center bg-slate-950/60 z-50">
-        <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 relative">
-            <button type="button" data-booking-close class="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="Chiudi">
+    <div id="booking-wizard" class="booking-wizard" aria-hidden="true">
+        <div class="booking-wizard__backdrop" data-booking-close></div>
+        <div class="booking-wizard__card" role="dialog" aria-modal="true" aria-labelledby="booking-wizard-title">
+            <button type="button" class="booking-wizard__close" data-booking-close aria-label="Chiudi wizard">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
             </button>
-            <h3 class="text-2xl font-bold text-slate-900 mb-2">Prenota una demo guidata</h3>
-            <p class="text-slate-600 mb-6">Lasciaci i tuoi dettagli e ti contattiamo entro 24 ore per l'attivazione.</p>
-            <form class="space-y-4">
+            <div class="booking-wizard__header">
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Nome e Cognome</label>
-                    <input type="text" class="w-full border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" placeholder="Mario Rossi">
+                    <p class="booking-wizard__progress-text" id="booking-wizard-progress">1/8</p>
+                    <h3 id="booking-wizard-title" class="booking-wizard__title">Prenota un test guidato</h3>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                    <input type="email" class="w-full border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" placeholder="studio@esempio.it">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Telefono</label>
-                    <input type="tel" class="w-full border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" placeholder="+39 333 000 0000">
-                </div>
-                <div class="flex flex-col sm:flex-row gap-3 pt-2">
-                    <button type="button" data-booking-close class="flex-1 border border-slate-200 rounded-lg py-2 font-semibold text-slate-600 hover:border-slate-400">Annulla</button>
-                    <button type="button" class="flex-1 bg-blue-600 text-white rounded-lg py-2 font-semibold hover:bg-blue-700">Invia richiesta</button>
+                <span class="booking-wizard__hint">Invio per continuare</span>
+            </div>
+            <div class="booking-wizard__progress">
+                <div class="booking-wizard__progress-bar" id="booking-wizard-progress-bar"></div>
+            </div>
+            <form id="booking-wizard-form" class="booking-wizard__form" novalidate>
+                <div id="booking-wizard-step" class="booking-wizard__step"></div>
+                <p id="booking-wizard-error" class="booking-wizard__error" role="alert" aria-live="polite"></p>
+                <div class="booking-wizard__actions">
+                    <button type="button" class="booking-wizard__secondary" id="booking-wizard-prev">Indietro</button>
+                    <button type="button" class="booking-wizard__primary" id="booking-wizard-next">Avanti</button>
                 </div>
             </form>
+            <div id="booking-wizard-success" class="booking-wizard__success" hidden>
+                <div class="booking-wizard__success-icon">Fatto ✅</div>
+                <p class="booking-wizard__success-text">Ti contattiamo a breve.</p>
+                <button type="button" class="booking-wizard__primary" data-booking-close>Chiudi</button>
+            </div>
         </div>
     </div>
 
@@ -490,32 +498,7 @@
         </div>
     </footer>
 
-    <script>
-        const bookingModal = document.getElementById("booking-modal");
-        const bookingOpenButtons = document.querySelectorAll("[data-booking-open]");
-        const bookingCloseButtons = document.querySelectorAll("[data-booking-close]");
-
-        bookingOpenButtons.forEach((button) => {
-            button.addEventListener("click", () => {
-                bookingModal.classList.remove("hidden");
-                bookingModal.classList.add("flex");
-            });
-        });
-
-        bookingCloseButtons.forEach((button) => {
-            button.addEventListener("click", () => {
-                bookingModal.classList.add("hidden");
-                bookingModal.classList.remove("flex");
-            });
-        });
-
-        bookingModal.addEventListener("click", (event) => {
-            if (event.target === bookingModal) {
-                bookingModal.classList.add("hidden");
-                bookingModal.classList.remove("flex");
-            }
-        });
-    </script>
+    <script src="/static/booking_wizard.js" defer></script>
 
 </body>
 </html>
