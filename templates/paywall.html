@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Abbonamento Richiesto – Segreteria IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div class="max-w-md w-full bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700 text-center">
+        <div class="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+            </svg>
+        </div>
+
+        <h1 class="text-2xl font-bold mb-4">Accesso Limitato</h1>
+        <p class="text-slate-400 mb-8">
+            Questa funzionalità richiede un abbonamento attivo.
+            Attiva o aggiorna il tuo piano per accedere alla dashboard, ai log e alle analisi avanzate.
+        </p>
+
+        <div class="space-y-4">
+            <a href="/plans" class="block w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors">
+                ATTIVA ORA
+            </a>
+
+            <a href="/logout" class="block w-full bg-transparent border border-slate-600 hover:bg-slate-700 text-slate-300 font-medium py-3 px-4 rounded-lg transition-colors">
+                Disconnetti
+            </a>
+        </div>
+    </div>
+
+</body>
+</html>

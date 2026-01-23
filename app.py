@@ -1015,6 +1015,7 @@ async def analytics_client(agent_id: str, admin: User = Depends(get_current_admi
 async def dashboard(
     request: Request,
     user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Unified dashboard endpoint.
@@ -1025,6 +1026,15 @@ async def dashboard(
         maybe_reload_clients()
         # Ensure admin can see clients (reload if needed)
         return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
+
+    # If client, enforce subscription
+    active_sub = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.state.in_(["active", "trialing"])
+    ).first()
+
+    if not active_sub:
+        return templates.TemplateResponse("paywall.html", {"request": request, "user": user})
 
     # If client, render the client dashboard
     return templates.TemplateResponse("client_dashboard.html", {"request": request, "user": user})
@@ -1465,6 +1475,15 @@ async def get_my_logs(
     Ritorna i log dell'utente corrente (Client-scoped).
     Recupera gli agent_id associati all'utente.
     """
+    # Enforce subscription
+    active_sub = db.query(Subscription).filter(
+        Subscription.user_id == current_user.id,
+        Subscription.state.in_(["active", "trialing"])
+    ).first()
+
+    if not active_sub and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Subscription required for premium access.")
+
     # Force reload user to ensure relationships are loaded
     # Actually, current_user from get_current_user might not have relationships loaded depending on how it was queried
     # But lazy loading should work if session is active.
