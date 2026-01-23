@@ -3,12 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Segreteria IA: la segreteria telefonica intelligente con intelligenza artificiale per professionisti e imprese. Risposta 24/7, trascrizioni e report immediati.">
+    <meta property="og:title" content="Segreteria IA - Segreteria Telefonica AI">
+    <meta property="og:description" content="La segreteria telefonica AI che non perde mai una chiamata. Per professionisti e imprese.">
+    <meta property="og:image" content="https://placehold.co/1200x630/png?text=Segreteria+IA">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="https://placehold.co/32x32/png?text=IA">
     <title>Segreteria IA - Segreteria Telefonica AI per Professionisti e Imprese</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/booking_wizard.css">
     <style>
         body { font-family: 'Inter', sans-serif; }
+        :focus-visible {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+        }
         .hero-bg {
             background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.35), transparent 45%),
                 radial-gradient(circle at top right, rgba(99, 102, 241, 0.35), transparent 40%),
@@ -72,7 +82,7 @@
                     <a href="#faq" class="text-slate-600 hover:text-blue-600 font-medium transition-colors">FAQ</a>
                 </div>
                 <div class="hidden md:flex items-center gap-3">
-                    <button type="button" data-booking-open aria-label="Prenota un test" class="bg-slate-900 text-white px-5 py-2 rounded-lg font-medium hover:bg-slate-800 transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+                    <button type="button" data-booking-open aria-label="Prenota un test guidato" class="bg-slate-900 text-white px-5 py-2 rounded-lg font-medium hover:bg-slate-800 transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
                         Prenota un test
                     </button>
                     {% if user %}
@@ -87,7 +97,7 @@
                 </div>
                 <!-- Mobile Menu Button -->
                 <div class="md:hidden flex items-center">
-                    <button id="mobile-menu-btn" class="text-slate-600 hover:text-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2" aria-label="Apri menu">
+                    <button id="mobile-menu-btn" class="text-slate-600 hover:text-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2" aria-label="Menu principale" aria-expanded="false" aria-controls="mobile-menu">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
                         </svg>
@@ -105,7 +115,7 @@
                 <a href="#settori" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Settori</a>
                 <a href="#faq" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">FAQ</a>
                 <div class="pt-4 pb-2">
-                    <button type="button" data-booking-open aria-label="Prenota un test" class="block w-full text-center bg-slate-900 text-white px-5 py-3 rounded-lg font-medium hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+                    <button type="button" data-booking-open aria-label="Prenota un test guidato" class="block w-full text-center bg-slate-900 text-white px-5 py-3 rounded-lg font-medium hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
                         Prenota un test
                     </button>
                     {% if user %}
@@ -127,12 +137,15 @@
         const mainNav = document.getElementById('main-nav');
 
         btn.addEventListener('click', () => {
+            const expanded = btn.getAttribute('aria-expanded') === 'true' || false;
+            btn.setAttribute('aria-expanded', !expanded);
             menu.classList.toggle('hidden');
         });
 
         // Close menu when clicking a link
         menu.querySelectorAll('a').forEach(link => {
             link.addEventListener('click', () => {
+                btn.setAttribute('aria-expanded', 'false');
                 menu.classList.add('hidden');
             });
         });
@@ -162,14 +175,14 @@
                     </p>
                     <div class="flex flex-col sm:flex-row gap-4">
                         {% if user %}
-                        <button type="button" data-booking-open aria-label="Prenota un test" class="bg-white text-slate-900 px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-50 transition-colors shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-900">
+                        <button type="button" data-booking-open aria-label="Prenota un test guidato" class="bg-white text-slate-900 px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-50 transition-colors shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-900">
                             Prenota un test
                         </button>
                         <a href="/dashboard" class="bg-blue-500/90 text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-500 transition-colors shadow-md">
                             Vai alla Dashboard
                         </a>
                         {% else %}
-                        <button type="button" data-booking-open aria-label="Prenota un test" class="bg-white text-slate-900 px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-50 transition-colors shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-900">
+                        <button type="button" data-booking-open aria-label="Prenota un test guidato" class="bg-white text-slate-900 px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-50 transition-colors shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-900">
                             Prenota un test
                         </button>
                         <a href="/login" class="bg-transparent text-white px-8 py-3.5 rounded-lg text-lg font-semibold border border-white/30 hover:border-white/60 hover:bg-white/10 transition-all shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-indigo-900">
@@ -454,7 +467,7 @@
             </div>
 
             <div class="mt-10 text-center">
-                <button type="button" data-booking-open class="bg-blue-600 text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+                <button type="button" data-booking-open aria-label="Prenota un test guidato" class="bg-blue-600 text-white px-8 py-3.5 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
                     Prenota un test
                 </button>
             </div>
@@ -495,7 +508,7 @@
                             Supporto
                         </li>
                     </ul>
-                    <button type="button" data-booking-open class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Prenota un test</button>
+                    <button type="button" data-booking-open aria-label="Prenota un test guidato" class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Prenota un test</button>
                 </div>
 
                 <!-- Pro Plan -->
@@ -524,7 +537,7 @@
                             Supporto
                         </li>
                     </ul>
-                    <button type="button" data-booking-open class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">Prenota un test</button>
+                    <button type="button" data-booking-open aria-label="Prenota un test guidato" class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">Prenota un test</button>
                 </div>
 
                 <!-- Business Plan -->
@@ -552,7 +565,7 @@
                             Supporto
                         </li>
                     </ul>
-                    <button type="button" data-booking-open class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Prenota un test</button>
+                    <button type="button" data-booking-open aria-label="Prenota un test guidato" class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Prenota un test</button>
                 </div>
             </div>
         </div>

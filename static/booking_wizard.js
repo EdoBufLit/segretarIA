@@ -211,6 +211,10 @@ const openWizard = () => {
     state.lastActive = document.activeElement;
     wizard.classList.add("is-open");
     wizard.setAttribute("aria-hidden", "false");
+    if (wizardCard) {
+        wizardCard.setAttribute("role", "dialog");
+        wizardCard.setAttribute("aria-modal", "true");
+    }
     document.body.style.overflow = "hidden";
     resetWizard();
     trapFocus();
