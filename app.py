@@ -14,6 +14,7 @@ from openai import OpenAI
 import logging
 from logging_config import configure_logging, correlation_id
 from pathlib import Path
+import time
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime, date, timedelta
 from openai import OpenAI
@@ -122,6 +123,22 @@ CLIENTS: Dict[str, Dict[str, Any]] = {}
 CLIENTS_MTIME: Optional[float] = None
 LOGS_DIR = Path("logs")
 LOGS_DIR.mkdir(exist_ok=True)
+LEADS_LOG_DIR = LOGS_DIR / "leads"
+LEADS_LOG_DIR.mkdir(exist_ok=True)
+LEADS_LOG_FILE = LEADS_LOG_DIR / "leads.jsonl"
+LEAD_RATE_LIMIT = {"window_seconds": 600, "max_requests": 5}
+LEAD_REQUEST_LOG: Dict[str, List[float]] = {}
+
+ALLOWED_LEAD_SECTORS = {
+    "Studio professionale",
+    "Sanità",
+    "Agenzia",
+    "E-commerce",
+    "Artigiano",
+    "Servizi B2B",
+    "Altro",
+}
+ALLOWED_LEAD_VOLUMES = {"0–20/mese", "20–100", "100–300", "300+"}
 
 class ClientSettingsUpdate(BaseModel):
     studio_name: str | None = None
@@ -1089,6 +1106,29 @@ def _is_valid_email(email: str) -> bool:
     return re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) is not None
 
 
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _is_valid_phone(phone: str) -> bool:
+    return re.match(r"^[0-9+()\\s.-]{6,}$", phone) is not None
+
+
+def _check_rate_limit(ip_address: str) -> bool:
+    now = time.time()
+    window_start = now - LEAD_RATE_LIMIT["window_seconds"]
+    timestamps = [ts for ts in LEAD_REQUEST_LOG.get(ip_address, []) if ts > window_start]
+    if len(timestamps) >= LEAD_RATE_LIMIT["max_requests"]:
+        LEAD_REQUEST_LOG[ip_address] = timestamps
+        return False
+    timestamps.append(now)
+    LEAD_REQUEST_LOG[ip_address] = timestamps
+    return True
+
+
 @app.get("/register", response_class=HTMLResponse)
 async def register_form(request: Request):
     return templates.TemplateResponse(
@@ -1171,6 +1211,104 @@ async def register_submit(
 
     return RedirectResponse(url="/login?registered=1", status_code=302)
 
+
+@app.post("/lead")
+async def lead_submit(request: Request, payload: Dict[str, Any] = Body(...)):
+    email = str(payload.get("email", "")).strip()
+    phone = str(payload.get("phone", "")).strip()
+    privacy = payload.get("privacy")
+    sector = str(payload.get("sector", "")).strip()
+    volume = str(payload.get("volume", "")).strip()
+
+    if not _is_valid_email(email):
+        return Response(
+            content=json.dumps({"status": "error", "message": "Email non valida."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    if not phone or not _is_valid_phone(phone):
+        return Response(
+            content=json.dumps({"status": "error", "message": "Telefono non valido."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    if privacy is not True:
+        return Response(
+            content=json.dumps({"status": "error", "message": "Consenso privacy obbligatorio."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    if sector not in ALLOWED_LEAD_SECTORS:
+        return Response(
+            content=json.dumps({"status": "error", "message": "Settore non valido."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    if volume not in ALLOWED_LEAD_VOLUMES:
+        return Response(
+            content=json.dumps({"status": "error", "message": "Volume chiamate non valido."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    ip_address = _get_client_ip(request)
+    if not _check_rate_limit(ip_address):
+        return Response(
+            content=json.dumps({"status": "error", "message": "Troppe richieste. Riprova più tardi."}),
+            status_code=429,
+            media_type="application/json",
+        )
+
+    lead_entry = {
+        "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+        "ip": ip_address,
+        "user_agent": request.headers.get("user-agent"),
+        "referer": request.headers.get("referer"),
+        "full_name": str(payload.get("full_name", "")).strip(),
+        "email": email,
+        "phone": phone,
+        "company": str(payload.get("company", "")).strip(),
+        "sector": sector,
+        "volume": volume,
+        "needs": str(payload.get("needs", "")).strip(),
+    }
+
+    try:
+        with LEADS_LOG_FILE.open("a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(lead_entry, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning("Unable to write lead log: %s", exc)
+        return Response(
+            content=json.dumps({"status": "error", "message": "Errore interno."}),
+            status_code=500,
+            media_type="application/json",
+        )
+
+    to_email = os.getenv("LEADS_EMAIL_TO") or EMAIL_TO_FALLBACK
+    if to_email:
+        subject = "Nuova richiesta prenotazione"
+        body = (
+            f"<p>Nuovo lead ricevuto:</p>"
+            f"<ul>"
+            f"<li><strong>Nome:</strong> {lead_entry['full_name']}</li>"
+            f"<li><strong>Email:</strong> {lead_entry['email']}</li>"
+            f"<li><strong>Telefono:</strong> {lead_entry['phone']}</li>"
+            f"<li><strong>Azienda:</strong> {lead_entry['company']}</li>"
+            f"<li><strong>Settore:</strong> {lead_entry['sector']}</li>"
+            f"<li><strong>Volume chiamate:</strong> {lead_entry['volume']}</li>"
+            f"<li><strong>Note:</strong> {lead_entry['needs']}</li>"
+            f"</ul>"
+        )
+        try:
+            send_email(to_email, subject, body, EMAIL_FROM)
+        except Exception as exc:
+            logger.warning("Unable to send lead email: %s", exc)
+
+    return {"status": "ok"}
 
 
 @app.post("/login")
