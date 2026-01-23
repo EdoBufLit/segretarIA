@@ -3,23 +3,396 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Area Cliente – Segreteria IA</title>
+    <title>Segreteria IA – Dashboard Cliente</title>
     <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- HeroIcons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <!-- Chart.js (Optional, if we want charts later) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Custom Dark Theme -->
-    <link rel="stylesheet" href="/static/styles.css?v=2">
+    <link rel="stylesheet" href="/static/styles.css?v=6">
+
+    <style>
+        /* Shared Dashboard Styles */
+        .nav-item-active {
+            background: var(--panel2) !important;
+            color: #fff !important;
+            border: 1px solid var(--border);
+        }
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.05) !important;
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.1); }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+        /* Modal Background */
+        .bg-black\/40 { background-color: rgba(0, 0, 0, 0.7) !important; backdrop-filter: blur(4px); }
+
+        table { border-collapse: separate !important; border-spacing: 0 10px !important; }
+        thead th { color: var(--muted) !important; font-weight: 600 !important; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border: none !important; }
+        tbody tr { background: var(--panel) !important; border: 1px solid var(--border) !important; }
+        td { border: none !important; border-bottom: 1px solid var(--border) !important; }
+        tbody tr td:first-child { border-top-left-radius: 12px; border-bottom-left-radius: 12px; border-left: 1px solid var(--border) !important; }
+        tbody tr td:last-child { border-top-right-radius: 12px; border-bottom-right-radius: 12px; border-right: 1px solid var(--border) !important; }
+        tbody tr td { border-top: 1px solid var(--border) !important; border-bottom: 1px solid var(--border) !important; }
+
+        .text-green-600 { color: #34d399 !important; }
+        .text-red-600 { color: #f87171 !important; }
+    </style>
 </head>
 
-<body class="login-wrapper">
+<body>
 
-    <div class="glass-card w-full max-w-md p-8 text-center">
-        <h1 class="text-2xl font-bold mb-4 text-blue-400">Area Cliente</h1>
-        <p class="text-[var(--muted)]">Area Cliente – in costruzione.</p>
-        <p class="text-sm text-[var(--muted)] mt-4">
-            Bentornato, {{ user.username }}.
-        </p>
+    <!-- LOG DETAIL MODAL (Reused) -->
+    <div id="log-detail-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
+        <div class="glass-card w-11/12 md:w-3/4 lg:w-1/2 p-0 flex flex-col max-h-[80vh] overflow-hidden">
+            <div class="p-4 border-b border-[var(--border)] flex justify-between items-center bg-[var(--panel2)]">
+                <h3 class="text-xl font-bold text-white">Dettaglio chiamata</h3>
+                <button onclick="closeLogDetail()" class="text-white hover:text-gray-300"><i data-feather="x"></i></button>
+            </div>
+            <div class="p-6 flex-1 overflow-auto">
+                <div id="log-detail-content" class="space-y-4 text-sm text-[var(--text)]"></div>
+            </div>
+            <div class="p-4 border-t border-[var(--border)] bg-[var(--panel2)] text-right">
+                <button onclick="closeLogDetail()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded shadow-lg transition-colors">Chiudi</button>
+            </div>
+        </div>
     </div>
 
-</body>
+    <div class="app">
+        <!-- SIDEBAR -->
+        <aside class="sidebar flex flex-col">
+            <div class="flex items-center gap-3 px-2 mb-8">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                    <i data-feather="monitor" class="text-white w-5 h-5"></i>
+                </div>
+                <h1 class="font-bold text-xl tracking-tight text-white">Segreteria <span class="text-blue-400">IA</span></h1>
+            </div>
 
+            <nav class="flex-1 space-y-2">
+                <a href="#" data-section="overview" onclick="openSection('overview')" class="nav-item nav-item-active flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="pie-chart" class="w-5 h-5"></i>
+                    <span class="font-medium">Panoramica</span>
+                </a>
+                <a href="#" data-section="logs" onclick="openSection('logs')" class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="list" class="w-5 h-5"></i>
+                    <span class="font-medium">Chiamate</span>
+                </a>
+            </nav>
+
+            <div class="mt-auto pt-4 border-t border-[var(--border)]">
+                <div class="px-3 py-2 mb-2">
+                    <div class="text-xs text-[var(--muted)] uppercase tracking-wider mb-1">Piano Attivo</div>
+                    <div id="sidebar-plan-name" class="font-bold text-white truncate">Caricamento...</div>
+                </div>
+                <a href="/logout" class="flex items-center gap-3 p-3 rounded-lg text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all">
+                    <i data-feather="log-out" class="w-5 h-5"></i>
+                    <span class="font-medium">Logout</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- MAIN AREA -->
+        <main class="main">
+            <!-- TOPBAR -->
+            <div class="topbar">
+                <div class="flex items-center gap-4">
+                    <h2 id="page-title" class="text-lg font-semibold text-white">Panoramica</h2>
+                </div>
+                <div class="flex-1"></div>
+                <div id="status-bar" class="hidden md:flex items-center gap-4 px-4 py-1 bg-[var(--panel2)] rounded-full border border-[var(--border)] text-xs font-medium">
+                     <div class="flex items-center gap-2">
+                        <span class="text-[var(--muted)]">Stato:</span>
+                        <span id="status-service" class="px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">...</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4 ml-4">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold text-xs">
+                        {{ user.username[0] | upper }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION: OVERVIEW -->
+            <section id="section-overview" class="section">
+                <!-- Welcome -->
+                <div class="mb-8">
+                    <h1 class="text-2xl font-bold text-white mb-1">Ciao, {{ user.username }}</h1>
+                    <p class="text-[var(--muted)]">Ecco il riepilogo della tua attività.</p>
+                </div>
+
+                <!-- CARDS -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <!-- Minutes Card -->
+                    <div class="glass-card relative overflow-hidden">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-1">Minuti Mensili</div>
+                                <div class="text-2xl font-bold text-white flex items-baseline gap-1">
+                                    <span id="kpi-minutes-used">0</span>
+                                    <span class="text-sm text-[var(--muted)] font-normal">/ <span id="kpi-minutes-limit">0</span> min</span>
+                                </div>
+                            </div>
+                            <div class="p-2 bg-blue-500/10 rounded-lg text-blue-400">
+                                <i data-feather="clock" class="w-5 h-5"></i>
+                            </div>
+                        </div>
+                        <!-- Progress Bar -->
+                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden">
+                            <div id="kpi-minutes-progress" class="bg-blue-500 h-full rounded-full" style="width: 0%"></div>
+                        </div>
+                        <div class="mt-2 text-xs text-[var(--muted)] flex justify-between">
+                            <span>Utilizzo ciclo corrente</span>
+                            <span id="kpi-minutes-percent">0%</span>
+                        </div>
+                    </div>
+
+                    <!-- Total Calls Card -->
+                    <div class="glass-card">
+                         <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-1">Chiamate Totali</div>
+                                <div id="kpi-total-calls" class="text-2xl font-bold text-white">0</div>
+                            </div>
+                            <div class="p-2 bg-green-500/10 rounded-lg text-green-400">
+                                <i data-feather="phone-call" class="w-5 h-5"></i>
+                            </div>
+                        </div>
+                        <div class="text-xs text-[var(--muted)]">
+                            Gestite dall'assistente AI
+                        </div>
+                    </div>
+
+                    <!-- Plan Status Card -->
+                    <div class="glass-card">
+                         <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-1">Abbonamento</div>
+                                <div id="kpi-plan-name" class="text-xl font-bold text-white">Checking...</div>
+                            </div>
+                            <div class="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                                <i data-feather="credit-card" class="w-5 h-5"></i>
+                            </div>
+                        </div>
+                        <div class="text-xs text-[var(--muted)]" id="kpi-cycle-end">
+                            Rinnovo: --
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Logs Preview (Optional) -->
+                <div class="glass-card p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold text-white">Ultime Chiamate</h3>
+                        <button onclick="openSection('logs')" class="text-sm text-blue-400 hover:text-blue-300">Vedi tutte &rarr;</button>
+                    </div>
+                    <!-- Reuse the logs table container but simpler -->
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="text-[var(--muted)] border-b border-[var(--border)]">
+                                <th class="pb-2 font-medium">Data</th>
+                                <th class="pb-2 font-medium">Chiamante</th>
+                                <th class="pb-2 font-medium">Stato</th>
+                                <th class="pb-2 font-medium">Durata</th>
+                            </tr>
+                        </thead>
+                        <tbody id="preview-logs-body" class="text-[var(--text)]">
+                            <tr><td colspan="4" class="py-4 text-center text-[var(--muted)]">Caricamento...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- SECTION: LOGS (Full) -->
+            <section id="section-logs" class="section hidden">
+                <div class="glass-card p-0 overflow-hidden flex flex-col h-[calc(100vh-140px)]">
+                    <!-- Filters (Simplified for client) -->
+                    <div class="p-4 border-b border-[var(--border)] bg-[var(--panel2)] flex flex-wrap gap-4 items-end">
+                        <div class="flex flex-col gap-1 hidden">
+                             <!-- Hidden client selector -->
+                            <label class="text-xs text-[var(--muted)]">Cliente</label>
+                            <select id="log-filter-client"><option value="">Me</option></select>
+                        </div>
+
+                        <div class="flex flex-col gap-1">
+                            <label class="text-xs text-[var(--muted)]">Stato</label>
+                            <select id="log-filter-status" class="bg-black/20 border border-[var(--border)] rounded px-3 py-1 text-sm text-white w-32">
+                                <option value="all">Tutti</option>
+                                <option value="success">Successo</option>
+                                <option value="failure">Errori</option>
+                            </select>
+                        </div>
+
+                        <div class="flex bg-black/20 border border-[var(--border)] rounded px-3 py-1 flex-1 items-center gap-2">
+                            <i data-feather="search" class="w-4 h-4 text-[var(--muted)]"></i>
+                            <input type="text" id="log-filter-q" placeholder="Cerca..." class="bg-transparent border-none outline-none text-sm w-full text-white !border-none !ring-0">
+                        </div>
+
+                        <button onclick="loadLogsTable(0)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-sm font-medium shadow">Filtra</button>
+                    </div>
+
+                    <div class="flex-1 overflow-auto p-4">
+                        <table class="w-full text-left border-separate border-spacing-y-2">
+                            <thead>
+                                <tr>
+                                    <th class="px-4 py-2">Data</th>
+                                    <th class="px-4 py-2 hidden">Cliente</th> <!-- Hide client col -->
+                                    <th class="px-4 py-2">Numero</th>
+                                    <th class="px-4 py-2">Stato</th>
+                                    <th class="px-4 py-2">Durata</th>
+                                    <th class="px-4 py-2">Riassunto</th>
+                                    <th class="px-4 py-2 text-center">Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-table" class="space-y-4"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div class="p-4 border-t border-[var(--border)] bg-[var(--panel2)] flex justify-between items-center text-sm">
+                        <button id="logs-prev" onclick="logsPrev()" class="px-3 py-1 rounded bg-[var(--panel)] border border-[var(--border)] hover:bg-white/5 text-white disabled:opacity-50">&larr; Precedente</button>
+                        <span id="logs-info" class="text-[var(--muted)]"></span>
+                        <button id="logs-next" onclick="logsNext()" class="px-3 py-1 rounded bg-[var(--panel)] border border-[var(--border)] hover:bg-white/5 text-white disabled:opacity-50">Successiva &rarr;</button>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
+    <!-- REUSE DASHBOARD JS -->
+    <script>
+        // Set flag before loading script
+        window.isClientUser = true;
+    </script>
+    <script src="/static/dashboard.js?v=2"></script>
+    <script>
+        feather.replace();
+
+        function updatePageTitle(name) {
+            const titles = { 'overview': 'Panoramica', 'logs': 'Storico Chiamate' };
+            const el = document.getElementById('page-title');
+            if(el) el.textContent = titles[name] || 'Dashboard';
+        }
+
+        window.openSection = function(name) {
+            updatePageTitle(name);
+
+            // Toggle Sections
+            document.querySelectorAll(".section").forEach(s => s.classList.add("hidden"));
+            const section = document.getElementById(`section-${name}`);
+            if (section) section.classList.remove("hidden");
+
+            // Update Nav State
+            document.querySelectorAll("nav .nav-item").forEach(a => {
+                a.classList.remove("nav-item-active");
+                a.classList.add("text-[var(--muted)]");
+            });
+            const activeLink = document.querySelector(`nav a[data-section="${name}"]`);
+            if (activeLink) {
+                activeLink.classList.add("nav-item-active");
+                activeLink.classList.remove("text-[var(--muted)]");
+            }
+
+            if(name === 'logs') {
+                loadLogsTable(0);
+            }
+        };
+
+        async function initClientOverview() {
+            // 1. Fetch Subscription Status
+            try {
+                const res = await fetch("/subscription/status");
+                const sub = await res.json();
+
+                // Update Plan Card
+                const planName = (sub.plan_code || "Nessun piano").toUpperCase();
+                const kpiPlanName = document.getElementById("kpi-plan-name");
+                if(kpiPlanName) kpiPlanName.textContent = planName;
+
+                const sidebarPlan = document.getElementById("sidebar-plan-name");
+                if(sidebarPlan) sidebarPlan.textContent = planName;
+
+                // Cycle End
+                if(sub.cycle_end) {
+                    const d = new Date(sub.cycle_end);
+                    document.getElementById("kpi-cycle-end").textContent = "Rinnovo: " + d.toLocaleDateString();
+                }
+
+                // Minutes
+                const used = Math.round(sub.minutes_used || 0);
+                const limit = sub.minutes_limit || 0;
+                document.getElementById("kpi-minutes-used").textContent = used;
+                document.getElementById("kpi-minutes-limit").textContent = limit;
+
+                // Progress
+                if(limit > 0) {
+                    const pct = Math.min(100, (used / limit) * 100);
+                    document.getElementById("kpi-minutes-progress").style.width = pct + "%";
+                    document.getElementById("kpi-minutes-percent").textContent = Math.round(pct) + "%";
+
+                    if(pct > 90) {
+                        document.getElementById("kpi-minutes-progress").classList.add("bg-red-500");
+                        document.getElementById("kpi-minutes-progress").classList.remove("bg-blue-500");
+                    }
+                } else {
+                     document.getElementById("kpi-minutes-progress").style.width = "0%";
+                     document.getElementById("kpi-minutes-percent").textContent = "0%";
+                }
+
+            } catch(e) {
+                console.error("Failed to load subscription status", e);
+            }
+
+            // 2. Fetch Total Calls (via /api/logs?limit=1 just to get total)
+            try {
+                const res = await fetch("/api/logs?limit=1");
+                const data = await res.json();
+                document.getElementById("kpi-total-calls").textContent = data.total || 0;
+
+                // 3. Load Preview Logs (Latest 5)
+                const resLogs = await fetch("/api/logs?limit=5");
+                const dataLogs = await resLogs.json();
+                const items = dataLogs.items || [];
+                const tbody = document.getElementById("preview-logs-body");
+                tbody.innerHTML = "";
+
+                if(items.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-[var(--muted)]">Nessuna chiamata recente.</td></tr>`;
+                } else {
+                    items.forEach(item => {
+                         tbody.innerHTML += `
+                            <tr class="border-b border-[var(--border)] hover:bg-white/5 transition-colors">
+                                <td class="py-2 text-[var(--muted)] text-xs">${item.timestamp.split('T')[0]}</td>
+                                <td class="py-2 font-medium">${item.caller}</td>
+                                <td class="py-2 text-xs font-bold ${item.status === 'failure' ? 'text-red-400' : 'text-green-400'} uppercase">${item.status}</td>
+                                <td class="py-2 text-xs text-[var(--muted)]">${item.duration_secs || '-'}s</td>
+                            </tr>
+                        `;
+                    });
+                }
+
+            } catch(e) {
+                 console.error("Failed to load logs preview", e);
+            }
+        }
+
+        // Initialize
+        document.addEventListener("DOMContentLoaded", () => {
+            openSection('overview');
+            initClientOverview();
+
+            // Start Polling Status from dashboard.js
+            startStatusPolling();
+
+            // Check redirects
+            handleBillingRedirect();
+        });
+    </script>
+</body>
 </html>

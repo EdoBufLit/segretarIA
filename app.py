@@ -1014,23 +1014,25 @@ async def analytics_client(agent_id: str, admin: User = Depends(get_current_admi
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
-    admin_user: User = Depends(get_current_admin_user),
+    user: User = Depends(get_current_user),
 ):
-    maybe_reload_clients()
-    with open("templates/dashboard.html", "r", encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(content=html)
+    """
+    Unified dashboard endpoint.
+    Renders the appropriate template based on user.role.
+    """
+    # If admin, render the full admin dashboard
+    if user.role == "admin":
+        maybe_reload_clients()
+        # Ensure admin can see clients (reload if needed)
+        return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
+
+    # If client, render the client dashboard
+    return templates.TemplateResponse("client_dashboard.html", {"request": request, "user": user})
 
 
-@app.get("/client/dashboard", response_class=HTMLResponse)
-async def client_dashboard(
-    request: Request,
-    client_user: User = Depends(require_role("client")),
-):
-    return templates.TemplateResponse(
-        "client_dashboard.html",
-        {"request": request, "user": client_user},
-    )
+@app.get("/client/dashboard")
+async def client_dashboard_redirect():
+    return RedirectResponse(url="/dashboard", status_code=302)
 
 
 @app.get("/logout")
@@ -1340,9 +1342,7 @@ async def login_submit(
         "role": user.role,
     }
 
-    if user.role == "admin":
-        return RedirectResponse(url="/dashboard", status_code=302)
-    return RedirectResponse(url="/client/dashboard", status_code=302)
+    return RedirectResponse(url="/dashboard", status_code=302)
 
 
 def _read_logs(
