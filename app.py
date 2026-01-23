@@ -1086,7 +1086,7 @@ async def login_form(request: Request):
 
 
 def _is_valid_email(email: str) -> bool:
-    return re.match(r"^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", email) is not None
+    return re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) is not None
 
 
 @app.get("/register", response_class=HTMLResponse)
