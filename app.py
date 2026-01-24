@@ -30,6 +30,8 @@ from models import User
 from auth import (
     hash_password,
     verify_password,
+    generate_reset_token,
+    verify_reset_token,
     get_current_user,
     get_current_admin_user,
     require_role,
@@ -40,7 +42,7 @@ from auth import (
     require_role_page,
 )
 from admin_service import AdminService
-from admin_seed import ensure_default_admin
+from admin_seed import ensure_default_admin, ensure_plans
 from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
@@ -115,6 +117,7 @@ async def startup_event():
     Run database backup and retention policy on application startup.
     """
     ensure_default_admin()
+    ensure_plans()
     try:
         logger.info("Starting database backup...")
         perform_backup()
@@ -517,6 +520,12 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/billing/plans", response_class=HTMLResponse)
+async def billing_plans(request: Request):
+    user = request.session.get("user")
+    return templates.TemplateResponse("plans.html", {"request": request, "user": user})
 
 
 @app.post("/billing/checkout")
@@ -1034,8 +1043,31 @@ async def analytics_client(agent_id: str, admin: User = Depends(get_current_admi
 async def dashboard(
     request: Request,
     user: User = Depends(get_current_user_page),
+    db: Session = Depends(get_db)
 ):
     maybe_reload_clients()
+
+    # Logic to fetch subscription
+    sub = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.state == "active"
+    ).first()
+
+    if not sub:
+        sub = db.query(Subscription).filter(
+            Subscription.user_id == user.id
+        ).order_by(Subscription.id.desc()).first()
+
+    subscription_data = None
+    if sub:
+        subscription_data = {
+            "state": sub.state,
+            "plan_code": sub.plan.code if sub.plan else None,
+            "cycle_start": sub.cycle_start.isoformat() if sub.cycle_start else None,
+            "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
+            "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
+        }
+
     # Convert User to dict safe for JSON
     user_dict = {
         "username": user.username,
@@ -1045,7 +1077,11 @@ async def dashboard(
         "is_active": user.is_active,
         "agent_ids": [a.agent_id for a in user.agents]
     }
-    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user_dict})
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "user": user_dict,
+        "subscription": subscription_data
+    })
 
 
 @app.get("/client/dashboard", response_class=HTMLResponse)
@@ -1129,14 +1165,106 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
 async def login_form(request: Request):
     just_registered = request.query_params.get("registered") == "1"
     login_error = request.query_params.get("error") == "1"
+    reset_success = request.query_params.get("reset") == "1"
     return templates.TemplateResponse(
         "login.html",
         {
             "request": request,
             "just_registered": just_registered,
             "login_error": login_error,
+            "reset_success": reset_success,
         },
     )
+
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_form(request: Request):
+    return templates.TemplateResponse("forgot_password.html", {"request": request})
+
+
+@app.post("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_submit(request: Request, email: str = Form(...), db: Session = Depends(get_db)):
+    clean_email = email.strip()
+    user = db.query(User).filter(User.email == clean_email).first()
+
+    # Always return success message to prevent enumeration
+    msg = "Se l'email esiste, riceverai un link per il reset della password."
+
+    if user:
+        token = generate_reset_token(clean_email)
+        public_url = os.getenv("PUBLIC_BASE_URL") or os.getenv("BASE_URL") or "http://localhost:8000"
+        reset_link = f"{public_url}/reset-password?token={token}"
+
+        subject = "Reset Password - Segreteria IA"
+        body = f"""
+        <p>Ciao {user.username},</p>
+        <p>Hai richiesto il reset della password.</p>
+        <p><a href="{reset_link}">Clicca qui per reimpostare la tua password</a></p>
+        <p>Il link scadrà tra 1 ora.</p>
+        <p>Se non sei stato tu, ignora questa email.</p>
+        """
+        try:
+            # Using send_email utility
+            # Fix signature if needed or ensure mailer.py handles args correctly
+            # mailer.send_email(to, subject, body, from)
+            send_email(user.email, subject, body, EMAIL_FROM)
+        except Exception as e:
+            logger.error(f"Error sending reset email: {e}")
+            msg = "Errore durante l'invio dell'email. Riprova più tardi."
+
+    return templates.TemplateResponse("forgot_password.html", {"request": request, "message": msg})
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_form(request: Request, token: str = Query(...)):
+    email = verify_reset_token(token)
+    if not email:
+        return templates.TemplateResponse(
+            "forgot_password.html",
+            {"request": request, "error": "Link scaduto o non valido. Richiedi un nuovo reset."}
+        )
+    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "email": email})
+
+
+@app.post("/reset-password", response_class=HTMLResponse)
+async def reset_password_submit(
+    request: Request,
+    token: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    email = verify_reset_token(token)
+    if not email:
+        return templates.TemplateResponse(
+            "forgot_password.html",
+            {"request": request, "error": "Link scaduto o non valido. Richiedi un nuovo reset."}
+        )
+
+    if len(password) < 8:
+         return templates.TemplateResponse(
+            "reset_password.html",
+            {"request": request, "token": token, "email": email, "error": "La password deve essere di almeno 8 caratteri."}
+        )
+
+    if password != password_confirm:
+        return templates.TemplateResponse(
+            "reset_password.html",
+            {"request": request, "token": token, "email": email, "error": "Le password non coincidono."}
+        )
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+         # Should rarely happen if token is valid but user deleted in meantime
+         return templates.TemplateResponse(
+            "forgot_password.html",
+            {"request": request, "error": "Utente non trovato."}
+        )
+
+    user.password_hash = hash_password(password)
+    db.commit()
+
+    return RedirectResponse(url="/login?reset=1", status_code=302)
 
 
 @app.get("/privacy", response_class=HTMLResponse)

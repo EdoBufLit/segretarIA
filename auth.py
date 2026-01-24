@@ -1,15 +1,45 @@
 import secrets
 import string
+import os
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
+from itsdangerous import URLSafeTimedSerializer
 from db import get_db
 from models import User
 
 # Set up the password hashing context using bcrypt
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def get_token_serializer() -> URLSafeTimedSerializer:
+    secret = os.getenv("SESSION_SECRET", "super-secret-change-me")
+    return URLSafeTimedSerializer(secret)
+
+
+def generate_reset_token(email: str) -> str:
+    """Generates a timed token for password reset."""
+    serializer = get_token_serializer()
+    return serializer.dumps(email, salt="password-reset-salt")
+
+
+def verify_reset_token(token: str, expiration=3600) -> Optional[str]:
+    """
+    Verifies the reset token. Returns the email if valid, None otherwise.
+    Expiration defaults to 1 hour (3600 seconds).
+    """
+    serializer = get_token_serializer()
+    try:
+        email = serializer.loads(
+            token,
+            salt="password-reset-salt",
+            max_age=expiration
+        )
+        return email
+    except Exception:
+        return None
 
 
 def hash_password(password: str) -> str:
