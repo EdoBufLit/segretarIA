@@ -588,7 +588,55 @@ async function updateDashboardStatus() {
             }
     }
 
+    // 4. Activation Banner
+    renderActivationBanner(isActive, sub.state);
+
     return isActive;
+}
+
+function renderActivationBanner(isActive, subState) {
+    const container = document.getElementById("dashboard-content");
+    if (!container) return;
+
+    const bannerId = "activation-banner";
+    let banner = document.getElementById(bannerId);
+
+    // Normalize state
+    const safeState = (subState || "").toLowerCase();
+    const needsActivation = !isActive || (safeState !== "active" && safeState !== "trialing");
+
+    if (!needsActivation) {
+        if (banner) banner.remove();
+        return;
+    }
+
+    // Determine message
+    let msg = "Il tuo account non è attivo. Contatta l'amministratore.";
+    let btnHtml = "";
+
+    if (safeState === "canceled" || safeState === "past_due" || !safeState || safeState === "unknown") {
+        msg = "Nessun abbonamento attivo. Attiva un piano per utilizzare il servizio.";
+        // Link to home page pricing anchor
+        btnHtml = `<a href="/#pricing" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded shadow-lg transition-colors">ATTIVA ORA</a>`;
+    }
+
+    if (!banner) {
+        banner = document.createElement("div");
+        banner.id = bannerId;
+        banner.className = "mb-6 p-4 bg-red-900/40 border border-red-500/50 rounded-lg flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in-down";
+        // Insert at top of container
+        container.insertBefore(banner, container.firstChild);
+    }
+
+    banner.innerHTML = `
+        <div class="flex items-center gap-3 text-red-100">
+            <i data-feather="alert-octagon" class="w-6 h-6 text-red-400"></i>
+            <span class="font-medium">${msg}</span>
+        </div>
+        ${btnHtml}
+    `;
+
+    if (typeof feather !== 'undefined') feather.replace();
 }
 
 // Helper: Show Toast
