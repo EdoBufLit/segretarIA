@@ -427,9 +427,34 @@
 
             <!-- SECTION: USERS (CLIENTI) -->
             <section id="section-users" class="section hidden w-full">
+
+                <!-- Aggiungi Cliente -->
+                <div class="glass-card p-6 mb-6">
+                    <h3 class="text-lg font-bold text-white mb-4">➕ Nuovo Cliente</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div>
+                            <label class="text-xs text-[var(--muted)]">Agent ID*</label>
+                            <input id="agent_id" class="w-full bg-black/20 border border-[var(--border)] rounded px-3 py-2 text-sm text-white outline-none" placeholder="agent_xxxxxx">
+                        </div>
+                        <div>
+                            <label class="text-xs text-[var(--muted)]">Nome Studio*</label>
+                            <input id="studio_name" class="w-full bg-black/20 border border-[var(--border)] rounded px-3 py-2 text-sm text-white outline-none" placeholder="Studio Rossi">
+                        </div>
+                        <div>
+                            <label class="text-xs text-[var(--muted)]">Email*</label>
+                            <input id="email_to" class="w-full bg-black/20 border border-[var(--border)] rounded px-3 py-2 text-sm text-white outline-none" placeholder="segreteria@studio.it">
+                        </div>
+                        <div>
+                            <button onclick="addClient()" class="w-full bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded text-sm font-medium transition-colors shadow">
+                                Aggiungi
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="glass-card p-6 mb-6">
                     <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-xl font-bold text-white">Gestione Clienti</h3>
+                        <h3 class="text-xl font-bold text-white">Lista Clienti</h3>
                         <div class="flex gap-2">
                             <input type="text" id="users-search" placeholder="Cerca email/username..."
                                 class="bg-black/20 border border-[var(--border)] rounded px-3 py-1.5 text-sm text-white w-64 outline-none">
