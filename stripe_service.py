@@ -5,8 +5,10 @@ from sqlalchemy.orm import Session
 from models import User, Subscription, Plan
 import logging
 import audit_logger
+from mailer import send_email
 
 logger = logging.getLogger("stripe_service")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 
 class StripeService:
     def __init__(self, db: Session):
@@ -167,6 +169,26 @@ class StripeService:
             admin_username="stripe_webhook",
             target_str=f"user={user.username} plan={plan_code}"
         )
+
+        # Notify Admin
+        if ADMIN_EMAIL:
+            try:
+                subject = f"Nuovo abbonamento attivato - {plan_code.upper()} - {user.email}"
+                body = f"""
+                <p>È stato attivato un nuovo abbonamento.</p>
+                <ul>
+                    <li><strong>Utente:</strong> {user.username} (ID: {user.id})</li>
+                    <li><strong>Email:</strong> {user.email}</li>
+                    <li><strong>Piano:</strong> {plan_code}</li>
+                    <li><strong>Stripe Customer:</strong> {stripe_customer_id}</li>
+                    <li><strong>Stripe Subscription:</strong> {stripe_subscription_id}</li>
+                    <li><strong>Data:</strong> {datetime.utcnow().isoformat()}</li>
+                </ul>
+                """
+                send_email(ADMIN_EMAIL, subject, body)
+                logger.info(f"Admin notification sent to {ADMIN_EMAIL}")
+            except Exception as e:
+                logger.warning(f"Failed to send admin notification email: {e}")
 
     def _handle_payment_failed(self, invoice):
         stripe_customer_id = invoice.get('customer')
