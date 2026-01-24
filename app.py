@@ -1055,6 +1055,51 @@ async def analytics_user(
 
 
 
+@app.get("/admin/metrics")
+async def admin_metrics(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    """
+    Returns KPIs for the admin dashboard.
+    """
+    try:
+        # 1. Database Counts
+        total_users = db.query(User).filter(User.role == "client").count()
+        active_subs = db.query(Subscription).filter(Subscription.state == "active").count()
+        churned_subs = db.query(Subscription).filter(Subscription.state == "canceled").count()
+        past_due_subs = db.query(Subscription).filter(Subscription.state == "past_due").count()
+
+        # 2. Stripe Payments
+        stripe_service = StripeService(db)
+        recent_payments = stripe_service.get_recent_payments(limit=10)
+
+        # Format payments for UI
+        formatted_payments = []
+        for p in recent_payments:
+            amount_fmt = f"{p['amount']/100:.2f} {p['currency'].upper()}"
+            date_fmt = datetime.fromtimestamp(p['created']).strftime("%Y-%m-%d %H:%M")
+            email = p.get('billing_details', {}).get('email') or "Unknown"
+
+            formatted_payments.append({
+                "email": email,
+                "amount": amount_fmt,
+                "status": p['status'],
+                "date": date_fmt
+            })
+
+        return {
+            "status": "ok",
+            "kpi": {
+                "total_users": total_users,
+                "active_subscriptions": active_subs,
+                "churned": churned_subs,
+                "past_due": past_due_subs
+            },
+            "recent_payments": formatted_payments
+        }
+    except Exception as e:
+        logger.exception("Error fetching admin metrics")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/analytics/{agent_id}")
 async def analytics_client(agent_id: str, admin: User = Depends(get_current_admin_user)):
     """

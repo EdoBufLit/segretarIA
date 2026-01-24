@@ -377,19 +377,47 @@
             </section>
 
             <section id="section-analytics" class="section hidden w-full">
-                <div class="glass-card p-6 mb-6 w-full">
-                    <h3 class="text-xl font-bold mb-4 text-white">Heatmap Oraria</h3>
-                    <div id="heatmap-container" class="w-full overflow-x-auto custom-scrollbar"></div>
+                <!-- KPI GRID -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                    <!-- Total Users -->
+                    <div class="glass-card p-6">
+                        <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Utenti Totali</div>
+                        <div id="metrics-total-users" class="text-3xl font-bold text-white">—</div>
+                    </div>
+                    <!-- Active Subs -->
+                    <div class="glass-card p-6">
+                        <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Abbonamenti Attivi</div>
+                        <div id="metrics-active-subs" class="text-3xl font-bold text-green-400">—</div>
+                    </div>
+                    <!-- Churn -->
+                    <div class="glass-card p-6">
+                        <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Cancellati (Churn)</div>
+                        <div id="metrics-churn" class="text-3xl font-bold text-red-400">—</div>
+                    </div>
+                    <!-- Past Due -->
+                    <div class="glass-card p-6">
+                        <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Pagamenti Falliti</div>
+                        <div id="metrics-past-due" class="text-3xl font-bold text-yellow-400">—</div>
+                    </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="glass-card p-6">
-                        <h3 class="text-lg font-semibold mb-4 text-white">Categorie richieste</h3>
-                        <ul id="analytics-category-list" class="list-disc pl-6 text-[var(--muted)] space-y-1"></ul>
-                    </div>
-                    <div class="glass-card p-6">
-                        <h3 class="text-lg font-semibold mb-4 text-white">Urgenza</h3>
-                        <ul id="analytics-urgency-list" class="list-disc pl-6 text-[var(--muted)] space-y-1"></ul>
+                <!-- RECENT PAYMENTS -->
+                <div class="glass-card p-6 mb-6">
+                    <h3 class="text-xl font-bold mb-4 text-white">Ultimi Pagamenti</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-separate border-spacing-y-2">
+                            <thead>
+                                <tr>
+                                    <th class="px-4 py-2">Data</th>
+                                    <th class="px-4 py-2">Email</th>
+                                    <th class="px-4 py-2">Importo</th>
+                                    <th class="px-4 py-2">Stato</th>
+                                </tr>
+                            </thead>
+                            <tbody id="metrics-payments-body" class="text-sm text-gray-300">
+                                <tr><td colspan="4" class="text-center py-4">Caricamento...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>

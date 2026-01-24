@@ -13,6 +13,8 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 
 # Cache for plan prices: {timestamp: float, data: dict}
 _plans_cache = {"timestamp": 0, "data": {}}
+# Cache for recent payments: {timestamp: float, data: list}
+_payments_cache = {"timestamp": 0, "data": []}
 
 class StripeService:
     def __init__(self, db: Session):
@@ -85,6 +87,54 @@ class StripeService:
             logger.error(f"Global error fetching stripe prices: {e}")
             # Return existing cache if available, else empty/dashes
             return _plans_cache.get("data", {c: {"price_display": "—"} for c in codes})
+
+    def get_recent_payments(self, limit=10):
+        """
+        Fetches recent payments (Charges) from Stripe (or cache).
+        """
+        global _payments_cache
+        # TTL 10 minutes
+        if time.time() - _payments_cache["timestamp"] < 600 and _payments_cache["data"]:
+            return _payments_cache["data"]
+
+        try:
+            # Handle Mock Mode
+            if self.api_key == "mock":
+                mock_data = []
+                for i in range(limit):
+                    mock_data.append({
+                        "id": f"ch_mock_{i}",
+                        "amount": 2900 + (i * 1000),
+                        "currency": "eur",
+                        "status": "succeeded",
+                        "created": int(time.time()) - (i * 86400),
+                        "billing_details": {"email": f"user{i}@example.com"}
+                    })
+                _payments_cache["data"] = mock_data
+                _payments_cache["timestamp"] = time.time()
+                return mock_data
+
+            charges = stripe.Charge.list(limit=limit)
+            data = []
+            for c in charges.auto_paging_iter():
+                data.append({
+                    "id": c.id,
+                    "amount": c.amount,
+                    "currency": c.currency,
+                    "status": c.status,
+                    "created": c.created,
+                    "billing_details": c.billing_details
+                })
+                if len(data) >= limit:
+                    break
+
+            _payments_cache["data"] = data
+            _payments_cache["timestamp"] = time.time()
+            return data
+
+        except Exception as e:
+            logger.error(f"Error fetching recent payments: {e}")
+            return _payments_cache.get("data", [])
 
     def create_checkout_session(self, user_id: int, plan_code: str, success_url: str, cancel_url: str):
         # MOCK FOR QA
