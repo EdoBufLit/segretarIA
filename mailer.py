@@ -11,9 +11,15 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
-def send_email(to_addr: str, subject: str, html_body: str):
+def send_email(to_addr: str, subject: str, body: str, html_body: str = None):
     """
-    Sends an email in HTML format with a plain text fallback.
+    Sends an email.
+    Args:
+        to_addr: Recipient email
+        subject: Subject line
+        body: Plain text body (or HTML if html_body is None, for legacy compatibility)
+        html_body: Optional HTML version. If provided, body is used as fallback.
+                   If not provided, body is assumed to be HTML and used for both (with stripped fallback if possible, or just same).
     """
     if not all([EMAIL_FROM, SMTP_HOST, SMTP_USER, SMTP_PASSWORD]):
         raise RuntimeError("SMTP configuration is incomplete. Check your .env file.")
@@ -26,11 +32,18 @@ def send_email(to_addr: str, subject: str, html_body: str):
     msg["From"] = EMAIL_FROM
     msg["To"] = to_addr
 
-    # Plain text fallback
-    msg.set_content("This email requires an HTML-compatible client.")
+    # Determine plain text and HTML content
+    if html_body:
+        text_content = body
+        html_content = html_body
+    else:
+        # Legacy behavior: body argument is likely HTML
+        # In a real scenario, we should strip tags for text_content, but for now:
+        text_content = "This email requires an HTML-compatible client."
+        html_content = body
 
-    # HTML content
-    msg.add_alternative(html_body, subtype="html")
+    msg.set_content(text_content)
+    msg.add_alternative(html_content, subtype="html")
 
     # Mock mode for QA/Testing
     if SMTP_HOST == "mock":

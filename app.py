@@ -1232,8 +1232,8 @@ async def forgot_password_submit(request: Request, email: str = Form(...), db: S
         """
         try:
             # Using send_email utility
-            # mailer.send_email(to, subject, body) - FROM is handled via env var
-            send_email(user.email, subject, body)
+            # mailer.send_email(to, subject, body, html_body) - FROM is handled via env var
+            send_email(user.email, subject, "Please view in HTML", html_body=body)
         except Exception as e:
             logger.error(f"Error sending reset email: {e}")
             msg = "Errore durante l'invio dell'email. Riprova più tardi."
@@ -1511,7 +1511,7 @@ async def lead_submit(request: Request, payload: Dict[str, Any] = Body(...)):
             f"</ul>"
         )
         try:
-            send_email(to_email, subject, body)
+            send_email(to_email, subject, "Nuovo lead ricevuto. Vedi HTML.", html_body=body)
         except Exception as exc:
             logger.warning("Unable to send lead email: %s", exc)
 

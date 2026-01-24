@@ -185,7 +185,7 @@ class StripeService:
                     <li><strong>Data:</strong> {datetime.utcnow().isoformat()}</li>
                 </ul>
                 """
-                send_email(ADMIN_EMAIL, subject, body)
+                send_email(ADMIN_EMAIL, subject, "Nuovo abbonamento. Vedi HTML.", html_body=body)
                 logger.info(f"Admin notification sent to {ADMIN_EMAIL}")
             except Exception as e:
                 logger.warning(f"Failed to send admin notification email: {e}")
