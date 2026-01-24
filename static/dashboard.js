@@ -7,12 +7,14 @@ let clients = {};
 // =========================
 
 // Custom confirmation modal function
-function showConfirm(title, message, onConfirm) {
+function showConfirm(title, message, onConfirm, expectedText = null) {
     const modal = document.getElementById('confirm-modal');
     const titleEl = document.getElementById('confirm-title');
     const messageEl = document.getElementById('confirm-message');
     const okBtn = document.getElementById('confirm-ok-btn');
     const cancelBtn = document.getElementById('confirm-cancel-btn');
+    const inputContainer = document.getElementById('confirm-input-container');
+    const input = document.getElementById('confirm-input');
 
     titleEl.textContent = title;
     messageEl.textContent = message;
@@ -28,6 +30,31 @@ function showConfirm(title, message, onConfirm) {
     okBtn.parentNode.replaceChild(newOkBtn, okBtn);
     const newCancelBtn = cancelBtn.cloneNode(true);
     cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+    // Handle Input Mode
+    if (expectedText && inputContainer && input) {
+        inputContainer.classList.remove('hidden');
+        input.value = "";
+
+        // Initial state
+        newOkBtn.disabled = true;
+        newOkBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+        input.oninput = () => {
+             if (input.value === expectedText) {
+                 newOkBtn.disabled = false;
+                 newOkBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+             } else {
+                 newOkBtn.disabled = true;
+                 newOkBtn.classList.add('opacity-50', 'cursor-not-allowed');
+             }
+        };
+        setTimeout(() => input.focus(), 100);
+    } else {
+        if (inputContainer) inputContainer.classList.add('hidden');
+        newOkBtn.disabled = false;
+        newOkBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
 
     // Add new handlers
     newOkBtn.addEventListener('click', () => {
@@ -493,7 +520,10 @@ async function loadUsersTable(offsetOverride = null) {
 
             const actionBtn = u.is_active
                 ? `<button onclick="suspendUser(${u.id}, '${u.username}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">SOSPENDI</button>`
-                : `<button onclick="unsuspendUser(${u.id}, '${u.username}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">RIATTIVA</button>`;
+                : `<div class="flex gap-2 justify-end">
+                     <button onclick="unsuspendUser(${u.id}, '${u.username}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">RIATTIVA</button>
+                     <button onclick="deleteUser(${u.id}, '${u.username}')" class="text-white hover:text-red-200 text-xs font-bold bg-red-600 hover:bg-red-700 px-2 py-1 rounded shadow">ELIMINA</button>
+                   </div>`;
 
             tr.innerHTML = `
                 <td class="px-4 py-2">${u.id}</td>
@@ -540,6 +570,29 @@ function suspendUser(id, username) {
             showToast("Errore", "error");
         }
     });
+}
+
+function deleteUser(id, username) {
+    showConfirm(
+        "ELIMINA UTENTE",
+        `ATTENZIONE: Stai per eliminare definitivamente l'utente ${username} e TUTTI i dati associati (chiamate, abbonamenti, numeri). Azione IRREVERSIBILE.`,
+        async () => {
+            try {
+                const res = await fetch(`/admin/users/${id}`, { method: "DELETE" });
+                if (res.ok) {
+                    showToast("Utente eliminato correttamente", "success");
+                    loadUsersTable();
+                } else {
+                    const err = await res.json();
+                    showToast("Errore: " + (err.detail || "Impossibile eliminare"), "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Errore di rete", "error");
+            }
+        },
+        "ELIMINA"
+    );
 }
 
 function unsuspendUser(id, username) {

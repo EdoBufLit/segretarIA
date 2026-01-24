@@ -27,7 +27,7 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import get_db, SessionLocal
-from models import User, Subscription, Plan
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber
 from auth import (
     hash_password,
     verify_password,
@@ -1136,6 +1136,59 @@ async def admin_unsuspend_user(user_id: int, db: Session = Depends(get_db), admi
     )
 
     return {"status": "ok", "message": f"User {user.username} unsuspended"}
+
+@app.delete("/admin/users/{user_id}")
+async def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    # 1. Fetch user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 2. Safety checks
+    if user.id == admin.id:
+        raise HTTPException(status_code=403, detail="Cannot delete self")
+
+    if user.role == "admin":
+        raise HTTPException(status_code=403, detail="Cannot delete other admins")
+
+    try:
+        # 3. Transactional deletion of dependencies
+        # Delete UsageEvents
+        db.query(UsageEvent).filter(UsageEvent.user_id == user.id).delete()
+
+        # Delete PhoneNumbers
+        db.query(PhoneNumber).filter(PhoneNumber.user_id == user.id).delete()
+
+        # Delete Subscriptions
+        db.query(Subscription).filter(Subscription.user_id == user.id).delete()
+
+        # Delete User
+        db.delete(user)
+
+        db.commit()
+
+        # 4. Logging
+        logger.info(f"User {user.username} (id={user.id}) deleted by admin {admin.username}")
+        audit_logger.log_audit_event(
+            db=db,
+            actor_type="admin",
+            action="delete_user",
+            entity_type="user",
+            entity_id=str(user_id),
+            admin_username=admin.username,
+            meta={"deleted_username": user.username}
+        )
+
+        return {"status": "ok", "message": f"User {user.username} deleted"}
+
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"Error deleting user {user_id}")
+        raise HTTPException(status_code=500, detail="Database error during deletion")
 
 @app.get("/admin/metrics")
 async def admin_metrics(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
