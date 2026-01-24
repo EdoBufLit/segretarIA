@@ -72,14 +72,13 @@ def get_user_from_session(request: Request, db: Session) -> Optional[User]:
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """
     A dependency to get the current user from the session (API style).
-    If the user is not logged in, it raises HTTPException(302).
+    If the user is not logged in, it raises HTTPException(401).
     """
     user = get_user_from_session(request, db)
     if not user:
         raise HTTPException(
-            status_code=302,
+            status_code=401,
             detail="Not authenticated",
-            headers={"Location": "/login"},
         )
     return user
 

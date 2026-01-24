@@ -95,38 +95,40 @@ class AuthRedirectsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["location"], "/login")
 
-    def test_unauthenticated_client_dashboard_redirects_to_login(self):
+    def test_unauthenticated_client_dashboard_redirects_to_dashboard(self):
+        # /client/dashboard -> /dashboard -> /login
         response = self.client.get("/client/dashboard", follow_redirects=False)
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["location"], "/login")
+        self.assertEqual(response.headers["location"], "/dashboard")
 
     def test_admin_can_access_dashboard(self):
         self.login_as("admin")
         response = self.client.get("/dashboard", follow_redirects=False)
         self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Segreteria", response.content)
 
-    def test_client_can_access_client_dashboard(self):
-        self.login_as("client")
-        response = self.client.get("/client/dashboard", follow_redirects=False)
-        self.assertEqual(response.status_code, 200)
-
-    def test_client_accessing_admin_dashboard_redirects(self):
+    def test_client_can_access_dashboard(self):
         self.login_as("client")
         response = self.client.get("/dashboard", follow_redirects=False)
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["location"], "/client/dashboard")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Segreteria", response.content)
 
-    def test_admin_accessing_client_dashboard_redirects(self):
+    def test_client_accessing_client_dashboard_redirects_to_dashboard(self):
+        self.login_as("client")
+        response = self.client.get("/client/dashboard", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["location"], "/dashboard")
+
+    def test_admin_accessing_client_dashboard_redirects_to_dashboard(self):
         self.login_as("admin")
         response = self.client.get("/client/dashboard", follow_redirects=False)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["location"], "/dashboard")
 
     def test_api_access_unauthenticated_returns_json_error(self):
-        # Verify API still returns JSON error
+        # Verify API returns JSON error (401)
         response = self.client.get("/me", follow_redirects=False)
-        self.assertEqual(response.status_code, 302)
-        # Verify body is JSON
+        self.assertEqual(response.status_code, 401)
         try:
             data = response.json()
             self.assertIn("detail", data)

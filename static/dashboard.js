@@ -46,77 +46,97 @@ function renderDashboardUI() {
     const container = document.getElementById("dashboard-content");
     if (!container) return;
 
-    container.innerHTML = `
-        <!-- CLIENTI -->
-        <div class="bg-white p-6 rounded-lg shadow mb-10">
-            <h2 class="text-2xl font-semibold mb-4">Clienti attuali</h2>
+    const isClient = window.user && window.user.role === 'client';
 
-            <table class="min-w-full bg-white rounded border">
-                <thead class="bg-blue-600 text-white">
-                    <tr>
-                        <th class="py-3 px-4 text-left">Agent ID</th>
-                        <th class="py-3 px-4 text-left">Studio</th>
-                        <th class="py-3 px-4 text-left">Email</th>
-                        <th class="py-3 px-4 text-right">Azioni</th>
-                    </tr>
-                </thead>
-
-                <tbody id="clients-table-body">
-                    <!-- Popolato via JS -->
-                </tbody>
-            </table>
-        </div>
-
-        <!-- AGGIUNGI CLIENTE -->
-        <div class="bg-white p-6 rounded-lg shadow mb-10">
-            <h2 class="text-2xl font-semibold mb-4">➕ Aggiungi Cliente</h2>
-
-            <div class="grid grid-cols-1 gap-4">
-                <div>
-                    <label class="font-medium">Agent ID*</label>
-                    <input id="agent_id" class="w-full border p-2 rounded" placeholder="agent_xxxxxx">
-                </div>
-
-                <div>
-                    <label class="font-medium">Nome Studio*</label>
-                    <input id="studio_name" class="w-full border p-2 rounded" placeholder="Studio Legale Rossi">
-                </div>
-
-                <div>
-                    <label class="font-medium">Email*</label>
-                    <input id="email_to" class="w-full border p-2 rounded" placeholder="segreteria@studio.it">
-                </div>
-
-                <button onclick="addClient()"
-                        class="mt-3 bg-blue-600 text-white p-3 rounded hover:bg-blue-700 w-40">
-                    Aggiungi Cliente
-                </button>
+    if (isClient) {
+        container.innerHTML = `
+            <!-- GRAFICO GENERALE -->
+            <div class="glass-card mb-10">
+                <h2 class="text-2xl font-semibold mb-4 text-white">📈 Attività giornaliera</h2>
+                <canvas id="chart_all_clients"></canvas>
             </div>
-        </div>
 
-        <!-- GRAFICO GENERALE -->
-        <div class="bg-white p-6 rounded-lg shadow mb-10">
-            <h2 class="text-2xl font-semibold mb-4">📈 Attività giornaliera (totale)</h2>
-            <canvas id="chart_all_clients"></canvas>
-        </div>
-
-        <!-- MODAL LOGS -->
-        <div id="logModal"
-             class="fixed inset-0 bg-black bg-opacity-40 hidden items-center justify-center">
-            <div class="bg-white p-6 rounded-lg shadow-xl max-w-2xl w-full">
-                <h2 class="text-xl font-semibold mb-4">Log chiamate</h2>
-
-                <canvas id="clientChart" class="mb-4"></canvas>
-
-                <pre id="logContent" class="bg-gray-100 p-3 rounded h-80 overflow-auto"></pre>
-
-                <button onclick="closeModal()"
-                        class="mt-4 bg-blue-600 text-white px-4 py-2 rounded">
-                    Chiudi
-                </button>
+            <!-- MODAL LOGS -->
+            <div id="logModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm">
+                <div class="glass-card w-11/12 max-w-2xl p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Log chiamate</h2>
+                    <canvas id="clientChart" class="mb-4"></canvas>
+                    <div id="logContent" class="bg-black/20 p-3 rounded h-80 overflow-auto text-sm font-mono text-gray-300"></div>
+                    <button onclick="closeModal()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500 transition-colors">
+                        Chiudi
+                    </button>
+                </div>
             </div>
-        </div>
-    `;
+        `;
+    } else {
+        container.innerHTML = `
+            <!-- CLIENTI -->
+            <div class="glass-card mb-10">
+                <h2 class="text-2xl font-semibold mb-4 text-white">Clienti attuali</h2>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-separate border-spacing-y-2">
+                        <thead>
+                            <tr>
+                                <th class="py-3 px-4 text-left text-[var(--muted)]">Agent ID</th>
+                                <th class="py-3 px-4 text-left text-[var(--muted)]">Studio</th>
+                                <th class="py-3 px-4 text-left text-[var(--muted)]">Email</th>
+                                <th class="py-3 px-4 text-right text-[var(--muted)]">Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="clients-table-body" class="space-y-2">
+                            <!-- Popolato via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- AGGIUNGI CLIENTE -->
+            <div class="glass-card mb-10">
+                <h2 class="text-2xl font-semibold mb-4 text-white">➕ Aggiungi Cliente</h2>
+
+                <div class="grid grid-cols-1 gap-4">
+                    <div>
+                        <label class="font-medium text-[var(--muted)]">Agent ID*</label>
+                        <input id="agent_id" class="w-full border p-2 rounded bg-black/20 border-[var(--border)] text-white" placeholder="agent_xxxxxx">
+                    </div>
+
+                    <div>
+                        <label class="font-medium text-[var(--muted)]">Nome Studio*</label>
+                        <input id="studio_name" class="w-full border p-2 rounded bg-black/20 border-[var(--border)] text-white" placeholder="Studio Legale Rossi">
+                    </div>
+
+                    <div>
+                        <label class="font-medium text-[var(--muted)]">Email*</label>
+                        <input id="email_to" class="w-full border p-2 rounded bg-black/20 border-[var(--border)] text-white" placeholder="segreteria@studio.it">
+                    </div>
+
+                    <button onclick="addClient()"
+                            class="mt-3 bg-blue-600 text-white p-3 rounded hover:bg-blue-500 w-40 transition-colors">
+                        Aggiungi Cliente
+                    </button>
+                </div>
+            </div>
+
+            <!-- GRAFICO GENERALE -->
+            <div class="glass-card mb-10">
+                <h2 class="text-2xl font-semibold mb-4 text-white">📈 Attività giornaliera (totale)</h2>
+                <canvas id="chart_all_clients"></canvas>
+            </div>
+
+            <!-- MODAL LOGS -->
+            <div id="logModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm">
+                <div class="glass-card w-11/12 max-w-2xl p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Log chiamate</h2>
+                    <canvas id="clientChart" class="mb-4"></canvas>
+                    <div id="logContent" class="bg-black/20 p-3 rounded h-80 overflow-auto text-sm font-mono text-gray-300"></div>
+                    <button onclick="closeModal()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500 transition-colors">
+                        Chiudi
+                    </button>
+                </div>
+            </div>
+        `;
+    }
 }
 
 // =========================
@@ -243,15 +263,20 @@ async function initLogsSection() {
     const select = document.getElementById("log-filter-client");
     select.innerHTML = "";
 
+    const isClient = window.user && window.user.role === 'client';
+
+    if (isClient) {
+        window.isClientUser = true;
+        // Hide client selector
+        const label = document.querySelector("label[for='log-filter-client']");
+        if (label && label.parentElement) label.parentElement.classList.add("hidden");
+        loadLogsTable(0);
+        return;
+    }
+
     try {
         const res = await fetch("/clients");
-        if (res.status === 401 || res.status === 403) {
-            // Client mode: hide dropdown
-            window.isClientUser = true;
-            document.querySelector("label[for='log-filter-client']").parentElement.classList.add("hidden");
-            loadLogsTable(0);
-            return;
-        }
+        if (!res.ok) throw new Error("Fetch failed");
 
         const data = await res.json();
         const clientsObj = data.clients || {};
@@ -268,9 +293,8 @@ async function initLogsSection() {
 
     } catch (e) {
         console.warn("Could not load clients list", e);
-        // Fallback for client mode on error?
+        // Fallback
         window.isClientUser = true;
-        document.querySelector("label[for='log-filter-client']").parentElement.classList.add("hidden");
         loadLogsTable(0);
     }
 }
@@ -286,11 +310,33 @@ async function initSettingsSection() {
 
     select.innerHTML = "";
 
+    const isClient = window.user && window.user.role === 'client';
+
+    if (isClient) {
+        // Hide select container
+        select.parentElement.classList.add("hidden");
+
+        // Check agent_ids from user object
+        const agentIds = window.user.agent_ids || [];
+        if (agentIds.length > 0) {
+            // Auto select first one
+            const agentId = agentIds[0];
+            select.innerHTML = `<option value="${agentId}" selected>${agentId}</option>`;
+            select.value = agentId;
+            // Trigger load immediately
+            await loadClientSettings();
+        } else {
+            const form = document.getElementById("settings-form");
+            form.innerHTML = "<p class='text-[var(--muted)] p-4'>Nessun agente assegnato al tuo account.</p>";
+            form.classList.remove("hidden");
+        }
+        return;
+    }
+
+    // Admin Logic
     const res = await fetch("/clients");
     const data = await res.json();
 
-    // qui dipende da come /clients risponde
-    // supponiamo formato: { clients: { agent_id: {studio_name, ...}, ... } }
     const clientsObj = data.clients || {};
 
     for (const agentId in clientsObj) {
