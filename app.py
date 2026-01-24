@@ -1120,6 +1120,9 @@ async def dashboard(
         "is_active": user.is_active,
         "agent_ids": [a.agent_id for a in user.agents]
     }
+
+    logger.info(f"Rendering dashboard for user {user.username} (role: {user.role})")
+
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "user": user_dict,

@@ -44,10 +44,15 @@ def ensure_default_admin() -> None:
     try:
         existing_admin = db.query(User).filter(User.username == admin_username).first()
         if existing_admin:
-            logger.info(
-                "Default admin user already exists with username '%s'.",
-                admin_username,
-            )
+            if existing_admin.role != "admin":
+                logger.info(f"Updating existing admin user '{admin_username}' role from '{existing_admin.role}' to 'admin'.")
+                existing_admin.role = "admin"
+                db.commit()
+            else:
+                logger.info(
+                    "Default admin user already exists with username '%s' and correct role.",
+                    admin_username,
+                )
             return
 
         admin_user = User(
