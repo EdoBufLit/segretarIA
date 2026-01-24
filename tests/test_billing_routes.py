@@ -3,11 +3,13 @@ from app import app
 from db import SessionLocal, Base, engine
 from models import User
 from auth import hash_password
+from admin_seed import ensure_plans
 
 client = TestClient(app)
 
 def setup_module(module):
     Base.metadata.create_all(bind=engine)
+    ensure_plans()
     db = SessionLocal()
     if not db.query(User).filter_by(username="testclient").first():
         user = User(

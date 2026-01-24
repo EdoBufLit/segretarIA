@@ -1,5 +1,6 @@
 import stripe
 import os
+import time
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from models import User, Subscription, Plan
@@ -10,6 +11,13 @@ from mailer import send_email
 logger = logging.getLogger("stripe_service")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 
+# Cache for plan prices: {timestamp: float, data: dict}
+_plans_cache = {"timestamp": 0, "data": {}}
+# Cache for recent payments: {timestamp: float, data: list}
+_payments_cache = {"timestamp": 0, "data": []}
+# Cache for aggregated metrics: {timestamp: float, data: dict}
+_metrics_cache = {"timestamp": 0, "data": {}}
+
 class StripeService:
     def __init__(self, db: Session):
         self.db = db
@@ -19,6 +27,157 @@ class StripeService:
             stripe.api_key = self.api_key
         else:
             logger.warning("STRIPE_SECRET_KEY not set")
+
+    def get_stripe_prices(self):
+        """
+        Fetches plan prices from Stripe (or cache).
+        """
+        global _plans_cache
+        # TTL 10 minutes
+        if time.time() - _plans_cache["timestamp"] < 600 and _plans_cache["data"]:
+            return _plans_cache["data"]
+
+        codes = ["starter", "pro", "business"]
+        result = {}
+
+        try:
+            # Handle Mock Mode
+            if self.api_key == "mock":
+                 # Return mock data for testing/verification if needed
+                 mock_prices = {
+                     "starter": {"price_display": "29€", "interval": "month"},
+                     "pro": {"price_display": "79€", "interval": "month"},
+                     "business": {"price_display": "199€", "interval": "month"},
+                 }
+                 _plans_cache["data"] = mock_prices
+                 _plans_cache["timestamp"] = time.time()
+                 logger.info("Loaded Stripe prices (MOCK) for plans: starter/pro/business")
+                 return mock_prices
+
+            for code in codes:
+                price_id = os.getenv(f"STRIPE_PRICE_ID_{code.upper()}")
+                if not price_id:
+                    result[code] = {"price_display": "—"}
+                    continue
+
+                try:
+                    p = stripe.Price.retrieve(price_id, expand=["product"])
+                    # Assuming EUR mostly, but handling currency symbol simply
+                    curr = p.currency.lower()
+                    symbol = "€" if curr == "eur" else "$" if curr == "usd" else curr.upper()
+
+                    amt = p.unit_amount / 100.0
+                    if amt.is_integer():
+                        price_display = f"{int(amt)}{symbol}"
+                    else:
+                        price_display = f"{amt:.2f}{symbol}"
+
+                    result[code] = {
+                        "price_display": price_display,
+                        "interval": p.recurring.interval if p.recurring else "one-time"
+                    }
+                except Exception as e:
+                    logger.error(f"Failed to fetch price for {code} (ID: {price_id}): {e}")
+                    result[code] = {"price_display": "—"}
+
+            _plans_cache["data"] = result
+            _plans_cache["timestamp"] = time.time()
+            logger.info("Loaded Stripe prices for plans: starter/pro/business")
+            return result
+
+        except Exception as e:
+            logger.error(f"Global error fetching stripe prices: {e}")
+            # Return existing cache if available, else empty/dashes
+            return _plans_cache.get("data", {c: {"price_display": "—"} for c in codes})
+
+    def get_recent_payments(self, limit=10):
+        """
+        Fetches recent payments (Charges) from Stripe (or cache).
+        """
+        global _payments_cache
+        # TTL 10 minutes
+        if time.time() - _payments_cache["timestamp"] < 600 and _payments_cache["data"]:
+            return _payments_cache["data"]
+
+        try:
+            # Handle Mock Mode
+            if self.api_key == "mock":
+                mock_data = []
+                for i in range(limit):
+                    mock_data.append({
+                        "id": f"ch_mock_{i}",
+                        "amount": 2900 + (i * 1000),
+                        "currency": "eur",
+                        "status": "succeeded",
+                        "created": int(time.time()) - (i * 86400),
+                        "billing_details": {"email": f"user{i}@example.com"}
+                    })
+                _payments_cache["data"] = mock_data
+                _payments_cache["timestamp"] = time.time()
+                return mock_data
+
+            charges = stripe.Charge.list(limit=limit)
+            data = []
+            for c in charges.auto_paging_iter():
+                data.append({
+                    "id": c.id,
+                    "amount": c.amount,
+                    "currency": c.currency,
+                    "status": c.status,
+                    "created": c.created,
+                    "billing_details": c.billing_details
+                })
+                if len(data) >= limit:
+                    break
+
+            _payments_cache["data"] = data
+            _payments_cache["timestamp"] = time.time()
+            return data
+
+        except Exception as e:
+            logger.error(f"Error fetching recent payments: {e}")
+            return _payments_cache.get("data", [])
+
+    def get_aggregated_metrics(self):
+        """
+        Calculates approximate MRR and Total Revenue.
+        """
+        global _metrics_cache
+        # TTL 10 minutes
+        if time.time() - _metrics_cache["timestamp"] < 600 and _metrics_cache["data"]:
+            return _metrics_cache["data"]
+
+        metrics = {"mrr": 0.0, "total_revenue": 0.0}
+
+        try:
+            if self.api_key == "mock":
+                metrics = {"mrr": 1250.00, "total_revenue": 15400.00}
+                _metrics_cache["data"] = metrics
+                _metrics_cache["timestamp"] = time.time()
+                return metrics
+
+            # 1. Total Revenue (Approx last 100 charges)
+            charges = stripe.Charge.list(limit=100, status='succeeded')
+            total_rev_cents = sum(c.amount for c in charges.auto_paging_iter())
+            metrics["total_revenue"] = total_rev_cents / 100.0
+
+            # 2. MRR (Approx active subs)
+            subs = stripe.Subscription.list(limit=100, status='active')
+            mrr_cents = 0
+            for s in subs.auto_paging_iter():
+                # Sum items
+                for item in s['items']['data']:
+                    mrr_cents += item['price']['unit_amount'] * item['quantity']
+
+            metrics["mrr"] = mrr_cents / 100.0
+
+            _metrics_cache["data"] = metrics
+            _metrics_cache["timestamp"] = time.time()
+            return metrics
+
+        except Exception as e:
+            logger.error(f"Error calculating Stripe metrics: {e}")
+            return _metrics_cache.get("data", {"mrr": 0.0, "total_revenue": 0.0})
 
     def create_checkout_session(self, user_id: int, plan_code: str, success_url: str, cancel_url: str):
         # MOCK FOR QA
@@ -35,11 +194,10 @@ class StripeService:
             raise ValueError("User not found")
 
         # Map plan_code to Stripe Price ID
-        # In a real app, this might be in DB or config.
-        # For now, we mock or use env vars.
         price_id = os.getenv(f"STRIPE_PRICE_ID_{plan_code.upper()}")
         if not price_id:
-            # Fallback for testing if not in env
+            logger.warning(f"Missing price ID for plan {plan_code}, using fallback/mock.")
+            # Fallback for testing/mocking
             price_id = "price_mock_123"
 
         try:

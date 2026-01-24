@@ -52,26 +52,30 @@
     <script>
         const btn = document.getElementById('mobile-menu-btn');
         const menu = document.getElementById('mobile-menu');
-        const mainNav = document.getElementById('main-nav');
+        const mainNav = document.querySelector('.glass-nav');
 
-        btn.addEventListener('click', () => {
-            menu.classList.toggle('hidden');
-        });
-
-        // Close menu when clicking a link
-        menu.querySelectorAll('a').forEach(link => {
-            link.addEventListener('click', () => {
-                menu.classList.add('hidden');
+        if (btn && menu) {
+            btn.addEventListener('click', () => {
+                menu.classList.toggle('hidden');
             });
-        });
 
-        window.addEventListener('scroll', () => {
-            if (window.scrollY > 12) {
-                mainNav.classList.add('nav-scrolled');
-            } else {
-                mainNav.classList.remove('nav-scrolled');
-            }
-        });
+            // Close menu when clicking a link
+            menu.querySelectorAll('a').forEach(link => {
+                link.addEventListener('click', () => {
+                    menu.classList.add('hidden');
+                });
+            });
+        }
+
+        if (mainNav) {
+            window.addEventListener('scroll', () => {
+                if (window.scrollY > 12) {
+                    mainNav.classList.add('nav-scrolled');
+                } else {
+                    mainNav.classList.remove('nav-scrolled');
+                }
+            });
+        }
     </script>
 
     <!-- Hero Section -->
