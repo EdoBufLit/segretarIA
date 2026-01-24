@@ -1148,9 +1148,10 @@ async def admin_metrics(db: Session = Depends(get_db), admin: User = Depends(get
         churned_subs = db.query(Subscription).filter(Subscription.state == "canceled").count()
         past_due_subs = db.query(Subscription).filter(Subscription.state == "past_due").count()
 
-        # 2. Stripe Payments
+        # 2. Stripe Payments & Metrics
         stripe_service = StripeService(db)
         recent_payments = stripe_service.get_recent_payments(limit=10)
+        stripe_metrics = stripe_service.get_aggregated_metrics()
 
         # Format payments for UI
         formatted_payments = []
@@ -1172,7 +1173,9 @@ async def admin_metrics(db: Session = Depends(get_db), admin: User = Depends(get
                 "total_users": total_users,
                 "active_subscriptions": active_subs,
                 "churned": churned_subs,
-                "past_due": past_due_subs
+                "past_due": past_due_subs,
+                "mrr": f"€{stripe_metrics['mrr']:.2f}",
+                "total_revenue": f"€{stripe_metrics['total_revenue']:.2f}"
             },
             "recent_payments": formatted_payments
         }

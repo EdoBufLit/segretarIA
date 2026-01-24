@@ -91,32 +91,6 @@ function renderDashboardUI() {
                 </div>
             </div>
 
-            <!-- AGGIUNGI CLIENTE -->
-            <div class="glass-card mb-10">
-                <h2 class="text-2xl font-semibold mb-4 text-white">➕ Aggiungi Cliente</h2>
-
-                <div class="grid grid-cols-1 gap-4">
-                    <div>
-                        <label class="font-medium text-[var(--muted)]">Agent ID*</label>
-                        <input id="agent_id" class="w-full border p-2 rounded bg-black/20 border-[var(--border)] text-white" placeholder="agent_xxxxxx">
-                    </div>
-
-                    <div>
-                        <label class="font-medium text-[var(--muted)]">Nome Studio*</label>
-                        <input id="studio_name" class="w-full border p-2 rounded bg-black/20 border-[var(--border)] text-white" placeholder="Studio Legale Rossi">
-                    </div>
-
-                    <div>
-                        <label class="font-medium text-[var(--muted)]">Email*</label>
-                        <input id="email_to" class="w-full border p-2 rounded bg-black/20 border-[var(--border)] text-white" placeholder="segreteria@studio.it">
-                    </div>
-
-                    <button onclick="addClient()"
-                            class="mt-3 bg-blue-600 text-white p-3 rounded hover:bg-blue-500 w-40 transition-colors">
-                        Aggiungi Cliente
-                    </button>
-                </div>
-            </div>
 
             <!-- GRAFICO GENERALE -->
             <div class="glass-card mb-10">
@@ -410,6 +384,20 @@ async function saveClientSettings() {
 // ADMIN METRICS (Fase 8)
 // =========================
 
+async function updateDashboardKPIs(data) {
+    if (!data || !data.kpi) return;
+
+    const kpiClients = document.getElementById("dash-kpi-clients");
+    const kpiSubs = document.getElementById("dash-kpi-subs");
+    const kpiMrr = document.getElementById("dash-kpi-mrr");
+    const kpiRev = document.getElementById("dash-kpi-revenue");
+
+    if (kpiClients) kpiClients.textContent = data.kpi.total_users;
+    if (kpiSubs) kpiSubs.textContent = data.kpi.active_subscriptions;
+    if (kpiMrr) kpiMrr.textContent = data.kpi.mrr;
+    if (kpiRev) kpiRev.textContent = data.kpi.total_revenue;
+}
+
 async function loadAdminMetrics() {
     // Only fetch if admin
     if (window.user && window.user.role !== 'admin') return;
@@ -420,11 +408,17 @@ async function loadAdminMetrics() {
         const data = await res.json();
 
         if (data.status === "ok") {
-            // Update KPIs
-            document.getElementById("metrics-total-users").textContent = data.kpi.total_users;
-            document.getElementById("metrics-active-subs").textContent = data.kpi.active_subscriptions;
-            document.getElementById("metrics-churn").textContent = data.kpi.churned;
-            document.getElementById("metrics-past-due").textContent = data.kpi.past_due;
+            // Update Analytics Tab KPIs
+            const elTotal = document.getElementById("metrics-total-users");
+            if (elTotal) { // check if we are on analytics view logic or if elements exist
+                elTotal.textContent = data.kpi.total_users;
+                document.getElementById("metrics-active-subs").textContent = data.kpi.active_subscriptions;
+                document.getElementById("metrics-churn").textContent = data.kpi.churned;
+                document.getElementById("metrics-past-due").textContent = data.kpi.past_due;
+            }
+
+            // Update Dashboard Tab KPIs
+            updateDashboardKPIs(data);
 
             // Update Payments Table
             const tbody = document.getElementById("metrics-payments-body");
@@ -907,6 +901,11 @@ async function initDashboard() {
     // Existing Logic
     await loadClients();
     await renderGlobalChart();
+
+    // Admin Dashboard KPIs
+    if (window.user && window.user.role === 'admin') {
+        await loadAdminMetrics();
+    }
 }
 
 // =========================

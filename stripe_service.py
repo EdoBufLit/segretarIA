@@ -15,6 +15,8 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 _plans_cache = {"timestamp": 0, "data": {}}
 # Cache for recent payments: {timestamp: float, data: list}
 _payments_cache = {"timestamp": 0, "data": []}
+# Cache for aggregated metrics: {timestamp: float, data: dict}
+_metrics_cache = {"timestamp": 0, "data": {}}
 
 class StripeService:
     def __init__(self, db: Session):
@@ -135,6 +137,47 @@ class StripeService:
         except Exception as e:
             logger.error(f"Error fetching recent payments: {e}")
             return _payments_cache.get("data", [])
+
+    def get_aggregated_metrics(self):
+        """
+        Calculates approximate MRR and Total Revenue.
+        """
+        global _metrics_cache
+        # TTL 10 minutes
+        if time.time() - _metrics_cache["timestamp"] < 600 and _metrics_cache["data"]:
+            return _metrics_cache["data"]
+
+        metrics = {"mrr": 0.0, "total_revenue": 0.0}
+
+        try:
+            if self.api_key == "mock":
+                metrics = {"mrr": 1250.00, "total_revenue": 15400.00}
+                _metrics_cache["data"] = metrics
+                _metrics_cache["timestamp"] = time.time()
+                return metrics
+
+            # 1. Total Revenue (Approx last 100 charges)
+            charges = stripe.Charge.list(limit=100, status='succeeded')
+            total_rev_cents = sum(c.amount for c in charges.auto_paging_iter())
+            metrics["total_revenue"] = total_rev_cents / 100.0
+
+            # 2. MRR (Approx active subs)
+            subs = stripe.Subscription.list(limit=100, status='active')
+            mrr_cents = 0
+            for s in subs.auto_paging_iter():
+                # Sum items
+                for item in s['items']['data']:
+                    mrr_cents += item['price']['unit_amount'] * item['quantity']
+
+            metrics["mrr"] = mrr_cents / 100.0
+
+            _metrics_cache["data"] = metrics
+            _metrics_cache["timestamp"] = time.time()
+            return metrics
+
+        except Exception as e:
+            logger.error(f"Error calculating Stripe metrics: {e}")
+            return _metrics_cache.get("data", {"mrr": 0.0, "total_revenue": 0.0})
 
     def create_checkout_session(self, user_id: int, plan_code: str, success_url: str, cancel_url: str):
         # MOCK FOR QA
