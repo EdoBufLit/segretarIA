@@ -68,11 +68,18 @@
         }
 
         if (mainNav) {
+            let ticking = false;
             window.addEventListener('scroll', () => {
-                if (window.scrollY > 12) {
-                    mainNav.classList.add('nav-scrolled');
-                } else {
-                    mainNav.classList.remove('nav-scrolled');
+                if (!ticking) {
+                    window.requestAnimationFrame(() => {
+                        if (window.scrollY > 12) {
+                            mainNav.classList.add('nav-scrolled');
+                        } else {
+                            mainNav.classList.remove('nav-scrolled');
+                        }
+                        ticking = false;
+                    });
+                    ticking = true;
                 }
             });
         }

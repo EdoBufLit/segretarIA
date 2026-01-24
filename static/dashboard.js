@@ -942,6 +942,32 @@ function startStatusPolling() {
     dashboardPollInterval = setInterval(updateDashboardStatus, 15000);
 }
 
+// Page Visibility API to pause/resume polling
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        // Pause polling
+        if (dashboardPollInterval) {
+            clearInterval(dashboardPollInterval);
+            dashboardPollInterval = null;
+        }
+        if (typeof stopLogsPolling === "function") {
+            stopLogsPolling();
+        }
+    } else {
+        // Resume polling
+        if (!dashboardPollInterval) {
+            startStatusPolling();
+        }
+        // Resume logs polling if on logs section
+        const activeSection = document.querySelector('.nav-item-active');
+        if (activeSection && activeSection.dataset.section === 'logs') {
+            if (typeof startLogsPolling === "function") {
+                startLogsPolling();
+            }
+        }
+    }
+});
+
 
 // =========================
 // BOOTSTRAP ESPORTATO

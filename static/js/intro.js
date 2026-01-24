@@ -67,20 +67,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     elements.forEach(el => observer.observe(el));
 
-    // 3. PARALLAX (Existing)
+    // 3. PARALLAX (Throttled)
     const blobs = document.querySelectorAll('.hero-blob');
     if (blobs.length > 0 && !prefersReducedMotion) {
+        let ticking = false;
+
         document.addEventListener('mousemove', (e) => {
-            const x = e.clientX / window.innerWidth;
-            const y = e.clientY / window.innerHeight;
+            if (!ticking) {
+                window.requestAnimationFrame(() => {
+                    const x = e.clientX / window.innerWidth;
+                    const y = e.clientY / window.innerHeight;
 
-            blobs.forEach((blob, index) => {
-                const speed = (index + 1) * 20;
-                const xOffset = (x - 0.5) * speed;
-                const yOffset = (y - 0.5) * speed;
+                    blobs.forEach((blob, index) => {
+                        const speed = (index + 1) * 20;
+                        const xOffset = (x - 0.5) * speed;
+                        const yOffset = (y - 0.5) * speed;
 
-                blob.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
-            });
+                        blob.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0)`;
+                    });
+                    ticking = false;
+                });
+                ticking = true;
+            }
         });
     }
 });
