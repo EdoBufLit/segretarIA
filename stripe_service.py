@@ -101,11 +101,10 @@ class StripeService:
             raise ValueError("User not found")
 
         # Map plan_code to Stripe Price ID
-        # In a real app, this might be in DB or config.
-        # For now, we mock or use env vars.
         price_id = os.getenv(f"STRIPE_PRICE_ID_{plan_code.upper()}")
         if not price_id:
-            # Fallback for testing if not in env
+            logger.warning(f"Missing price ID for plan {plan_code}, using fallback/mock.")
+            # Fallback for testing/mocking
             price_id = "price_mock_123"
 
         try:
