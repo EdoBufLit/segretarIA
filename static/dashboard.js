@@ -96,36 +96,10 @@ function renderDashboardUI() {
             </div>
         `;
     } else {
+        // Admin View - Removed Widgets (Clienti attuali & Chart) as requested.
+        // The container is left empty or can be used for other Admin-specific widgets in the future.
         container.innerHTML = `
-            <!-- CLIENTI -->
-            <div class="glass-card mb-10">
-                <h2 class="text-2xl font-semibold mb-4 text-white">Clienti attuali</h2>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-separate border-spacing-y-2">
-                        <thead>
-                            <tr>
-                                <th class="py-3 px-4 text-left text-[var(--muted)]">Agent ID</th>
-                                <th class="py-3 px-4 text-left text-[var(--muted)]">Studio</th>
-                                <th class="py-3 px-4 text-left text-[var(--muted)]">Email</th>
-                                <th class="py-3 px-4 text-right text-[var(--muted)]">Azioni</th>
-                            </tr>
-                        </thead>
-                        <tbody id="clients-table-body" class="space-y-2">
-                            <!-- Popolato via JS -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-
-            <!-- GRAFICO GENERALE -->
-            <div class="glass-card mb-10">
-                <h2 class="text-2xl font-semibold mb-4 text-white">📈 Attività giornaliera (totale)</h2>
-                <canvas id="chart_all_clients"></canvas>
-            </div>
-
-            <!-- MODAL LOGS -->
+            <!-- MODAL LOGS (Optional, kept if needed for deep links, though usually accessed via Logs tab) -->
             <div id="logModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm">
                 <div class="glass-card w-11/12 max-w-2xl p-6">
                     <h2 class="text-xl font-semibold mb-4 text-white">Log chiamate</h2>
@@ -149,6 +123,7 @@ async function loadClients() {
     const data = await res.json();
     clients = data.clients || {};
 
+    // Check if the table body exists (it was removed from Admin dashboard view)
     const tbody = document.getElementById("clients-table-body");
     if (!tbody) return;
 
