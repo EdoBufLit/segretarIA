@@ -18,79 +18,34 @@
     </style>
 </head>
 <body class="antialiased">
-    <div class="noise-bg"></div>
-    <div id="intro-overlay" class="intro-overlay" aria-hidden="true">
-        <div class="intro-overlay__glow"></div>
-        <div class="intro-overlay__content" role="presentation">
-            <img src="/static/img/logo.png" alt="Segreteria IA logo" class="intro-overlay__logo">
-            <div class="intro-overlay__wordmark" aria-hidden="true">Segreteria IA</div>
-            <p class="intro-overlay__hint">Benvenuto</p>
-        </div>
+    <!-- Premium Intro Overlay -->
+    <div id="premium-intro" class="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none opacity-0" aria-hidden="true">
+        <div class="intro-glow"></div>
+        <div class="intro-wordmark">Automa AI</div>
+        <div class="noise-bg absolute inset-0 opacity-10"></div>
     </div>
 
-    <!-- Navbar -->
-    <nav id="main-nav" class="fixed w-full z-50 transition-all duration-300 border-b border-transparent">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-20 items-center">
-                <div class="flex-shrink-0 flex items-center gap-2">
-                    <span class="text-xl font-bold text-white tracking-tight">Segreteria <span class="text-blue-500">IA</span></span>
-                </div>
-                <!-- Desktop Menu -->
-                <div class="hidden md:flex space-x-8">
-                    <a href="#funzioni" class="text-gray-300 hover:text-white font-medium transition-colors text-sm">Funzioni</a>
-                    <a href="#come-funziona" class="text-gray-300 hover:text-white font-medium transition-colors text-sm">Come Funziona</a>
-                    <a href="#sicurezza" class="text-gray-300 hover:text-white font-medium transition-colors text-sm">Sicurezza</a>
-                    <a href="#prezzi" class="text-gray-300 hover:text-white font-medium transition-colors text-sm">Prezzi</a>
-                    <a href="#settori" class="text-gray-300 hover:text-white font-medium transition-colors text-sm">Settori</a>
-                    <a href="#faq" class="text-gray-300 hover:text-white font-medium transition-colors text-sm">FAQ</a>
-                </div>
-                <div class="hidden md:flex items-center gap-3">
-                    <button type="button" data-booking-open aria-label="Prenota un test" class="text-white px-5 py-2 rounded-full font-medium hover:bg-white/5 transition-colors border border-white/10 text-sm">
-                        Prenota un test
-                    </button>
-                    {% if user %}
-                    <a href="/dashboard" class="btn-glow px-5 py-2 rounded-full font-medium text-sm shadow-lg shadow-blue-900/20">
-                        Dashboard
-                    </a>
-                    {% else %}
-                    <a href="/login" class="btn-glow px-5 py-2 rounded-full font-medium text-sm shadow-lg shadow-blue-900/20">
-                        Accedi
-                    </a>
-                    {% endif %}
-                </div>
-                <!-- Mobile Menu Button -->
-                <div class="md:hidden flex items-center">
-                    <button id="mobile-menu-btn" class="text-slate-600 hover:text-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2" aria-label="Apri menu">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-        </div>
-        <!-- Mobile Menu -->
-        <div id="mobile-menu" class="hidden md:hidden bg-white border-t border-slate-100">
-            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-                <a href="#funzioni" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Funzioni</a>
-                <a href="#come-funziona" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Come Funziona</a>
-                <a href="#sicurezza" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Sicurezza</a>
-                <a href="#prezzi" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Prezzi</a>
-                <a href="#settori" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">Settori</a>
-                <a href="#faq" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:text-blue-600 hover:bg-blue-50">FAQ</a>
-                <div class="pt-4 pb-2">
-                    <button type="button" data-booking-open aria-label="Prenota un test" class="cta-glow block w-full text-center bg-slate-900 text-white px-5 py-3 rounded-lg font-medium hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
-                        Prenota un test
-                    </button>
-                    {% if user %}
-                    <a href="/dashboard" class="mt-3 block w-full text-center bg-blue-600 text-white px-5 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
-                        Dashboard
-                    </a>
-                    {% else %}
-                    <a href="/login" class="mt-3 block w-full text-center bg-blue-600 text-white px-5 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
-                        Accedi
-                    </a>
-                    {% endif %}
-                </div>
+    <div class="noise-bg"></div>
+
+    <!-- Fixed Glass Navbar -->
+    <nav class="fixed top-0 left-0 w-full z-50 glass-nav">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center">
+            <!-- Left: Wordmark -->
+            <a href="#" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;" class="text-lg font-semibold tracking-tight text-white hover:text-gray-200 transition-colors">
+                Automa AI
+            </a>
+
+            <!-- Right: CTA -->
+            <div class="flex items-center gap-4">
+                {% if user %}
+                <a href="/dashboard" class="text-sm font-medium text-gray-300 hover:text-white transition-colors hidden sm:block">Dashboard</a>
+                {% else %}
+                <a href="/login" class="text-sm font-medium text-gray-300 hover:text-white transition-colors hidden sm:block">Accedi</a>
+                {% endif %}
+
+                <button type="button" data-booking-open class="btn-navbar">
+                    Contattaci
+                </button>
             </div>
         </div>
     </nav>

@@ -26,7 +26,7 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import get_db, SessionLocal
-from models import User
+from models import User, Subscription, Plan
 from auth import (
     hash_password,
     verify_password,
