@@ -16,6 +16,7 @@
 
     <!-- Custom Dark Theme -->
     <link rel="stylesheet" href="/static/styles.css?v=6">
+    <link rel="stylesheet" href="/static/css/effects.css">
 
     <style>
         /* 
@@ -130,6 +131,13 @@
 </head>
 
 <body>
+    <!-- Background Effects -->
+    <div class="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+        <div class="hero-aurora__blob hero-aurora__blob--one opacity-30"></div>
+        <div class="hero-aurora__blob hero-aurora__blob--two opacity-30"></div>
+        <div class="hero-aurora__blob hero-aurora__blob--three opacity-30"></div>
+        <div class="hero-noise opacity-50"></div>
+    </div>
 
     <!-- LOG DETAIL MODAL -->
     <div id="log-detail-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50">
@@ -178,15 +186,12 @@
     </div>
 
     <!-- MAIN LAYOUT -->
-    <div class="app">
+    <div class="app relative z-10">
 
         <!-- SIDEBAR -->
         <aside class="sidebar flex flex-col">
             <div class="flex items-center gap-3 px-2 mb-8">
-                <div
-                    class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
-                    <i data-feather="monitor" class="text-white w-5 h-5"></i>
-                </div>
+                <img src="/static/img/logo.png" alt="Segreteria IA" class="w-10 h-10 rounded-xl shadow-lg object-cover">
                 <h1 class="font-bold text-xl tracking-tight text-white">Segreteria <span class="text-blue-400">IA</span>
                 </h1>
             </div>
@@ -529,6 +534,9 @@
     </div>
 
     <!-- SCRIPTS -->
+    <script>
+        window.user = {{ user | tojson }};
+    </script>
     <script src="/static/dashboard.js"></script>
     <script src="/static/charts.js"></script>
 

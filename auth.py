@@ -1,5 +1,6 @@
 import secrets
 import string
+from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -36,31 +37,60 @@ def generate_random_password(length=12):
             return password
 
 
-def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+class NotAuthenticatedPage(Exception):
+    """Raised when authentication is required for a page but not provided."""
+    pass
+
+
+class NotAuthorizedPage(Exception):
+    """Raised when a user lacks permission for a page."""
+    def __init__(self, user: User, required_role: str):
+        self.user = user
+        self.required_role = required_role
+
+
+def get_user_from_session(request: Request, db: Session) -> Optional[User]:
     """
-    A dependency to get the current user from the session.
-    If the user is not logged in, it redirects to the login page.
+    Helper function to retrieve user from session without raising exceptions.
+    Returns None if not authenticated.
     """
     user_session = request.session.get("user")
     if not user_session or "user_id" not in user_session:
-        raise HTTPException(
-            status_code=302,
-            detail="Not authenticated",
-            headers={"Location": "/login"},
-        )
+        return None
 
     user_id = user_session["user_id"]
     user = db.query(User).filter(User.id == user_id).first()
 
     if user is None:
-        # This case might happen if the user was deleted but the session persists.
+        # User deleted but session exists
         request.session.clear()
-        raise HTTPException(
-            status_code=302,
-            detail="User not found",
-            headers={"Location": "/login"},
-        )
+        return None
 
+    return user
+
+
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """
+    A dependency to get the current user from the session (API style).
+    If the user is not logged in, it raises HTTPException(401).
+    """
+    user = get_user_from_session(request, db)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated",
+        )
+    return user
+
+
+def get_current_user_page(request: Request, db: Session = Depends(get_db)) -> User:
+    """
+    A dependency to get the current user for HTML pages.
+    Raises NotAuthenticatedPage if not logged in.
+    """
+    user = get_user_from_session(request, db)
+    if not user:
+        raise NotAuthenticatedPage()
     return user
 
 
@@ -73,6 +103,14 @@ def require_role(role: str):
     return _require_role
 
 
+def require_role_page(role: str):
+    def _require_role_page(current_user: User = Depends(get_current_user_page)) -> User:
+        if current_user.role != role:
+            raise NotAuthorizedPage(user=current_user, required_role=role)
+        return current_user
+    return _require_role_page
+
+
 def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
     """
     A dependency to get the current user, ensuring they are an admin.
@@ -80,4 +118,14 @@ def get_current_admin_user(current_user: User = Depends(get_current_user)) -> Us
     """
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
+    return current_user
+
+
+def get_current_admin_user_page(current_user: User = Depends(get_current_user_page)) -> User:
+    """
+    A dependency to get the current admin user for HTML pages.
+    Raises NotAuthorizedPage if not admin.
+    """
+    if current_user.role != "admin":
+        raise NotAuthorizedPage(user=current_user, required_role="admin")
     return current_user

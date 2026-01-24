@@ -33,6 +33,11 @@ from auth import (
     get_current_user,
     get_current_admin_user,
     require_role,
+    NotAuthenticatedPage,
+    NotAuthorizedPage,
+    get_current_user_page,
+    get_current_admin_user_page,
+    require_role_page,
 )
 from admin_service import AdminService
 from admin_seed import ensure_default_admin
@@ -87,6 +92,21 @@ async def add_correlation_id(request: Request, call_next):
     return response
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.exception_handler(NotAuthenticatedPage)
+async def not_authenticated_handler(request: Request, exc: NotAuthenticatedPage):
+    return RedirectResponse(url="/login", status_code=302)
+
+@app.exception_handler(NotAuthorizedPage)
+async def not_authorized_handler(request: Request, exc: NotAuthorizedPage):
+    # Smart redirect based on role
+    if exc.required_role == "admin" and exc.user.role == "client":
+        return RedirectResponse(url="/dashboard", status_code=302)
+    elif exc.required_role == "client" and exc.user.role == "admin":
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    # Fallback
+    return RedirectResponse(url="/", status_code=302)
 
 
 @app.on_event("startup")
@@ -310,7 +330,7 @@ async def root(request: Request):
 # ================== ADMIN ENDPOINTS ==================
 
 @app.get("/admin/clients", response_class=HTMLResponse)
-async def admin_get_clients(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+async def admin_get_clients(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user_page)):
     service = AdminService(db)
     clients = service.get_clients()
     return templates.TemplateResponse("admin_clients.html", {"request": request, "clients": clients})
@@ -361,7 +381,7 @@ async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = D
     return {"status": "ok", **summary}
 
 @app.get("/admin/phone-numbers", response_class=HTMLResponse)
-async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user_page)):
     service = AdminService(db)
     numbers = service.get_all_phone_numbers()
     return templates.TemplateResponse("admin_phonenumbers.html", {"request": request, "numbers": numbers})
@@ -411,7 +431,7 @@ async def admin_export_minutes(
     from_date: str = Query(..., alias="from"),
     to_date: str = Query(..., alias="to"),
     db: Session = Depends(get_db),
-    admin: User = Depends(get_current_admin_user)
+    admin: User = Depends(get_current_admin_user_page)
 ):
     """
     Exports usage minutes to CSV.
@@ -451,7 +471,7 @@ async def admin_export_logs(
     to_date: str = Query(..., alias="to"),
     client: Optional[str] = None,
     db: Session = Depends(get_db),
-    admin: User = Depends(get_current_admin_user)
+    admin: User = Depends(get_current_admin_user_page)
 ):
     """
     Exports logs to CSV.
@@ -846,21 +866,7 @@ async def view_logs(agent_id: str, admin: User = Depends(get_current_admin_user)
     }
 
 
-@app.get("/analytics/global")
-async def analytics_global(admin: User = Depends(get_current_admin_user)):
-    """
-    Ritorna statistiche aggregate da TUTTI i log:
-    - chiamate totali
-    - chiamate per giorno
-    - chiamate per cliente
-    - chiamate oggi
-    - chiamate ultimi 7 giorni
-    - numero di errori/fallite
-    - distribuzione per categoria / urgenza
-    - heatmap oraria (24 x 7)
-    """
-    maybe_reload_clients()
-
+def _calculate_analytics(agent_ids: List[str]) -> Dict[str, Any]:
     stats_by_day: Dict[str, int] = {}
     stats_by_client: Dict[str, int] = {}
     stats_by_category: Dict[str, int] = {}
@@ -877,7 +883,7 @@ async def analytics_global(admin: User = Depends(get_current_admin_user)):
     # heatmap[hour][weekday] – 24 ore x 7 giorni
     heatmap = [[0 for _ in range(7)] for _ in range(24)]
 
-    for agent_id in CLIENTS:
+    for agent_id in agent_ids:
         log_path = LOGS_DIR / f"{agent_id}.log"
         if not log_path.exists():
             continue
@@ -924,7 +930,7 @@ async def analytics_global(admin: User = Depends(get_current_admin_user)):
                 # 1) Check status in log data (nested)
                 inner_data = entry.get("data", {})
                 status = inner_data.get("status")
-                
+
                 if status == "failure":
                     errors += 1
                 elif status == "success":
@@ -964,11 +970,35 @@ async def analytics_global(admin: User = Depends(get_current_admin_user)):
         "calls_today": calls_today,
         "calls_last_7_days": calls_last_7,
         "errors": errors,
-        "clients_count": len(CLIENTS),
+        "clients_count": len(agent_ids),
         "heatmap": heatmap,
         "by_category": stats_by_category,
         "by_urgency": stats_by_urgency,
     }
+
+@app.get("/analytics/global")
+async def analytics_global(admin: User = Depends(get_current_admin_user)):
+    """
+    Ritorna statistiche aggregate da TUTTI i log.
+    """
+    maybe_reload_clients()
+    # Pass all configured clients
+    return _calculate_analytics(list(CLIENTS.keys()))
+
+@app.get("/api/analytics")
+async def analytics_user(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Ritorna statistiche aggregate per i log dell'utente corrente.
+    """
+    user = db.query(User).filter(User.id == current_user.id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    agent_ids = [a.agent_id for a in user.agents]
+    return _calculate_analytics(agent_ids)
 
 
 
@@ -1003,23 +1033,24 @@ async def analytics_client(agent_id: str, admin: User = Depends(get_current_admi
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
-    admin_user: User = Depends(get_current_admin_user),
+    user: User = Depends(get_current_user_page),
 ):
     maybe_reload_clients()
-    with open("templates/dashboard.html", "r", encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(content=html)
+    # Convert User to dict safe for JSON
+    user_dict = {
+        "username": user.username,
+        "role": user.role,
+        "email": user.email,
+        "studio_name": user.studio_name,
+        "is_active": user.is_active,
+        "agent_ids": [a.agent_id for a in user.agents]
+    }
+    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user_dict})
 
 
 @app.get("/client/dashboard", response_class=HTMLResponse)
-async def client_dashboard(
-    request: Request,
-    client_user: User = Depends(require_role("client")),
-):
-    return templates.TemplateResponse(
-        "client_dashboard.html",
-        {"request": request, "user": client_user},
-    )
+async def client_dashboard(request: Request):
+    return RedirectResponse(url="/dashboard", status_code=302)
 
 
 @app.get("/logout")
@@ -1031,6 +1062,10 @@ async def logout(request: Request):
 @app.get("/me")
 async def read_users_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
+        # Fetch fresh user to ensure agents relationship is loaded
+        user = db.query(User).filter(User.id == current_user.id).first()
+        agent_ids = [a.agent_id for a in user.agents] if user else []
+
         # Find active subscription (or just the latest one)
         # We prioritize 'active' status. If none active, we take the most recent one.
         subscription_data = None
@@ -1067,7 +1102,8 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
                 "role": current_user.role,
                 "studio_name": current_user.studio_name,
                 "is_active": current_user.is_active,
-                "stripe_customer_id": current_user.stripe_customer_id
+                "stripe_customer_id": current_user.stripe_customer_id,
+                "agent_ids": agent_ids
             },
             "subscription": subscription_data
         }
@@ -1082,7 +1118,8 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
                 "role": current_user.role,
                 "studio_name": current_user.studio_name,
                 "is_active": current_user.is_active,
-                "stripe_customer_id": current_user.stripe_customer_id
+                "stripe_customer_id": current_user.stripe_customer_id,
+                "agent_ids": []
             },
             "subscription": None
         }
