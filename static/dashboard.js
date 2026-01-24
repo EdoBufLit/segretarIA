@@ -583,6 +583,158 @@ function unsuspendUser(id, username) {
 }
 
 // =========================
+// PHONE NUMBERS (NUMERI)
+// =========================
+
+async function loadPhoneNumbersTable() {
+    try {
+        const res = await fetch("/api/admin/phone-numbers");
+        if (!res.ok) throw new Error("Failed to fetch phone numbers");
+        const data = await res.json();
+        const items = data.items || [];
+
+        const tbody = document.getElementById("phonenumbers-table-body");
+        tbody.innerHTML = "";
+
+        if (items.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-[var(--muted)]">Nessun numero trovato.</td></tr>`;
+            return;
+        }
+
+        items.forEach(n => {
+            const tr = document.createElement("tr");
+            tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+
+            let statusBadge = "";
+            if (n.status === 'active') statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">ATTIVO</span>`;
+            else if (n.status === 'released') statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-gray-500/20 text-gray-400">RILASCIATO</span>`;
+            else if (n.status === 'pending_deprovision') statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400">IN RILASCIO</span>`;
+            else statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-500/20 text-red-400">${n.status}</span>`;
+
+            let actions = "";
+            if (n.status === 'active') {
+                actions = `<button onclick="releasePhoneNumber(${n.id}, '${n.e164}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">RILASCIA</button>`;
+            } else if (n.status === 'pending_deprovision') {
+                actions = `<button onclick="cancelDeprovision(${n.id}, '${n.e164}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">ANNULLA RILASCIO</button>`;
+            } else {
+                 actions = `<span class="text-xs text-[var(--muted)]">Nessuna azione</span>`;
+            }
+
+            const username = n.username ? `${n.username} (ID: ${n.user_id})` : `<span class="text-yellow-500">Non assegnato</span>`;
+            const created = n.created_at ? n.created_at.split('T')[0] : "-";
+            const notes = n.notes ? `<span title="${n.notes}" class="truncate max-w-[150px] inline-block cursor-help border-b border-dotted border-gray-500">${n.notes}</span>` : "-";
+
+            tr.innerHTML = `
+                <td class="px-4 py-2 font-mono">${n.e164}</td>
+                <td class="px-4 py-2">${username}</td>
+                <td class="px-4 py-2">${statusBadge}</td>
+                <td class="px-4 py-2 text-sm text-[var(--muted)]">${notes}</td>
+                <td class="px-4 py-2 text-sm text-[var(--muted)]">${created}</td>
+                <td class="px-4 py-2 text-right">${actions}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error("Error loading phone numbers:", e);
+        showToast("Errore caricamento numeri", "error");
+    }
+}
+
+function openAddPhoneNumberModal() {
+    const modal = document.getElementById("add-phonenumber-modal");
+    if (modal) {
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+    }
+}
+
+function closeAddPhoneNumberModal() {
+    const modal = document.getElementById("add-phonenumber-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        document.getElementById("add-phonenumber-form").reset();
+    }
+}
+
+async function handleCreatePhoneNumber(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+
+    // Convert to JSON
+    const payload = {
+        e164: formData.get("e164"),
+        user_id: parseInt(formData.get("user_id")),
+        notes: formData.get("notes")
+    };
+
+    try {
+        const res = await fetch("/api/admin/phone-numbers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast("Numero creato correttamente", "success");
+            closeAddPhoneNumberModal();
+            loadPhoneNumbersTable();
+        } else {
+            const err = await res.json();
+            showToast("Errore: " + (err.detail || "Impossibile creare"), "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Errore di rete", "error");
+    }
+}
+
+function releasePhoneNumber(id, e164) {
+    showConfirm(
+        "RILASCIA NUMERO",
+        `Sei sicuro di voler rilasciare il numero ${e164}? Smetterà di funzionare e verrà rimosso dall'account utente.`,
+        async () => {
+            try {
+                const res = await fetch(`/api/admin/phone-numbers/${id}`, { method: "DELETE" });
+                if (res.ok) {
+                    showToast("Numero rilasciato", "success");
+                    loadPhoneNumbersTable();
+                } else {
+                    const err = await res.json();
+                    showToast("Errore: " + (err.detail || "Impossibile rilasciare"), "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Errore di rete", "error");
+            }
+        }
+    );
+}
+
+function cancelDeprovision(id, e164) {
+    showConfirm(
+        "Annulla Rilascio",
+        `Vuoi annullare il rilascio programmato per ${e164}?`,
+        async () => {
+            try {
+                const res = await fetch(`/api/admin/phone-numbers/${id}/cancel-deprovision`, { method: "POST" });
+                if (res.ok) {
+                    showToast("Rilascio annullato", "success");
+                    loadPhoneNumbersTable();
+                } else {
+                    const err = await res.json();
+                    showToast("Errore: " + (err.detail || "Errore sconosciuto"), "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Errore di rete", "error");
+            }
+        }
+    );
+}
+
+// =========================
 // EXPORT LOGIC
 // =========================
 

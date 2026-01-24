@@ -435,7 +435,102 @@ async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db
     numbers = service.get_all_phone_numbers()
     return templates.TemplateResponse("admin_phonenumbers.html", {"request": request, "numbers": numbers})
 
-@app.post("/admin/phone-numbers/create") # Temporary for testing
+# === API Phone Numbers ===
+
+class CreatePhoneNumberRequest(BaseModel):
+    e164: str
+    user_id: int
+    notes: Optional[str] = None
+
+class UpdatePhoneNumberRequest(BaseModel):
+    notes: Optional[str] = None
+
+@app.get("/api/admin/phone-numbers")
+async def api_admin_get_phone_numbers(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    numbers = service.get_all_phone_numbers()
+    items = []
+    for n in numbers:
+        items.append({
+            "id": n.id,
+            "e164": n.e164,
+            "user_id": n.user_id,
+            "username": n.user.username if n.user else None,
+            "status": n.status,
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+            "released_at": n.released_at.isoformat() if n.released_at else None,
+            "notes": n.notes
+        })
+    return {
+        "status": "ok",
+        "items": items
+    }
+
+@app.post("/api/admin/phone-numbers")
+async def api_admin_create_phone_number(
+    payload: CreatePhoneNumberRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    try:
+        phone = service.create_phone_number(payload.e164, payload.user_id)
+        if payload.notes:
+            phone.notes = payload.notes
+            db.commit()
+
+        return {"status": "ok", "id": phone.id, "e164": phone.e164}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.patch("/api/admin/phone-numbers/{phone_id}")
+async def api_admin_update_phone_number(
+    phone_id: int,
+    payload: UpdatePhoneNumberRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    phone = db.query(PhoneNumber).filter(PhoneNumber.id == phone_id).first()
+    if not phone:
+        raise HTTPException(status_code=404, detail="Number not found")
+
+    if payload.notes is not None:
+        phone.notes = payload.notes
+
+    db.commit()
+    return {"status": "ok"}
+
+@app.delete("/api/admin/phone-numbers/{phone_id}")
+async def api_admin_delete_phone_number(
+    phone_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    try:
+        service.mark_phone_number_released(phone_id)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/api/admin/phone-numbers/{phone_id}/cancel-deprovision")
+async def api_admin_cancel_deprovision(
+    phone_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    try:
+        service.cancel_phone_number_deprovisioning(phone_id)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+# Legacy endpoints (kept for compatibility)
+@app.post("/admin/phone-numbers/create")
 async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     service = AdminService(db)
     try:
@@ -454,7 +549,7 @@ async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(
         raise HTTPException(status_code=404, detail=str(e))
 
 @app.post("/admin/phone-numbers/{phone_id}/cancel-deprovision")
-async def admin_cancel_deprovision(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+async def admin_cancel_deprovision_legacy(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     service = AdminService(db)
     try:
         service.cancel_phone_number_deprovisioning(phone_id)

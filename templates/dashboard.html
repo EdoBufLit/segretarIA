@@ -164,6 +164,35 @@
         </div>
     </div>
 
+    <!-- ADD PHONE NUMBER MODAL -->
+    <div id="add-phonenumber-modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="glass-card w-11/12 max-w-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                 <h3 class="text-xl font-bold text-white">Aggiungi Numero</h3>
+                 <button onclick="closeAddPhoneNumberModal()" class="text-white hover:text-gray-300"><i data-feather="x"></i></button>
+            </div>
+            <form id="add-phonenumber-form" onsubmit="handleCreatePhoneNumber(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[var(--muted)] mb-1">Numero (E.164)</label>
+                    <input type="text" name="e164" required placeholder="+39..." class="w-full p-2 rounded bg-black/20 border border-[var(--border)] text-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[var(--muted)] mb-1">Assegna a Utente (ID)</label>
+                    <input type="number" name="user_id" required class="w-full p-2 rounded bg-black/20 border border-[var(--border)] text-white">
+                    <p class="text-xs text-[var(--muted)] mt-1">ID dell'utente proprietario.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[var(--muted)] mb-1">Note</label>
+                    <textarea name="notes" class="w-full p-2 rounded bg-black/20 border border-[var(--border)] text-white h-20"></textarea>
+                </div>
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" onclick="closeAddPhoneNumberModal()" class="px-4 py-2 rounded bg-[var(--panel2)] border border-[var(--border)] text-white hover:bg-white/10">Annulla</button>
+                    <button type="submit" class="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium shadow-lg">Salva</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- CONFIRMATION MODAL -->
     <div id="confirm-modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50 backdrop-blur-sm">
         <div class="glass-card w-11/12 max-w-md p-6 text-center">
@@ -220,12 +249,17 @@
                     <span class="font-medium">Analytics</span>
                 </a>
 
-                <!-- ADMIN ONLY: Clienti -->
+                <!-- ADMIN ONLY: Clienti & Numeri -->
                 {% if user.role == 'admin' %}
                 <a href="#" data-section="users" onclick="openSection('users')"
                     class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
                     <i data-feather="users" class="w-5 h-5"></i>
                     <span class="font-medium">Clienti</span>
+                </a>
+                <a href="#" data-section="phonenumbers" onclick="openSection('phonenumbers')"
+                    class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="phone" class="w-5 h-5"></i>
+                    <span class="font-medium">Numeri</span>
                 </a>
                 {% endif %}
 
@@ -378,6 +412,39 @@
                         <button onclick="triggerExport('logs')" class="mt-auto px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded font-medium shadow transition-colors flex items-center gap-2">
                             <i data-feather="file-text"></i> Export Log (CSV)
                         </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION: PHONE NUMBERS (NUMERI) -->
+            <section id="section-phonenumbers" class="section hidden w-full">
+                <div class="glass-card p-6 mb-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xl font-bold text-white">Gestione Numeri</h3>
+                        <div class="flex gap-2">
+                             <button onclick="openAddPhoneNumberModal()" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2">
+                                <i data-feather="plus" class="w-4 h-4"></i> Nuovo Numero
+                            </button>
+                            <button onclick="loadPhoneNumbersTable()" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded text-sm font-medium">
+                                <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-separate border-spacing-y-2">
+                            <thead>
+                                <tr>
+                                    <th class="px-4 py-2">Numero (E.164)</th>
+                                    <th class="px-4 py-2">Assegnato a</th>
+                                    <th class="px-4 py-2">Stato</th>
+                                    <th class="px-4 py-2">Note</th>
+                                    <th class="px-4 py-2">Data Creazione</th>
+                                    <th class="px-4 py-2 text-right">Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody id="phonenumbers-table-body" class="text-sm text-[var(--text)]"></tbody>
+                        </table>
                     </div>
                 </div>
             </section>
@@ -650,6 +717,7 @@
                 'dashboard': 'Panoramica',
                 'logs': 'Storico Chiamate',
                 'clients': 'Lista Clienti',
+                'phonenumbers': 'Gestione Numeri',
                 'analytics': 'Statistiche',
                 'settings': 'Configurazione'
             };
@@ -680,6 +748,7 @@
             if (name === "settings" && typeof initSettingsSection === "function") initSettingsSection();
             if (name === "analytics" && typeof loadAdminMetrics === "function") loadAdminMetrics();
             if (name === "users" && typeof loadUsersTable === "function") loadUsersTable(0);
+            if (name === "phonenumbers" && typeof loadPhoneNumbersTable === "function") loadPhoneNumbersTable();
 
             // Toggle Sections
             document.querySelectorAll(".section").forEach(s => s.classList.add("hidden"));
