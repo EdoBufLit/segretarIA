@@ -119,6 +119,11 @@ async def startup_event():
     """
     ensure_default_admin()
     ensure_plans()
+
+    # Log ADMIN_EMAIL status
+    admin_email_configured = "yes" if os.getenv("ADMIN_EMAIL") else "no"
+    logger.info(f"ADMIN_EMAIL configured: {admin_email_configured}")
+
     try:
         logger.info("Starting database backup...")
         perform_backup()
@@ -1697,8 +1702,12 @@ async def lead_submit(request: Request, payload: Dict[str, Any] = Body(...)):
             media_type="application/json",
         )
 
-    to_email = os.getenv("LEADS_EMAIL_TO") or EMAIL_TO_FALLBACK
-    if to_email:
+    to_email = os.getenv("ADMIN_EMAIL")
+
+    logger.info("Attempting to send lead email")
+    if not to_email:
+        logger.warning("ADMIN_EMAIL is not configured. Skipping email sending.")
+    else:
         subject = "Nuova richiesta prenotazione"
         body = (
             f"<p>Nuovo lead ricevuto:</p>"
@@ -1713,7 +1722,15 @@ async def lead_submit(request: Request, payload: Dict[str, Any] = Body(...)):
             f"</ul>"
         )
         try:
-            send_email(to_email, subject, "Nuovo lead ricevuto. Vedi HTML.", html_body=body)
+            # Using reply_to for the lead's email
+            send_email(
+                to_addr=to_email,
+                subject=subject,
+                body="Nuovo lead ricevuto. Vedi HTML.",
+                html_body=body,
+                reply_to=lead_entry['email']
+            )
+            logger.info("Lead email sent successfully")
         except Exception as exc:
             logger.warning("Unable to send lead email: %s", exc)
 

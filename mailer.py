@@ -11,7 +11,7 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
-def send_email(to_addr: str, subject: str, body: str, html_body: str = None):
+def send_email(to_addr: str, subject: str, body: str, html_body: str = None, reply_to: str = None):
     """
     Sends an email.
     Args:
@@ -20,6 +20,7 @@ def send_email(to_addr: str, subject: str, body: str, html_body: str = None):
         body: Plain text body (or HTML if html_body is None, for legacy compatibility)
         html_body: Optional HTML version. If provided, body is used as fallback.
                    If not provided, body is assumed to be HTML and used for both (with stripped fallback if possible, or just same).
+        reply_to: Optional email address for the Reply-To header.
     """
     if not all([EMAIL_FROM, SMTP_HOST, SMTP_USER, SMTP_PASSWORD]):
         raise RuntimeError("SMTP configuration is incomplete. Check your .env file.")
@@ -31,6 +32,8 @@ def send_email(to_addr: str, subject: str, body: str, html_body: str = None):
     msg["Subject"] = subject
     msg["From"] = EMAIL_FROM
     msg["To"] = to_addr
+    if reply_to:
+        msg["Reply-To"] = reply_to
 
     # Determine plain text and HTML content
     if html_body:
