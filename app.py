@@ -163,6 +163,29 @@ ALLOWED_LEAD_SECTORS = {
 }
 ALLOWED_LEAD_VOLUMES = {"0–20/mese", "20–100", "100–300", "300+"}
 
+# Display configuration for plans (prices are not in DB yet)
+PLANS_DISPLAY = {
+    "starter": {"price": "29", "name": "Starter", "description": "Per chi inizia."},
+    "pro": {"price": "79", "name": "Pro", "description": "Il più scelto dai professionisti."},
+    "business": {"price": "199", "name": "Business", "description": "Per aziende strutturate."},
+}
+
+def get_plans_context(db: Session) -> Dict[str, Any]:
+    """
+    Fetches plans from DB and merges with display configuration.
+    Returns a dictionary keyed by plan code (e.g. 'starter', 'pro').
+    """
+    plans_db = db.query(Plan).filter(Plan.is_active == True).all()
+    plans_ctx = {}
+    for p in plans_db:
+        if p.code in PLANS_DISPLAY:
+            plans_ctx[p.code] = {
+                **PLANS_DISPLAY[p.code],
+                "minutes": p.minutes_per_cycle,
+                "code": p.code
+            }
+    return plans_ctx
+
 class ClientSettingsUpdate(BaseModel):
     studio_name: str | None = None
     email_to: str | None = None
@@ -325,9 +348,10 @@ async def readiness_check(db: Session = Depends(get_db)):
 # ================== ENDPOINT DI TEST ==================
 
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+async def root(request: Request, db: Session = Depends(get_db)):
     user = request.session.get("user")
-    return templates.TemplateResponse("index.html", {"request": request, "user": user})
+    plans = get_plans_context(db)
+    return templates.TemplateResponse("index.html", {"request": request, "user": user, "plans": plans})
 
 
 # ================== ADMIN ENDPOINTS ==================
@@ -523,9 +547,10 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
 
 
 @app.get("/billing/plans", response_class=HTMLResponse)
-async def billing_plans(request: Request):
+async def billing_plans(request: Request, db: Session = Depends(get_db)):
     user = request.session.get("user")
-    return templates.TemplateResponse("plans.html", {"request": request, "user": user})
+    plans = get_plans_context(db)
+    return templates.TemplateResponse("plans.html", {"request": request, "user": user, "plans": plans})
 
 
 @app.post("/billing/checkout")
