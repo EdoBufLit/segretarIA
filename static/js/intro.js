@@ -1,24 +1,35 @@
-const introOverlay = document.getElementById("intro-overlay");
-const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+document.addEventListener('DOMContentLoaded', () => {
+    // Intro Animations
+    const elements = document.querySelectorAll('.fade-in-up');
 
-const startIntro = () => {
-    if (!introOverlay) return;
-    document.body.classList.add("intro-active");
-    document.body.style.overflow = "hidden";
-    setTimeout(() => {
-        introOverlay.classList.add("intro-hidden");
-        document.body.classList.remove("intro-active");
-        document.body.style.overflow = "";
-        sessionStorage.setItem("introPlayed", "true");
-    }, 1200);
-};
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('visible');
+                observer.unobserve(entry.target);
+            }
+        });
+    }, {
+        threshold: 0.1,
+        rootMargin: "0px 0px -50px 0px"
+    });
 
-if (introOverlay) {
-    if (prefersReducedMotion.matches) {
-        introOverlay.classList.add("intro-hidden");
-    } else if (!sessionStorage.getItem("introPlayed")) {
-        startIntro();
-    } else {
-        introOverlay.classList.add("intro-hidden");
+    elements.forEach(el => observer.observe(el));
+
+    // Optional Parallax for Blobs
+    const blobs = document.querySelectorAll('.hero-blob');
+    if (blobs.length > 0) {
+        document.addEventListener('mousemove', (e) => {
+            const x = e.clientX / window.innerWidth;
+            const y = e.clientY / window.innerHeight;
+
+            blobs.forEach((blob, index) => {
+                const speed = (index + 1) * 20;
+                const xOffset = (x - 0.5) * speed;
+                const yOffset = (y - 0.5) * speed;
+
+                blob.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
+            });
+        });
     }
-}
+});

@@ -5,8 +5,9 @@
     <meta charset="UTF-8">
     <title>Segreteria IA – Dashboard</title>
 
-    <!-- Tailwind (kept for utility classes that are not overridden or strictly structural) -->
+    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 
     <!-- HeroIcons -->
     <script src="https://unpkg.com/feather-icons"></script>
@@ -19,15 +20,17 @@
     <link rel="stylesheet" href="/static/css/effects.css">
 
     <style>
-        /* 
-           Specific Dashboard Overrides not in global CSS
-        */
+        /* Dashboard Specifics */
+        body { font-family: 'Outfit', sans-serif; background-color: #0a0a0a; }
 
-        /* Nav Active State Override */
+        .sidebar { background-color: #09090b !important; border-right: 1px solid rgba(255,255,255,0.05); }
+        .glass-card { background: rgba(255, 255, 255, 0.02) !important; border: 1px solid rgba(255, 255, 255, 0.05) !important; }
+
         .nav-item-active {
-            background: var(--panel2) !important;
+            background: rgba(255, 255, 255, 0.05) !important;
             color: #fff !important;
-            border: 1px solid var(--border);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.1);
         }
 
         .nav-item:hover {
@@ -133,10 +136,9 @@
 <body>
     <!-- Background Effects -->
     <div class="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div class="hero-aurora__blob hero-aurora__blob--one opacity-30"></div>
-        <div class="hero-aurora__blob hero-aurora__blob--two opacity-30"></div>
-        <div class="hero-aurora__blob hero-aurora__blob--three opacity-30"></div>
-        <div class="hero-noise opacity-50"></div>
+        <div class="noise-bg"></div>
+        <div class="hero-blob hero-blob--one opacity-20"></div>
+        <div class="hero-blob hero-blob--two opacity-20"></div>
     </div>
 
     <!-- LOG DETAIL MODAL -->
@@ -237,9 +239,18 @@
         <main class="main">
 
             <!-- TOPBAR -->
-            <div class="topbar">
+            <div class="topbar border-b border-white/5 bg-black/20 backdrop-blur-md">
                 <div class="flex items-center gap-4">
-                    <h2 id="page-title" class="text-lg font-semibold text-white">Panoramica</h2>
+                    <h2 id="page-title" class="text-xl font-bold text-white tracking-tight">Panoramica</h2>
+                </div>
+
+                <div class="flex items-center gap-4 mx-6">
+                    <div class="audio-wave">
+                        <div class="audio-bar"></div>
+                        <div class="audio-bar"></div>
+                        <div class="audio-bar"></div>
+                        <div class="audio-bar"></div>
+                    </div>
                 </div>
 
                 <!-- STATUS BAR INJECTED HERE -->
