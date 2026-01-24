@@ -691,6 +691,7 @@ async function updateDashboardStatus() {
     }
 
     // Update UI
+    const isAdmin = (window.user && window.user.role === 'admin');
     const isUserActive = (user.is_active === true);
     const isSubActive = (sub.state === "active");
     isActive = isSubActive;
@@ -698,7 +699,7 @@ async function updateDashboardStatus() {
     // 1. Service Status
     const srvEl = document.getElementById("status-service");
     if (srvEl) {
-        if (isUserActive && isSubActive) {
+        if (isAdmin || (isUserActive && isSubActive)) {
             srvEl.textContent = "ATTIVO";
             srvEl.className = "px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30";
         } else if (!isUserActive) {
@@ -745,6 +746,13 @@ async function updateDashboardStatus() {
 }
 
 function renderActivationBanner(isActive, subState) {
+    // Hide for admins
+    if (window.user && window.user.role === 'admin') {
+        const existing = document.getElementById("activation-banner");
+        if (existing) existing.remove();
+        return;
+    }
+
     const container = document.getElementById("dashboard-content");
     if (!container) return;
 

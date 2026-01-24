@@ -267,8 +267,8 @@
                     <!-- Service Status -->
                     <div class="flex items-center gap-2">
                         <span class="text-[var(--muted)]">Servizio:</span>
-                        {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
-                        {% set service_suspended = not user.is_active %}
+                        {% set service_active = (user.is_active and subscription and subscription.state == 'active') or user.role == 'admin' %}
+                        {% set service_suspended = not user.is_active and user.role != 'admin' %}
 
                         {% if service_active %}
                             <span id="status-service" class="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">ATTIVO</span>
@@ -391,7 +391,7 @@
                     <div class="glass-card p-6">
                         <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Abbonamenti Attivi</div>
                         <div id="metrics-active-subs" class="text-3xl font-bold text-green-400">—</div>
-                    </div>
+                    
                     <!-- Churn -->
                     <div class="glass-card p-6">
                         <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Cancellati (Churn)</div>

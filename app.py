@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from mailer import send_email
 from openai import OpenAI
 import logging
+import audit_logger
 from logging_config import configure_logging, correlation_id
 from pathlib import Path
 import time
