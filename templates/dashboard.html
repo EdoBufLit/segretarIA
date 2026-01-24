@@ -217,6 +217,15 @@
                     <span class="font-medium">Analytics</span>
                 </a>
 
+                <!-- ADMIN ONLY: Clienti -->
+                {% if user.role == 'admin' %}
+                <a href="#" data-section="users" onclick="openSection('users')"
+                    class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="users" class="w-5 h-5"></i>
+                    <span class="font-medium">Clienti</span>
+                </a>
+                {% endif %}
+
                 <div class="my-4 border-t border-[var(--border)]"></div>
 
                 <a href="#" data-section="settings" onclick="openSection('settings')"
@@ -258,8 +267,8 @@
                     <!-- Service Status -->
                     <div class="flex items-center gap-2">
                         <span class="text-[var(--muted)]">Servizio:</span>
-                        {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
-                        {% set service_suspended = not user.is_active %}
+                        {% set service_active = (user.is_active and subscription and subscription.state == 'active') or user.role == 'admin' %}
+                        {% set service_suspended = not user.is_active and user.role != 'admin' %}
 
                         {% if service_active %}
                             <span id="status-service" class="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">ATTIVO</span>
@@ -314,40 +323,34 @@
                 <div id="kpi-cards" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                     <div class="glass-card kpi">
                         <div>
-                            <div class="card-title">CHIAMATE TOTALI</div>
-                            <div id="kpi-total-calls" class="value text-blue-400">0</div>
+                            <div class="card-title">CLIENTI TOTALI</div>
+                            <div id="dash-kpi-clients" class="value text-white">—</div>
                         </div>
-                        <i data-feather="phone-call" class="ml-auto text-[var(--muted)] opacity-50"></i>
+                        <i data-feather="users" class="ml-auto text-[var(--muted)] opacity-50"></i>
                     </div>
 
                     <div class="glass-card kpi">
                         <div>
-                            <div class="card-title">OGGI</div>
-                            <div id="kpi-today" class="value text-green-400">0</div>
+                            <div class="card-title">ABBONAMENTI ATTIVI</div>
+                            <div id="dash-kpi-subs" class="value text-green-400">—</div>
                         </div>
-                        <i data-feather="calendar" class="ml-auto text-[var(--muted)] opacity-50"></i>
+                        <i data-feather="check-circle" class="ml-auto text-[var(--muted)] opacity-50"></i>
                     </div>
 
                     <div class="glass-card kpi">
                         <div>
-                            <div class="card-title">ULTIMI 7 GIORNI</div>
-                            <div id="kpi-week" class="value text-indigo-400">0</div>
+                            <div class="card-title">MRR (STIMA)</div>
+                            <div id="dash-kpi-mrr" class="value text-indigo-400">—</div>
                         </div>
-                        <i data-feather="activity" class="ml-auto text-[var(--muted)] opacity-50"></i>
+                        <i data-feather="trending-up" class="ml-auto text-[var(--muted)] opacity-50"></i>
                     </div>
 
                     <div class="glass-card kpi">
                         <div>
-                            <div class="card-title">STATO SISTEMA</div>
-                            <div class="flex items-baseline gap-2">
-                                <span id="kpi-clients" class="value text-white">0</span>
-                                <span class="hint">clienti</span>
-                            </div>
-                            <div class="hint text-red-400 flex items-center gap-1 mt-1">
-                                <span id="kpi-errors">0</span> errori
-                            </div>
+                            <div class="card-title">RICAVO TOTALE</div>
+                            <div id="dash-kpi-revenue" class="value text-blue-400">—</div>
                         </div>
-                        <i data-feather="server" class="ml-auto text-[var(--muted)] opacity-50"></i>
+                        <i data-feather="dollar-sign" class="ml-auto text-[var(--muted)] opacity-50"></i>
                     </div>
                 </div>
 
@@ -377,19 +380,87 @@
             </section>
 
             <section id="section-analytics" class="section hidden w-full">
-                <div class="glass-card p-6 mb-6 w-full">
-                    <h3 class="text-xl font-bold mb-4 text-white">Heatmap Oraria</h3>
-                    <div id="heatmap-container" class="w-full overflow-x-auto custom-scrollbar"></div>
+                <!-- KPI GRID -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                    <!-- Total Users -->
+                    <div class="glass-card p-6">
+                        <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Utenti Totali</div>
+                        <div id="metrics-total-users" class="text-3xl font-bold text-white">—</div>
+                    </div>
+                    <!-- Active Subs -->
+                    <div class="glass-card p-6">
+                        <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Abbonamenti Attivi</div>
+                        <div id="metrics-active-subs" class="text-3xl font-bold text-green-400">—</div>
+                    </div>
+                    <!-- Churn -->
+                    <div class="glass-card p-6">
+                        <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Cancellati (Churn)</div>
+                        <div id="metrics-churn" class="text-3xl font-bold text-red-400">—</div>
+                    </div>
+                    <!-- Past Due -->
+                    <div class="glass-card p-6">
+                        <div class="text-[var(--muted)] text-xs font-bold uppercase tracking-wider mb-2">Pagamenti Falliti</div>
+                        <div id="metrics-past-due" class="text-3xl font-bold text-yellow-400">—</div>
+                    </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="glass-card p-6">
-                        <h3 class="text-lg font-semibold mb-4 text-white">Categorie richieste</h3>
-                        <ul id="analytics-category-list" class="list-disc pl-6 text-[var(--muted)] space-y-1"></ul>
+                <!-- RECENT PAYMENTS -->
+                <div class="glass-card p-6 mb-6">
+                    <h3 class="text-xl font-bold mb-4 text-white">Ultimi Pagamenti</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-separate border-spacing-y-2">
+                            <thead>
+                                <tr>
+                                    <th class="px-4 py-2">Data</th>
+                                    <th class="px-4 py-2">Email</th>
+                                    <th class="px-4 py-2">Importo</th>
+                                    <th class="px-4 py-2">Stato</th>
+                                </tr>
+                            </thead>
+                            <tbody id="metrics-payments-body" class="text-sm text-gray-300">
+                                <tr><td colspan="4" class="text-center py-4">Caricamento...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="glass-card p-6">
-                        <h3 class="text-lg font-semibold mb-4 text-white">Urgenza</h3>
-                        <ul id="analytics-urgency-list" class="list-disc pl-6 text-[var(--muted)] space-y-1"></ul>
+                </div>
+            </section>
+
+            <!-- SECTION: USERS (CLIENTI) -->
+            <section id="section-users" class="section hidden w-full">
+                <div class="glass-card p-6 mb-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xl font-bold text-white">Gestione Clienti</h3>
+                        <div class="flex gap-2">
+                            <input type="text" id="users-search" placeholder="Cerca email/username..."
+                                class="bg-black/20 border border-[var(--border)] rounded px-3 py-1.5 text-sm text-white w-64 outline-none">
+                            <button onclick="loadUsersTable(0)" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm font-medium">
+                                Cerca
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-separate border-spacing-y-2">
+                            <thead>
+                                <tr>
+                                    <th class="px-4 py-2">ID</th>
+                                    <th class="px-4 py-2">Email</th>
+                                    <th class="px-4 py-2">Ruolo</th>
+                                    <th class="px-4 py-2">Stato Account</th>
+                                    <th class="px-4 py-2">Piano</th>
+                                    <th class="px-4 py-2">Billing</th>
+                                    <th class="px-4 py-2 text-right">Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body" class="text-sm text-[var(--text)]"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination Users -->
+                    <div class="mt-4 flex justify-between items-center text-sm text-[var(--muted)]">
+                        <button onclick="usersPrev()" class="hover:text-white">&larr; Indietro</button>
+                        <span id="users-info">Pagina 1</span>
+                        <button onclick="usersNext()" class="hover:text-white">Avanti &rarr;</button>
                     </div>
                 </div>
             </section>
@@ -604,7 +675,8 @@
 
             // Call original logic logic (data fetching mostly)
             if (name === "settings" && typeof initSettingsSection === "function") initSettingsSection();
-            if (name === "analytics" && typeof renderHeatmap === "function") renderHeatmap();
+            if (name === "analytics" && typeof loadAdminMetrics === "function") loadAdminMetrics();
+            if (name === "users" && typeof loadUsersTable === "function") loadUsersTable(0);
 
             // Toggle Sections
             document.querySelectorAll(".section").forEach(s => s.classList.add("hidden"));

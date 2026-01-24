@@ -165,9 +165,9 @@ ALLOWED_LEAD_VOLUMES = {"0–20/mese", "20–100", "100–300", "300+"}
 
 # Display configuration for plans (prices are not in DB yet)
 PLANS_DISPLAY = {
-    "starter": {"price": "29", "name": "Starter", "description": "Per chi inizia."},
-    "pro": {"price": "79", "name": "Pro", "description": "Il più scelto dai professionisti."},
-    "business": {"price": "199", "name": "Business", "description": "Per aziende strutturate."},
+    "starter": {"name": "Starter", "description": "Per chi inizia."},
+    "pro": {"name": "Pro", "description": "Il più scelto dai professionisti."},
+    "business": {"name": "Business", "description": "Per aziende strutturate."},
 }
 
 def get_plans_context(db: Session) -> Dict[str, Any]:
@@ -175,14 +175,30 @@ def get_plans_context(db: Session) -> Dict[str, Any]:
     Fetches plans from DB and merges with display configuration.
     Returns a dictionary keyed by plan code (e.g. 'starter', 'pro').
     """
+    # 1. Fetch static/DB data
     plans_db = db.query(Plan).filter(Plan.is_active == True).all()
+
+    # 2. Fetch dynamic prices from Stripe (cached)
+    stripe_service = StripeService(db)
+    prices = stripe_service.get_stripe_prices()
+
     plans_ctx = {}
     for p in plans_db:
         if p.code in PLANS_DISPLAY:
+            # Merge: Display Config + DB Minutes + Stripe Price
+            price_info = prices.get(p.code, {"price_display": "—"})
+
+            interval = price_info.get("interval", "month")
+            interval_map = {"month": "/mese", "year": "/anno", "week": "/settimana", "day": "/giorno"}
+            interval_display = interval_map.get(interval, f"/{interval}") if price_info.get("price_display") != "—" else ""
+
             plans_ctx[p.code] = {
                 **PLANS_DISPLAY[p.code],
                 "minutes": p.minutes_per_cycle,
-                "code": p.code
+                "code": p.code,
+                "price_display": price_info.get("price_display", "—"),
+                "interval": interval,
+                "interval_display": interval_display
             }
     return plans_ctx
 
@@ -1039,6 +1055,135 @@ async def analytics_user(
 
 
 
+@app.get("/admin/users")
+async def admin_list_users(
+    limit: int = 50,
+    offset: int = 0,
+    q: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    query = db.query(User)
+
+    if q:
+        query = query.filter(
+            (User.email.ilike(f"%{q}%")) |
+            (User.username.ilike(f"%{q}%"))
+        )
+
+    total = query.count()
+    users = query.order_by(User.id.desc()).offset(offset).limit(limit).all()
+
+    items = []
+    for u in users:
+        # Get latest sub status
+        sub = db.query(Subscription).filter(Subscription.user_id == u.id).order_by(Subscription.id.desc()).first()
+        sub_status = sub.state if sub else "none"
+        plan_code = sub.plan.code if sub and sub.plan else "none"
+
+        items.append({
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role,
+            "is_active": u.is_active,
+            "subscription_status": sub_status,
+            "plan_code": plan_code,
+            "created_at": u.created_at.isoformat() if u.created_at else None
+        })
+
+    return {"status": "ok", "total": total, "items": items}
+
+@app.post("/admin/users/{user_id}/suspend")
+async def admin_suspend_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_active = False
+    db.commit()
+
+    # Audit
+    audit_logger.log_audit_event(
+        db=db,
+        actor_type="admin",
+        action="suspend_user",
+        entity_type="user",
+        entity_id=str(user.id),
+        admin_username=admin.username
+    )
+
+    return {"status": "ok", "message": f"User {user.username} suspended"}
+
+@app.post("/admin/users/{user_id}/unsuspend")
+async def admin_unsuspend_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_active = True
+    db.commit()
+
+    # Audit
+    audit_logger.log_audit_event(
+        db=db,
+        actor_type="admin",
+        action="unsuspend_user",
+        entity_type="user",
+        entity_id=str(user.id),
+        admin_username=admin.username
+    )
+
+    return {"status": "ok", "message": f"User {user.username} unsuspended"}
+
+@app.get("/admin/metrics")
+async def admin_metrics(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    """
+    Returns KPIs for the admin dashboard.
+    """
+    try:
+        # 1. Database Counts
+        total_users = db.query(User).filter(User.role == "client").count()
+        active_subs = db.query(Subscription).filter(Subscription.state == "active").count()
+        churned_subs = db.query(Subscription).filter(Subscription.state == "canceled").count()
+        past_due_subs = db.query(Subscription).filter(Subscription.state == "past_due").count()
+
+        # 2. Stripe Payments & Metrics
+        stripe_service = StripeService(db)
+        recent_payments = stripe_service.get_recent_payments(limit=10)
+        stripe_metrics = stripe_service.get_aggregated_metrics()
+
+        # Format payments for UI
+        formatted_payments = []
+        for p in recent_payments:
+            amount_fmt = f"{p['amount']/100:.2f} {p['currency'].upper()}"
+            date_fmt = datetime.fromtimestamp(p['created']).strftime("%Y-%m-%d %H:%M")
+            email = p.get('billing_details', {}).get('email') or "Unknown"
+
+            formatted_payments.append({
+                "email": email,
+                "amount": amount_fmt,
+                "status": p['status'],
+                "date": date_fmt
+            })
+
+        return {
+            "status": "ok",
+            "kpi": {
+                "total_users": total_users,
+                "active_subscriptions": active_subs,
+                "churned": churned_subs,
+                "past_due": past_due_subs,
+                "mrr": f"€{stripe_metrics['mrr']:.2f}",
+                "total_revenue": f"€{stripe_metrics['total_revenue']:.2f}"
+            },
+            "recent_payments": formatted_payments
+        }
+    except Exception as e:
+        logger.exception("Error fetching admin metrics")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/analytics/{agent_id}")
 async def analytics_client(agent_id: str, admin: User = Depends(get_current_admin_user)):
     """
@@ -1104,6 +1249,9 @@ async def dashboard(
         "is_active": user.is_active,
         "agent_ids": [a.agent_id for a in user.agents]
     }
+
+    logger.info(f"Rendering dashboard for user {user.username} (role: {user.role})")
+
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "user": user_dict,

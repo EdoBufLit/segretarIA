@@ -91,32 +91,6 @@ function renderDashboardUI() {
                 </div>
             </div>
 
-            <!-- AGGIUNGI CLIENTE -->
-            <div class="glass-card mb-10">
-                <h2 class="text-2xl font-semibold mb-4 text-white">➕ Aggiungi Cliente</h2>
-
-                <div class="grid grid-cols-1 gap-4">
-                    <div>
-                        <label class="font-medium text-[var(--muted)]">Agent ID*</label>
-                        <input id="agent_id" class="w-full border p-2 rounded bg-black/20 border-[var(--border)] text-white" placeholder="agent_xxxxxx">
-                    </div>
-
-                    <div>
-                        <label class="font-medium text-[var(--muted)]">Nome Studio*</label>
-                        <input id="studio_name" class="w-full border p-2 rounded bg-black/20 border-[var(--border)] text-white" placeholder="Studio Legale Rossi">
-                    </div>
-
-                    <div>
-                        <label class="font-medium text-[var(--muted)]">Email*</label>
-                        <input id="email_to" class="w-full border p-2 rounded bg-black/20 border-[var(--border)] text-white" placeholder="segreteria@studio.it">
-                    </div>
-
-                    <button onclick="addClient()"
-                            class="mt-3 bg-blue-600 text-white p-3 rounded hover:bg-blue-500 w-40 transition-colors">
-                        Aggiungi Cliente
-                    </button>
-                </div>
-            </div>
 
             <!-- GRAFICO GENERALE -->
             <div class="glass-card mb-10">
@@ -407,6 +381,180 @@ async function saveClientSettings() {
 }
 
 // =========================
+// ADMIN METRICS (Fase 8)
+// =========================
+
+async function updateDashboardKPIs(data) {
+    if (!data || !data.kpi) return;
+
+    const kpiClients = document.getElementById("dash-kpi-clients");
+    const kpiSubs = document.getElementById("dash-kpi-subs");
+    const kpiMrr = document.getElementById("dash-kpi-mrr");
+    const kpiRev = document.getElementById("dash-kpi-revenue");
+
+    if (kpiClients) kpiClients.textContent = data.kpi.total_users;
+    if (kpiSubs) kpiSubs.textContent = data.kpi.active_subscriptions;
+    if (kpiMrr) kpiMrr.textContent = data.kpi.mrr;
+    if (kpiRev) kpiRev.textContent = data.kpi.total_revenue;
+}
+
+async function loadAdminMetrics() {
+    // Only fetch if admin
+    if (window.user && window.user.role !== 'admin') return;
+
+    try {
+        const res = await fetch("/admin/metrics");
+        if (!res.ok) throw new Error("Failed to fetch metrics");
+        const data = await res.json();
+
+        if (data.status === "ok") {
+            // Update Analytics Tab KPIs
+            const elTotal = document.getElementById("metrics-total-users");
+            if (elTotal) { // check if we are on analytics view logic or if elements exist
+                elTotal.textContent = data.kpi.total_users;
+                document.getElementById("metrics-active-subs").textContent = data.kpi.active_subscriptions;
+                document.getElementById("metrics-churn").textContent = data.kpi.churned;
+                document.getElementById("metrics-past-due").textContent = data.kpi.past_due;
+            }
+
+            // Update Dashboard Tab KPIs
+            updateDashboardKPIs(data);
+
+            // Update Payments Table
+            const tbody = document.getElementById("metrics-payments-body");
+            tbody.innerHTML = "";
+            if (data.recent_payments && data.recent_payments.length > 0) {
+                data.recent_payments.forEach(p => {
+                    const tr = document.createElement("tr");
+                    tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+                    tr.innerHTML = `
+                        <td class="px-4 py-2">${p.date}</td>
+                        <td class="px-4 py-2">${p.email}</td>
+                        <td class="px-4 py-2 font-mono">${p.amount}</td>
+                        <td class="px-4 py-2">
+                            <span class="px-2 py-0.5 rounded text-xs uppercase font-bold
+                                ${p.status === 'succeeded' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}">
+                                ${p.status}
+                            </span>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-[var(--muted)]">Nessun pagamento recente trovato.</td></tr>`;
+            }
+        }
+    } catch (e) {
+        console.error("Error loading metrics:", e);
+    }
+}
+
+// =========================
+// ADMIN USERS (Fase 9)
+// =========================
+
+let usersOffset = 0;
+let usersLimit = 50;
+let usersTotal = 0;
+
+async function loadUsersTable(offsetOverride = null) {
+    if (offsetOverride !== null) usersOffset = offsetOverride;
+
+    const q = document.getElementById("users-search").value;
+    const params = new URLSearchParams({
+        limit: usersLimit,
+        offset: usersOffset
+    });
+    if (q) params.append("q", q);
+
+    try {
+        const res = await fetch("/admin/users?" + params.toString());
+        const data = await res.json();
+
+        usersTotal = data.total;
+        const items = data.items || [];
+        const tbody = document.getElementById("users-table-body");
+        tbody.innerHTML = "";
+
+        items.forEach(u => {
+            const tr = document.createElement("tr");
+            tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+
+            const activeBadge = u.is_active
+                ? `<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">ATTIVO</span>`
+                : `<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-500/20 text-red-400">SOSPESO</span>`;
+
+            let subBadgeClass = "bg-gray-500/20 text-gray-400";
+            if (u.subscription_status === 'active') subBadgeClass = "bg-green-500/20 text-green-400";
+            if (u.subscription_status === 'past_due') subBadgeClass = "bg-yellow-500/20 text-yellow-400";
+            if (u.subscription_status === 'canceled') subBadgeClass = "bg-red-500/20 text-red-400";
+
+            const subBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold ${subBadgeClass}">${u.subscription_status.toUpperCase()}</span>`;
+
+            const actionBtn = u.is_active
+                ? `<button onclick="suspendUser(${u.id}, '${u.username}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">SOSPENDI</button>`
+                : `<button onclick="unsuspendUser(${u.id}, '${u.username}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">RIATTIVA</button>`;
+
+            tr.innerHTML = `
+                <td class="px-4 py-2">${u.id}</td>
+                <td class="px-4 py-2">${u.email}</td>
+                <td class="px-4 py-2 text-[var(--muted)]">${u.role}</td>
+                <td class="px-4 py-2">${activeBadge}</td>
+                <td class="px-4 py-2 text-[var(--muted)] uppercase text-xs">${u.plan_code}</td>
+                <td class="px-4 py-2">${subBadge}</td>
+                <td class="px-4 py-2 text-right">
+                    ${u.role === 'client' ? actionBtn : ''}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById("users-info").textContent = `Mostrando ${usersOffset + 1}-${Math.min(usersOffset + usersLimit, usersTotal)} di ${usersTotal}`;
+
+    } catch(e) {
+        console.error("Users load error", e);
+    }
+}
+
+function usersPrev() {
+    if (usersOffset > 0) {
+        usersOffset -= usersLimit;
+        loadUsersTable();
+    }
+}
+
+function usersNext() {
+    if (usersOffset + usersLimit < usersTotal) {
+        usersOffset += usersLimit;
+        loadUsersTable();
+    }
+}
+
+function suspendUser(id, username) {
+    showConfirm("Sospendi Utente", `Vuoi davvero sospendere ${username}? Non potrà più accedere.`, async () => {
+        const res = await fetch(`/admin/users/${id}/suspend`, { method: "POST" });
+        if (res.ok) {
+            showToast("Utente sospeso", "success");
+            loadUsersTable();
+        } else {
+            showToast("Errore", "error");
+        }
+    });
+}
+
+function unsuspendUser(id, username) {
+    showConfirm("Riattiva Utente", `Vuoi riattivare ${username}?`, async () => {
+        const res = await fetch(`/admin/users/${id}/unsuspend`, { method: "POST" });
+        if (res.ok) {
+            showToast("Utente riattivato", "success");
+            loadUsersTable();
+        } else {
+            showToast("Errore", "error");
+        }
+    });
+}
+
+// =========================
 // EXPORT LOGIC
 // =========================
 
@@ -543,6 +691,7 @@ async function updateDashboardStatus() {
     }
 
     // Update UI
+    const isAdmin = (window.user && window.user.role === 'admin');
     const isUserActive = (user.is_active === true);
     const isSubActive = (sub.state === "active");
     isActive = isSubActive;
@@ -550,7 +699,7 @@ async function updateDashboardStatus() {
     // 1. Service Status
     const srvEl = document.getElementById("status-service");
     if (srvEl) {
-        if (isUserActive && isSubActive) {
+        if (isAdmin || (isUserActive && isSubActive)) {
             srvEl.textContent = "ATTIVO";
             srvEl.className = "px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30";
         } else if (!isUserActive) {
@@ -597,6 +746,13 @@ async function updateDashboardStatus() {
 }
 
 function renderActivationBanner(isActive, subState) {
+    // Hide for admins
+    if (window.user && window.user.role === 'admin') {
+        const existing = document.getElementById("activation-banner");
+        if (existing) existing.remove();
+        return;
+    }
+
     const container = document.getElementById("dashboard-content");
     if (!container) return;
 
@@ -753,6 +909,11 @@ async function initDashboard() {
     // Existing Logic
     await loadClients();
     await renderGlobalChart();
+
+    // Admin Dashboard KPIs
+    if (window.user && window.user.role === 'admin') {
+        await loadAdminMetrics();
+    }
 }
 
 // =========================
