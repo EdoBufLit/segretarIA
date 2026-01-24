@@ -165,9 +165,9 @@ ALLOWED_LEAD_VOLUMES = {"0–20/mese", "20–100", "100–300", "300+"}
 
 # Display configuration for plans (prices are not in DB yet)
 PLANS_DISPLAY = {
-    "starter": {"price": "29", "name": "Starter", "description": "Per chi inizia."},
-    "pro": {"price": "79", "name": "Pro", "description": "Il più scelto dai professionisti."},
-    "business": {"price": "199", "name": "Business", "description": "Per aziende strutturate."},
+    "starter": {"name": "Starter", "description": "Per chi inizia."},
+    "pro": {"name": "Pro", "description": "Il più scelto dai professionisti."},
+    "business": {"name": "Business", "description": "Per aziende strutturate."},
 }
 
 def get_plans_context(db: Session) -> Dict[str, Any]:
@@ -175,14 +175,30 @@ def get_plans_context(db: Session) -> Dict[str, Any]:
     Fetches plans from DB and merges with display configuration.
     Returns a dictionary keyed by plan code (e.g. 'starter', 'pro').
     """
+    # 1. Fetch static/DB data
     plans_db = db.query(Plan).filter(Plan.is_active == True).all()
+
+    # 2. Fetch dynamic prices from Stripe (cached)
+    stripe_service = StripeService(db)
+    prices = stripe_service.get_stripe_prices()
+
     plans_ctx = {}
     for p in plans_db:
         if p.code in PLANS_DISPLAY:
+            # Merge: Display Config + DB Minutes + Stripe Price
+            price_info = prices.get(p.code, {"price_display": "—"})
+
+            interval = price_info.get("interval", "month")
+            interval_map = {"month": "/mese", "year": "/anno", "week": "/settimana", "day": "/giorno"}
+            interval_display = interval_map.get(interval, f"/{interval}") if price_info.get("price_display") != "—" else ""
+
             plans_ctx[p.code] = {
                 **PLANS_DISPLAY[p.code],
                 "minutes": p.minutes_per_cycle,
-                "code": p.code
+                "code": p.code,
+                "price_display": price_info.get("price_display", "—"),
+                "interval": interval,
+                "interval_display": interval_display
             }
     return plans_ctx
 

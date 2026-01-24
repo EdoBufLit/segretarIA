@@ -1,5 +1,6 @@
 import stripe
 import os
+import time
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from models import User, Subscription, Plan
@@ -10,6 +11,9 @@ from mailer import send_email
 logger = logging.getLogger("stripe_service")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
 
+# Cache for plan prices: {timestamp: float, data: dict}
+_plans_cache = {"timestamp": 0, "data": {}}
+
 class StripeService:
     def __init__(self, db: Session):
         self.db = db
@@ -19,6 +23,68 @@ class StripeService:
             stripe.api_key = self.api_key
         else:
             logger.warning("STRIPE_SECRET_KEY not set")
+
+    def get_stripe_prices(self):
+        """
+        Fetches plan prices from Stripe (or cache).
+        """
+        global _plans_cache
+        # TTL 10 minutes
+        if time.time() - _plans_cache["timestamp"] < 600 and _plans_cache["data"]:
+            return _plans_cache["data"]
+
+        codes = ["starter", "pro", "business"]
+        result = {}
+
+        try:
+            # Handle Mock Mode
+            if self.api_key == "mock":
+                 # Return mock data for testing/verification if needed
+                 mock_prices = {
+                     "starter": {"price_display": "29€", "interval": "month"},
+                     "pro": {"price_display": "79€", "interval": "month"},
+                     "business": {"price_display": "199€", "interval": "month"},
+                 }
+                 _plans_cache["data"] = mock_prices
+                 _plans_cache["timestamp"] = time.time()
+                 logger.info("Loaded Stripe prices (MOCK) for plans: starter/pro/business")
+                 return mock_prices
+
+            for code in codes:
+                price_id = os.getenv(f"STRIPE_PRICE_ID_{code.upper()}")
+                if not price_id:
+                    result[code] = {"price_display": "—"}
+                    continue
+
+                try:
+                    p = stripe.Price.retrieve(price_id, expand=["product"])
+                    # Assuming EUR mostly, but handling currency symbol simply
+                    curr = p.currency.lower()
+                    symbol = "€" if curr == "eur" else "$" if curr == "usd" else curr.upper()
+
+                    amt = p.unit_amount / 100.0
+                    if amt.is_integer():
+                        price_display = f"{int(amt)}{symbol}"
+                    else:
+                        price_display = f"{amt:.2f}{symbol}"
+
+                    result[code] = {
+                        "price_display": price_display,
+                        "interval": p.recurring.interval if p.recurring else "one-time"
+                    }
+                except Exception as e:
+                    logger.error(f"Failed to fetch price for {code} (ID: {price_id}): {e}")
+                    result[code] = {"price_display": "—"}
+
+            _plans_cache["data"] = result
+            _plans_cache["timestamp"] = time.time()
+            logger.info("Loaded Stripe prices for plans: starter/pro/business")
+            return result
+
+        except Exception as e:
+            logger.error(f"Global error fetching stripe prices: {e}")
+            # Return existing cache if available, else empty/dashes
+            return _plans_cache.get("data", {c: {"price_display": "—"} for c in codes})
 
     def create_checkout_session(self, user_id: int, plan_code: str, success_url: str, cancel_url: str):
         # MOCK FOR QA
