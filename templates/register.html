@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Registrazione – Segreteria IA</title>
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Custom Dark Theme -->
+    <link rel="stylesheet" href="/static/styles.css?v=2">
+</head>
+
+<body class="login-wrapper">
+
+    <div class="glass-card w-full max-w-md p-8">
+        <h1 class="text-2xl font-bold mb-6 text-center text-blue-400">
+            Crea il tuo account
+        </h1>
+
+        {% if errors.form %}
+        <div class="mb-4 bg-red-900/50 border border-red-500 text-red-200 px-4 py-2 rounded">
+            {{ errors.form }}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/register" class="space-y-5">
+            <div>
+                <label class="block text-sm font-medium text-[var(--muted)] mb-1">Username</label>
+                <input name="username" value="{{ form_data.username }}"
+                    class="w-full border rounded p-2 text-white bg-black/20 focus:outline-none focus:border-blue-500"
+                    required>
+                {% if errors.username %}
+                <p class="text-xs text-red-300 mt-1">{{ errors.username }}</p>
+                {% endif %}
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-[var(--muted)] mb-1">Email</label>
+                <input type="email" name="email" value="{{ form_data.email }}"
+                    class="w-full border rounded p-2 text-white bg-black/20 focus:outline-none focus:border-blue-500"
+                    required>
+                {% if errors.email %}
+                <p class="text-xs text-red-300 mt-1">{{ errors.email }}</p>
+                {% endif %}
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-[var(--muted)] mb-1">Password</label>
+                <input type="password" name="password"
+                    class="w-full border rounded p-2 text-white bg-black/20 focus:outline-none focus:border-blue-500"
+                    required>
+                {% if errors.password %}
+                <p class="text-xs text-red-300 mt-1">{{ errors.password }}</p>
+                {% endif %}
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-[var(--muted)] mb-1">Conferma password</label>
+                <input type="password" name="password_confirm"
+                    class="w-full border rounded p-2 text-white bg-black/20 focus:outline-none focus:border-blue-500"
+                    required>
+                {% if errors.password_confirm %}
+                <p class="text-xs text-red-300 mt-1">{{ errors.password_confirm }}</p>
+                {% endif %}
+            </div>
+
+            <button type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded shadow-lg transition-all">
+                Registrati
+            </button>
+        </form>
+
+        <p class="text-sm text-center text-[var(--muted)] mt-6">
+            Hai già un account?
+            <a href="/login" class="text-blue-400 hover:text-blue-300 font-semibold">Accedi</a>
+        </p>
+    </div>
+
+</body>
+
+</html>

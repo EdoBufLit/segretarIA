@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import sentry_sdk
+import re
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from openai import OpenAI
 import logging
 from logging_config import configure_logging, correlation_id
 from pathlib import Path
+import time
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime, date, timedelta
 from openai import OpenAI
@@ -25,8 +27,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import get_db, SessionLocal
 from models import User
-from auth import verify_password, get_current_user, get_current_admin_user
+from auth import (
+    hash_password,
+    verify_password,
+    get_current_user,
+    get_current_admin_user,
+    require_role,
+)
 from admin_service import AdminService
+from admin_seed import ensure_default_admin
 from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
@@ -85,6 +94,7 @@ async def startup_event():
     """
     Run database backup and retention policy on application startup.
     """
+    ensure_default_admin()
     try:
         logger.info("Starting database backup...")
         perform_backup()
@@ -113,6 +123,22 @@ CLIENTS: Dict[str, Dict[str, Any]] = {}
 CLIENTS_MTIME: Optional[float] = None
 LOGS_DIR = Path("logs")
 LOGS_DIR.mkdir(exist_ok=True)
+LEADS_LOG_DIR = LOGS_DIR / "leads"
+LEADS_LOG_DIR.mkdir(exist_ok=True)
+LEADS_LOG_FILE = LEADS_LOG_DIR / "leads.jsonl"
+LEAD_RATE_LIMIT = {"window_seconds": 600, "max_requests": 5}
+LEAD_REQUEST_LOG: Dict[str, List[float]] = {}
+
+ALLOWED_LEAD_SECTORS = {
+    "Studio professionale",
+    "Sanità",
+    "Agenzia",
+    "E-commerce",
+    "Artigiano",
+    "Servizi B2B",
+    "Altro",
+}
+ALLOWED_LEAD_VOLUMES = {"0–20/mese", "20–100", "100–300", "300+"}
 
 class ClientSettingsUpdate(BaseModel):
     studio_name: str | None = None
@@ -975,20 +1001,31 @@ async def analytics_client(agent_id: str, admin: User = Depends(get_current_admi
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, current_user: User = Depends(get_current_user)):
-    if current_user.role == "admin":
-        maybe_reload_clients()
-        with open("templates/dashboard.html", "r", encoding="utf-8") as f:
-            html = f.read()
-        return HTMLResponse(content=html)
-    else:
-        return templates.TemplateResponse("client_portal.html", {"request": request})
+async def dashboard(
+    request: Request,
+    admin_user: User = Depends(get_current_admin_user),
+):
+    maybe_reload_clients()
+    with open("templates/dashboard.html", "r", encoding="utf-8") as f:
+        html = f.read()
+    return HTMLResponse(content=html)
+
+
+@app.get("/client/dashboard", response_class=HTMLResponse)
+async def client_dashboard(
+    request: Request,
+    client_user: User = Depends(require_role("client")),
+):
+    return templates.TemplateResponse(
+        "client_dashboard.html",
+        {"request": request, "user": client_user},
+    )
 
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse(url="/login", status_code=302)
+    return RedirectResponse(url="/", status_code=302)
 
 
 @app.get("/me")
@@ -1053,10 +1090,241 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_form(request: Request):
-    with open("templates/login.html", "r", encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(content=html)
+    just_registered = request.query_params.get("registered") == "1"
+    login_error = request.query_params.get("error") == "1"
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "just_registered": just_registered,
+            "login_error": login_error,
+        },
+    )
 
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_policy(request: Request):
+    return templates.TemplateResponse(
+        "privacy.html",
+        {"request": request},
+    )
+
+
+@app.get("/terms", response_class=HTMLResponse)
+async def terms_of_service(request: Request):
+    return templates.TemplateResponse(
+        "terms.html",
+        {"request": request},
+    )
+
+
+def _is_valid_email(email: str) -> bool:
+    return re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) is not None
+
+
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _is_valid_phone(phone: str) -> bool:
+    return re.match(r"^[0-9+()\\s.-]{6,}$", phone) is not None
+
+
+def _check_rate_limit(ip_address: str) -> bool:
+    now = time.time()
+    window_start = now - LEAD_RATE_LIMIT["window_seconds"]
+    timestamps = [ts for ts in LEAD_REQUEST_LOG.get(ip_address, []) if ts > window_start]
+    if len(timestamps) >= LEAD_RATE_LIMIT["max_requests"]:
+        LEAD_REQUEST_LOG[ip_address] = timestamps
+        return False
+    timestamps.append(now)
+    LEAD_REQUEST_LOG[ip_address] = timestamps
+    return True
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_form(request: Request):
+    return templates.TemplateResponse(
+        "register.html",
+        {
+            "request": request,
+            "errors": {},
+            "form_data": {"username": "", "email": ""},
+        },
+    )
+
+
+@app.post("/register", response_class=HTMLResponse)
+async def register_submit(
+    request: Request,
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    errors = {}
+    clean_username = username.strip()
+    clean_email = email.strip()
+
+    if not clean_username:
+        errors["username"] = "Lo username è obbligatorio."
+
+    if not clean_email or not _is_valid_email(clean_email):
+        errors["email"] = "Inserisci un'email valida."
+
+    if len(password) < 8:
+        errors["password"] = "La password deve avere almeno 8 caratteri."
+
+    if password != password_confirm:
+        errors["password_confirm"] = "Le password non coincidono."
+
+    if clean_username:
+        existing_username = db.query(User).filter(User.username == clean_username).first()
+        if existing_username:
+            errors["username"] = "Questo username è già in uso."
+
+    if clean_email:
+        existing_email = db.query(User).filter(User.email == clean_email).first()
+        if existing_email:
+            errors["email"] = "Questa email è già in uso."
+
+    if errors:
+        return templates.TemplateResponse(
+            "register.html",
+            {
+                "request": request,
+                "errors": errors,
+                "form_data": {"username": clean_username, "email": clean_email},
+            },
+        )
+
+    new_user = User(
+        username=clean_username,
+        email=clean_email,
+        password_hash=hash_password(password),
+        role="client",
+        is_active=True,
+    )
+    try:
+        db.add(new_user)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Error creating new client user: %s", exc)
+        errors["form"] = "Errore durante la registrazione. Riprova."
+        return templates.TemplateResponse(
+            "register.html",
+            {
+                "request": request,
+                "errors": errors,
+                "form_data": {"username": clean_username, "email": clean_email},
+            },
+        )
+
+    return RedirectResponse(url="/login?registered=1", status_code=302)
+
+
+@app.post("/lead")
+async def lead_submit(request: Request, payload: Dict[str, Any] = Body(...)):
+    email = str(payload.get("email", "")).strip()
+    phone = str(payload.get("phone", "")).strip()
+    privacy = payload.get("privacy")
+    sector = str(payload.get("sector", "")).strip()
+    volume = str(payload.get("volume", "")).strip()
+
+    if not _is_valid_email(email):
+        return Response(
+            content=json.dumps({"status": "error", "message": "Email non valida."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    if not phone or not _is_valid_phone(phone):
+        return Response(
+            content=json.dumps({"status": "error", "message": "Telefono non valido."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    if privacy is not True:
+        return Response(
+            content=json.dumps({"status": "error", "message": "Consenso privacy obbligatorio."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    if sector not in ALLOWED_LEAD_SECTORS:
+        return Response(
+            content=json.dumps({"status": "error", "message": "Settore non valido."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    if volume not in ALLOWED_LEAD_VOLUMES:
+        return Response(
+            content=json.dumps({"status": "error", "message": "Volume chiamate non valido."}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    ip_address = _get_client_ip(request)
+    if not _check_rate_limit(ip_address):
+        return Response(
+            content=json.dumps({"status": "error", "message": "Troppe richieste. Riprova più tardi."}),
+            status_code=429,
+            media_type="application/json",
+        )
+
+    lead_entry = {
+        "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+        "ip": ip_address,
+        "user_agent": request.headers.get("user-agent"),
+        "referer": request.headers.get("referer"),
+        "full_name": str(payload.get("full_name", "")).strip(),
+        "email": email,
+        "phone": phone,
+        "company": str(payload.get("company", "")).strip(),
+        "sector": sector,
+        "volume": volume,
+        "needs": str(payload.get("needs", "")).strip(),
+    }
+
+    try:
+        with LEADS_LOG_FILE.open("a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(lead_entry, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning("Unable to write lead log: %s", exc)
+        return Response(
+            content=json.dumps({"status": "error", "message": "Errore interno."}),
+            status_code=500,
+            media_type="application/json",
+        )
+
+    to_email = os.getenv("LEADS_EMAIL_TO") or EMAIL_TO_FALLBACK
+    if to_email:
+        subject = "Nuova richiesta prenotazione"
+        body = (
+            f"<p>Nuovo lead ricevuto:</p>"
+            f"<ul>"
+            f"<li><strong>Nome:</strong> {lead_entry['full_name']}</li>"
+            f"<li><strong>Email:</strong> {lead_entry['email']}</li>"
+            f"<li><strong>Telefono:</strong> {lead_entry['phone']}</li>"
+            f"<li><strong>Azienda:</strong> {lead_entry['company']}</li>"
+            f"<li><strong>Settore:</strong> {lead_entry['sector']}</li>"
+            f"<li><strong>Volume chiamate:</strong> {lead_entry['volume']}</li>"
+            f"<li><strong>Note:</strong> {lead_entry['needs']}</li>"
+            f"</ul>"
+        )
+        try:
+            send_email(to_email, subject, body, EMAIL_FROM)
+        except Exception as exc:
+            logger.warning("Unable to send lead email: %s", exc)
+
+    return {"status": "ok"}
 
 
 @app.post("/login")
@@ -1076,7 +1344,10 @@ async def login_submit(
         "username": user.username,
         "role": user.role,
     }
-    return RedirectResponse(url="/dashboard", status_code=302)
+
+    if user.role == "admin":
+        return RedirectResponse(url="/dashboard", status_code=302)
+    return RedirectResponse(url="/client/dashboard", status_code=302)
 
 
 def _read_logs(
