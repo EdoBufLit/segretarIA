@@ -456,6 +456,111 @@ async function loadAdminMetrics() {
 }
 
 // =========================
+// ADMIN USERS (Fase 9)
+// =========================
+
+let usersOffset = 0;
+let usersLimit = 50;
+let usersTotal = 0;
+
+async function loadUsersTable(offsetOverride = null) {
+    if (offsetOverride !== null) usersOffset = offsetOverride;
+
+    const q = document.getElementById("users-search").value;
+    const params = new URLSearchParams({
+        limit: usersLimit,
+        offset: usersOffset
+    });
+    if (q) params.append("q", q);
+
+    try {
+        const res = await fetch("/admin/users?" + params.toString());
+        const data = await res.json();
+
+        usersTotal = data.total;
+        const items = data.items || [];
+        const tbody = document.getElementById("users-table-body");
+        tbody.innerHTML = "";
+
+        items.forEach(u => {
+            const tr = document.createElement("tr");
+            tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+
+            const activeBadge = u.is_active
+                ? `<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">ATTIVO</span>`
+                : `<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-500/20 text-red-400">SOSPESO</span>`;
+
+            let subBadgeClass = "bg-gray-500/20 text-gray-400";
+            if (u.subscription_status === 'active') subBadgeClass = "bg-green-500/20 text-green-400";
+            if (u.subscription_status === 'past_due') subBadgeClass = "bg-yellow-500/20 text-yellow-400";
+            if (u.subscription_status === 'canceled') subBadgeClass = "bg-red-500/20 text-red-400";
+
+            const subBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold ${subBadgeClass}">${u.subscription_status.toUpperCase()}</span>`;
+
+            const actionBtn = u.is_active
+                ? `<button onclick="suspendUser(${u.id}, '${u.username}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">SOSPENDI</button>`
+                : `<button onclick="unsuspendUser(${u.id}, '${u.username}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">RIATTIVA</button>`;
+
+            tr.innerHTML = `
+                <td class="px-4 py-2">${u.id}</td>
+                <td class="px-4 py-2">${u.email}</td>
+                <td class="px-4 py-2 text-[var(--muted)]">${u.role}</td>
+                <td class="px-4 py-2">${activeBadge}</td>
+                <td class="px-4 py-2 text-[var(--muted)] uppercase text-xs">${u.plan_code}</td>
+                <td class="px-4 py-2">${subBadge}</td>
+                <td class="px-4 py-2 text-right">
+                    ${u.role === 'client' ? actionBtn : ''}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById("users-info").textContent = `Mostrando ${usersOffset + 1}-${Math.min(usersOffset + usersLimit, usersTotal)} di ${usersTotal}`;
+
+    } catch(e) {
+        console.error("Users load error", e);
+    }
+}
+
+function usersPrev() {
+    if (usersOffset > 0) {
+        usersOffset -= usersLimit;
+        loadUsersTable();
+    }
+}
+
+function usersNext() {
+    if (usersOffset + usersLimit < usersTotal) {
+        usersOffset += usersLimit;
+        loadUsersTable();
+    }
+}
+
+function suspendUser(id, username) {
+    showConfirm("Sospendi Utente", `Vuoi davvero sospendere ${username}? Non potrà più accedere.`, async () => {
+        const res = await fetch(`/admin/users/${id}/suspend`, { method: "POST" });
+        if (res.ok) {
+            showToast("Utente sospeso", "success");
+            loadUsersTable();
+        } else {
+            showToast("Errore", "error");
+        }
+    });
+}
+
+function unsuspendUser(id, username) {
+    showConfirm("Riattiva Utente", `Vuoi riattivare ${username}?`, async () => {
+        const res = await fetch(`/admin/users/${id}/unsuspend`, { method: "POST" });
+        if (res.ok) {
+            showToast("Utente riattivato", "success");
+            loadUsersTable();
+        } else {
+            showToast("Errore", "error");
+        }
+    });
+}
+
+// =========================
 // EXPORT LOGIC
 // =========================
 

@@ -1055,6 +1055,87 @@ async def analytics_user(
 
 
 
+@app.get("/admin/users")
+async def admin_list_users(
+    limit: int = 50,
+    offset: int = 0,
+    q: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    query = db.query(User)
+
+    if q:
+        query = query.filter(
+            (User.email.ilike(f"%{q}%")) |
+            (User.username.ilike(f"%{q}%"))
+        )
+
+    total = query.count()
+    users = query.order_by(User.id.desc()).offset(offset).limit(limit).all()
+
+    items = []
+    for u in users:
+        # Get latest sub status
+        sub = db.query(Subscription).filter(Subscription.user_id == u.id).order_by(Subscription.id.desc()).first()
+        sub_status = sub.state if sub else "none"
+        plan_code = sub.plan.code if sub and sub.plan else "none"
+
+        items.append({
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role,
+            "is_active": u.is_active,
+            "subscription_status": sub_status,
+            "plan_code": plan_code,
+            "created_at": u.created_at.isoformat() if u.created_at else None
+        })
+
+    return {"status": "ok", "total": total, "items": items}
+
+@app.post("/admin/users/{user_id}/suspend")
+async def admin_suspend_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_active = False
+    db.commit()
+
+    # Audit
+    audit_logger.log_audit_event(
+        db=db,
+        actor_type="admin",
+        action="suspend_user",
+        entity_type="user",
+        entity_id=str(user.id),
+        admin_username=admin.username
+    )
+
+    return {"status": "ok", "message": f"User {user.username} suspended"}
+
+@app.post("/admin/users/{user_id}/unsuspend")
+async def admin_unsuspend_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_active = True
+    db.commit()
+
+    # Audit
+    audit_logger.log_audit_event(
+        db=db,
+        actor_type="admin",
+        action="unsuspend_user",
+        entity_type="user",
+        entity_id=str(user.id),
+        admin_username=admin.username
+    )
+
+    return {"status": "ok", "message": f"User {user.username} unsuspended"}
+
 @app.get("/admin/metrics")
 async def admin_metrics(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     """
