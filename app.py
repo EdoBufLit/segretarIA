@@ -33,6 +33,11 @@ from auth import (
     get_current_user,
     get_current_admin_user,
     require_role,
+    NotAuthenticatedPage,
+    NotAuthorizedPage,
+    get_current_user_page,
+    get_current_admin_user_page,
+    require_role_page,
 )
 from admin_service import AdminService
 from admin_seed import ensure_default_admin
@@ -87,6 +92,21 @@ async def add_correlation_id(request: Request, call_next):
     return response
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.exception_handler(NotAuthenticatedPage)
+async def not_authenticated_handler(request: Request, exc: NotAuthenticatedPage):
+    return RedirectResponse(url="/login", status_code=302)
+
+@app.exception_handler(NotAuthorizedPage)
+async def not_authorized_handler(request: Request, exc: NotAuthorizedPage):
+    # Smart redirect based on role
+    if exc.required_role == "admin" and exc.user.role == "client":
+        return RedirectResponse(url="/client/dashboard", status_code=302)
+    elif exc.required_role == "client" and exc.user.role == "admin":
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    # Fallback
+    return RedirectResponse(url="/", status_code=302)
 
 
 @app.on_event("startup")
@@ -310,7 +330,7 @@ async def root(request: Request):
 # ================== ADMIN ENDPOINTS ==================
 
 @app.get("/admin/clients", response_class=HTMLResponse)
-async def admin_get_clients(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+async def admin_get_clients(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user_page)):
     service = AdminService(db)
     clients = service.get_clients()
     return templates.TemplateResponse("admin_clients.html", {"request": request, "clients": clients})
@@ -361,7 +381,7 @@ async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = D
     return {"status": "ok", **summary}
 
 @app.get("/admin/phone-numbers", response_class=HTMLResponse)
-async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user_page)):
     service = AdminService(db)
     numbers = service.get_all_phone_numbers()
     return templates.TemplateResponse("admin_phonenumbers.html", {"request": request, "numbers": numbers})
@@ -411,7 +431,7 @@ async def admin_export_minutes(
     from_date: str = Query(..., alias="from"),
     to_date: str = Query(..., alias="to"),
     db: Session = Depends(get_db),
-    admin: User = Depends(get_current_admin_user)
+    admin: User = Depends(get_current_admin_user_page)
 ):
     """
     Exports usage minutes to CSV.
@@ -451,7 +471,7 @@ async def admin_export_logs(
     to_date: str = Query(..., alias="to"),
     client: Optional[str] = None,
     db: Session = Depends(get_db),
-    admin: User = Depends(get_current_admin_user)
+    admin: User = Depends(get_current_admin_user_page)
 ):
     """
     Exports logs to CSV.
@@ -1003,7 +1023,7 @@ async def analytics_client(agent_id: str, admin: User = Depends(get_current_admi
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
-    admin_user: User = Depends(get_current_admin_user),
+    admin_user: User = Depends(get_current_admin_user_page),
 ):
     maybe_reload_clients()
     with open("templates/dashboard.html", "r", encoding="utf-8") as f:
@@ -1014,7 +1034,7 @@ async def dashboard(
 @app.get("/client/dashboard", response_class=HTMLResponse)
 async def client_dashboard(
     request: Request,
-    client_user: User = Depends(require_role("client")),
+    client_user: User = Depends(require_role_page("client")),
 ):
     return templates.TemplateResponse(
         "client_dashboard.html",
