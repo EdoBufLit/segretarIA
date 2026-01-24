@@ -40,7 +40,7 @@ from auth import (
     require_role_page,
 )
 from admin_service import AdminService
-from admin_seed import ensure_default_admin
+from admin_seed import ensure_default_admin, ensure_plans
 from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
@@ -115,6 +115,7 @@ async def startup_event():
     Run database backup and retention policy on application startup.
     """
     ensure_default_admin()
+    ensure_plans()
     try:
         logger.info("Starting database backup...")
         perform_backup()
@@ -517,6 +518,12 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/billing/plans", response_class=HTMLResponse)
+async def billing_plans(request: Request):
+    user = request.session.get("user")
+    return templates.TemplateResponse("plans.html", {"request": request, "user": user})
 
 
 @app.post("/billing/checkout")

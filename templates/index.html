@@ -484,48 +484,7 @@
                 <p class="text-slate-600 max-w-2xl mx-auto">Scegli la soluzione più adatta alle dimensioni della tua attività.</p>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-                <!-- Basic Plan -->
-                <div class="bg-white p-8 rounded-2xl shadow-[0_20px_50px_-20px_rgba(15,23,42,0.2)] border border-slate-200/60 flex flex-col">
-                    <h3 class="text-2xl font-bold text-slate-900 mb-2">Basic</h3>
-                    <p class="text-slate-500 mb-6">Ideale per piccoli studi o singoli professionisti.</p>
-                    <div class="text-4xl font-bold text-slate-900 mb-6">In arrivo</div>
-                    <ul class="space-y-3 mb-8 flex-1">
-                        <li class="flex items-center text-slate-600">
-                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            Gestione chiamate base
-                        </li>
-                        <li class="flex items-center text-slate-600">
-                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            Report via email
-                        </li>
-                    </ul>
-                    <button type="button" data-booking-open class="w-full py-3 border border-slate-200 rounded-lg font-semibold text-slate-600 hover:border-slate-400 hover:text-slate-900 transition-colors">Contattaci</button>
-                </div>
-
-                <!-- Pro Plan -->
-                <div class="bg-white p-8 rounded-2xl shadow-[0_30px_60px_-25px_rgba(37,99,235,0.35)] border border-blue-200/60 relative overflow-hidden flex flex-col">
-                    <div class="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">POPOLARE</div>
-                    <h3 class="text-2xl font-bold text-slate-900 mb-2">Pro</h3>
-                    <p class="text-slate-500 mb-6">Per studi strutturati con volumi elevati.</p>
-                    <div class="text-4xl font-bold text-slate-900 mb-6">In arrivo</div>
-                    <ul class="space-y-3 mb-8 flex-1">
-                        <li class="flex items-center text-slate-600">
-                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            Tutto incluso nel Basic
-                        </li>
-                        <li class="flex items-center text-slate-600">
-                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            Analytics avanzati
-                        </li>
-                        <li class="flex items-center text-slate-600">
-                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            Supporto prioritario
-                        </li>
-                    </ul>
-                    <button type="button" data-booking-open class="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">Contattaci</button>
-                </div>
-            </div>
+            {% include 'pricing_partial.html' %}
         </div>
     </section>
 

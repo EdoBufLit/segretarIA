@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Piani e Prezzi - Segreteria IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/effects.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <!-- Navbar simplified -->
+    <nav class="bg-white border-b border-slate-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-2">
+                     <span class="text-xl font-bold text-blue-600">Segreteria IA</span>
+                </div>
+                <div>
+                    <a href="/dashboard" class="text-slate-600 hover:text-blue-600 font-medium transition-colors">
+                        &larr; Torna alla Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="py-12 px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+            <h1 class="text-3xl font-bold text-slate-900 mb-4">Scegli il tuo piano</h1>
+            <p class="text-slate-600 max-w-2xl mx-auto">Potenzia il tuo studio con l'intelligenza artificiale.</p>
+        </div>
+
+        {% include 'pricing_partial.html' %}
+    </main>
+
+    <script src="/static/js/intro.js" defer></script>
+</body>
+</html>

@@ -616,8 +616,8 @@ function renderActivationBanner(isActive, subState) {
 
     if (safeState === "canceled" || safeState === "past_due" || !safeState || safeState === "unknown") {
         msg = "Nessun abbonamento attivo. Attiva un piano per utilizzare il servizio.";
-        // Link to home page pricing anchor
-        btnHtml = `<a href="/#pricing" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded shadow-lg transition-colors">ATTIVA ORA</a>`;
+        // Link to dedicated plans page
+        btnHtml = `<a href="/billing/plans" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded shadow-lg transition-colors">ATTIVA ORA</a>`;
     }
 
     if (!banner) {
