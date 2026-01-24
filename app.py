@@ -1041,8 +1041,31 @@ async def analytics_client(agent_id: str, admin: User = Depends(get_current_admi
 async def dashboard(
     request: Request,
     user: User = Depends(get_current_user_page),
+    db: Session = Depends(get_db)
 ):
     maybe_reload_clients()
+
+    # Logic to fetch subscription
+    sub = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.state == "active"
+    ).first()
+
+    if not sub:
+        sub = db.query(Subscription).filter(
+            Subscription.user_id == user.id
+        ).order_by(Subscription.id.desc()).first()
+
+    subscription_data = None
+    if sub:
+        subscription_data = {
+            "state": sub.state,
+            "plan_code": sub.plan.code if sub.plan else None,
+            "cycle_start": sub.cycle_start.isoformat() if sub.cycle_start else None,
+            "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
+            "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
+        }
+
     # Convert User to dict safe for JSON
     user_dict = {
         "username": user.username,
@@ -1052,7 +1075,11 @@ async def dashboard(
         "is_active": user.is_active,
         "agent_ids": [a.agent_id for a in user.agents]
     }
-    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user_dict})
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "user": user_dict,
+        "subscription": subscription_data
+    })
 
 
 @app.get("/client/dashboard", response_class=HTMLResponse)

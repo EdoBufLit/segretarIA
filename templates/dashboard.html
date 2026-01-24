@@ -247,7 +247,16 @@
                     <!-- Service Status -->
                     <div class="flex items-center gap-2">
                         <span class="text-[var(--muted)]">Servizio:</span>
-                        <span id="status-service" class="px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">...</span>
+                        {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
+                        {% set service_suspended = not user.is_active %}
+
+                        {% if service_active %}
+                            <span id="status-service" class="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">ATTIVO</span>
+                        {% elif service_suspended %}
+                             <span id="status-service" class="px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">SOSPESO</span>
+                        {% else %}
+                             <span id="status-service" class="px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30">NON ATTIVO</span>
+                        {% endif %}
                     </div>
 
                     <!-- Separator -->
@@ -256,12 +265,20 @@
                     <!-- Billing Status -->
                     <div class="flex items-center gap-2">
                         <span class="text-[var(--muted)]">Billing:</span>
-                        <span id="status-billing" class="uppercase text-gray-300">...</span>
+                        {% if subscription %}
+                            {% set state = subscription.state|upper %}
+                            {% set bill_class = "text-green-400 font-bold" if state == 'ACTIVE' else ("text-red-400 font-bold" if state in ['PAST_DUE', 'CANCELED'] else "text-[var(--muted)]") %}
+                            <span id="status-billing" class="{{ bill_class }}">{{ state }}</span>
+                        {% else %}
+                            <span id="status-billing" class="text-[var(--muted)]">NESSUNO</span>
+                        {% endif %}
                     </div>
 
                     <!-- Plan -->
-                    <div id="status-plan-container" class="flex items-center gap-2 hidden">
-                         <span id="status-plan" class="px-2 py-0.5 rounded border border-blue-500/30 text-blue-300 bg-blue-500/10"></span>
+                    <div id="status-plan-container" class="flex items-center gap-2 {% if not subscription or not subscription.plan_code %}hidden{% endif %}">
+                         <span id="status-plan" class="px-2 py-0.5 rounded border border-blue-500/30 text-blue-300 bg-blue-500/10">
+                            {{ subscription.plan_code|upper if subscription and subscription.plan_code else '' }}
+                         </span>
                     </div>
 
                     <!-- Refresh Button -->

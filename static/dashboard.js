@@ -543,19 +543,21 @@ async function updateDashboardStatus() {
     }
 
     // Update UI
-    isActive = (sub.state === "active");
+    const isUserActive = (user.is_active === true);
+    const isSubActive = (sub.state === "active");
+    isActive = isSubActive;
 
-    // 1. Service Status (user.is_active)
+    // 1. Service Status
     const srvEl = document.getElementById("status-service");
     if (srvEl) {
-        if (user.is_active === true) {
+        if (isUserActive && isSubActive) {
             srvEl.textContent = "ATTIVO";
             srvEl.className = "px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30";
-        } else if (user.is_active === false) {
+        } else if (!isUserActive) {
             srvEl.textContent = "SOSPESO";
             srvEl.className = "px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30";
         } else {
-            srvEl.textContent = "UNK";
+            srvEl.textContent = "NON ATTIVO";
             srvEl.className = "px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30";
         }
     }
