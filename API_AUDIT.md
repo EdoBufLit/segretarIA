@@ -22,36 +22,34 @@ This audit examines the existing API endpoints used by the dashboard for user an
 ### Logs & Analytics (Current Dashboard)
 | Endpoint | Method | Auth Required | Payload | Security Risk |
 |----------|--------|---------------|---------|---------------|
-| `/logs/{agent_id}/list` | GET | ❌ **NO** | Paginated logs | 🚨 **CRITICAL**. Publicly accessible. Exposes call logs. |
-| `/logs/{agent_id}` | GET | ❌ **NO** | All logs | 🚨 **CRITICAL**. Publicly accessible. |
-| `/analytics/global` | GET | ❌ **NO** | Aggregated stats | 🚨 **CRITICAL**. Exposes global business metrics. |
-| `/analytics/{agent_id}` | GET | ❌ **NO** | Time series | 🚨 **CRITICAL**. |
+| `/logs/{agent_id}/list` | GET | ✅ Yes | Paginated logs | ✅ Protected via user RBAC. |
+| `/logs/{agent_id}` | GET | ✅ Yes (Admin) | All logs | ✅ Admin-only. |
+| `/analytics/global` | GET | ✅ Yes (Admin) | Aggregated stats | ✅ Admin-only. |
+| `/analytics/{agent_id}` | GET | ✅ Yes (Admin) | Time series | ✅ Admin-only. |
 
-### Client Management (Admin)
+### Agent Settings (Admin)
 | Endpoint | Method | Auth Required | Notes |
 |----------|--------|---------------|-------|
-| `/clients` | GET | ❌ **NO** | 🚨 **CRITICAL**. Dumps all client configs. |
-| `/clients/{agent_id}` | GET | ❌ **NO** | 🚨 **CRITICAL**. Exposes client details. |
-| `/clients/{agent_id}/update` | POST | ❌ **NO** | 🚨 **CRITICAL**. Allows unauthenticated updates. |
-| `/clients/{agent_id}/test-call` | POST | ❌ **NO** | 🚨 **CRITICAL**. Allows unauthenticated call triggering (Cost/DoS risk). |
+| `/api/admin/agent-users` | GET | ✅ Yes (Admin) | Mapping of agent_id -> user details. |
+| `/api/admin/agent-settings/{agent_id}` | GET | ✅ Yes (Admin) | Read agent settings. |
+| `/api/admin/agent-settings/{agent_id}` | PUT | ✅ Yes (Admin) | Update agent settings. |
+| `/api/admin/agents/{agent_id}/test-call` | POST | ✅ Yes (Admin) | Admin-triggered test call. |
 
 ## 3. Dashboard Usage (`dashboard.js`)
-The current `static/dashboard.js` (used by the Admin Dashboard) relies entirely on the **unsecured** endpoints listed above:
-- `GET /clients`
-- `POST /clients/add`
-- `POST /clients/remove`
-- `GET /logs/{agent_id}`
-- `GET /clients/{agent_id}`
-- `POST /clients/{agent_id}/update`
-- `POST /clients/{agent_id}/test-call`
+The current Admin Dashboard relies on authenticated endpoints:
+- `GET /api/admin/agent-users`
+- `GET /api/admin/agent-settings/{agent_id}`
+- `PUT /api/admin/agent-settings/{agent_id}`
+- `POST /api/admin/agents/{agent_id}/test-call`
+- `GET /logs/{agent_id}/list`
 
 **Note**: The User Dashboard (`client_portal.html`) is currently a placeholder and does not utilize these endpoints yet.
 
 ## 4. Recommendations
 
 ### Immediate Actions (Security)
-1.  **Secure Admin Endpoints**: Apply `Depends(get_current_admin_user)` to all `/clients/*`, `/logs/*`, and `/analytics/*` endpoints immediately.
-2.  **Secure Test Call**: Apply strict auth to `/clients/{agent_id}/test-call`.
+1.  **Ensure RBAC**: Keep admin-only protections on analytics and agent settings endpoints.
+2.  **Keep Test Call Admin-Only**: `/api/admin/agents/{agent_id}/test-call` should remain restricted.
 
 ### For Frontend (User Dashboard)
 1.  **Enhance `/me`**:

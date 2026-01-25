@@ -27,7 +27,7 @@ This document outlines the verification steps for the critical paths of the Segr
 ## 5. Client Dashboard
 - [ ] **Unpaid User**: Shows status "NON ATTIVO" / "SOSPESO". "ATTIVA ORA" button visible.
 - [ ] **Paid User**: Shows status "ATTIVO". "ATTIVA ORA" button hidden.
-- [ ] **Access**: Client cannot access Admin routes (`/clients`).
+- [ ] **Access**: Client cannot access Admin routes (e.g. `/admin/*`, `/api/admin/*`).
 
 ## 6. Emails (Notifications)
 - [ ] **Lead Form**: Submitting homepage contact form sends email to `LEADS_EMAIL_TO` (or admin).

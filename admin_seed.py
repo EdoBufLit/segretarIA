@@ -36,9 +36,15 @@ def ensure_plans() -> None:
 
 
 def ensure_default_admin() -> None:
-    admin_username = os.getenv("ADMIN_USERNAME", "admin")
-    admin_password = os.getenv("ADMIN_PASSWORD", "password123")
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+    admin_username = os.getenv("ADMIN_USERNAME")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    admin_email = os.getenv("ADMIN_EMAIL")
+
+    if not admin_username or not admin_password or not admin_email:
+        logger.warning(
+            "ADMIN_USERNAME, ADMIN_PASSWORD, and ADMIN_EMAIL must be set to seed an admin user. Skipping."
+        )
+        return
 
     db = SessionLocal()
     try:

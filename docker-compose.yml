@@ -9,7 +9,6 @@ services:
       - ./logs:/app/logs
       - ./static:/app/static
       - ./templates:/app/templates
-      - ./clients.json:/app/clients.json
     environment:
       - DATABASE_URL=postgresql://user:password@postgres:5432/app_db
       - REDIS_URL=redis://redis:6379/0
@@ -26,7 +25,6 @@ services:
     command: python worker.py
     volumes:
       - ./logs:/app/logs
-      - ./clients.json:/app/clients.json
     environment:
       - DATABASE_URL=postgresql://user:password@postgres:5432/app_db
       - REDIS_URL=redis://redis:6379/0

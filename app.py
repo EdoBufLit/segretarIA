@@ -28,7 +28,7 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from db import get_db, SessionLocal
-from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken, AgentSettings, CallLog
 from auth import (
     hash_password,
     verify_password,
@@ -175,13 +175,6 @@ SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "password123")
-
-# ================== CONFIG MULTI-CLIENT (clients.json) ==================
-CLIENTS_FILE = os.getenv("CLIENTS_FILE", "clients.json")
-CLIENTS: Dict[str, Dict[str, Any]] = {}
-CLIENTS_MTIME: Optional[float] = None
 LOGS_DIR = Path("logs")
 LOGS_DIR.mkdir(exist_ok=True)
 LEADS_LOG_DIR = LOGS_DIR / "leads"
@@ -259,132 +252,11 @@ def get_plans_context(db: Session) -> Dict[str, Any]:
             }
     return plans_ctx
 
-class ClientSettingsUpdate(BaseModel):
-    studio_name: str | None = None
-    email_to: str | None = None
+class AgentSettingsUpdate(BaseModel):
     greeting: str | None = None
     notes: str | None = None
-    agent_phone_number_id: str | None = None   # ID numero collegato in ElevenLabs
-    test_phone_number: str | None = None       # Numero di test (es. tuo cellulare)
-
-
-
-def load_clients() -> Dict[str, Dict[str, Any]]:
-    """
-    Carica la mappa agent_id -> config cliente da clients.json
-    e aggiorna il timestamp globale CLIENTS_MTIME.
-    """
-    global CLIENTS_MTIME
-
-    path = Path(CLIENTS_FILE)
-    if not path.exists():
-        logger.warning(f"[CLIENTS] File {CLIENTS_FILE} non trovato. Uso mapping vuoto.")
-        CLIENTS_MTIME = None
-        return {}
-
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            raise TypeError("clients.json deve contenere un oggetto JSON")
-
-        CLIENTS_MTIME = path.stat().st_mtime
-        logger.info(f"[CLIENTS] Caricati {len(data)} client da {CLIENTS_FILE}. mtime={CLIENTS_MTIME}")
-        return data
-    except Exception as e:
-        logger.exception(f"[CLIENTS] Errore caricando {CLIENTS_FILE}: {e}")
-        return {}
-
-
-
-# Carica una volta all'avvio
-CLIENTS = load_clients()
-
-def maybe_reload_clients() -> None:
-    """
-    Controlla se clients.json è cambiato su disco.
-    Se sì, ricarica CLIENTS.
-    """
-    global CLIENTS, CLIENTS_MTIME
-
-    path = Path(CLIENTS_FILE)
-    if not path.exists():
-        return
-
-    try:
-        current_mtime = path.stat().st_mtime
-    except Exception as e:
-        logger.warning(f"[CLIENTS] Impossibile leggere mtime di {CLIENTS_FILE}: {e}")
-        return
-
-    if CLIENTS_MTIME is None or current_mtime != CLIENTS_MTIME:
-        logger.info("[CLIENTS] Rilevato cambiamento in clients.json, ricarico...")
-        CLIENTS = load_clients()
-
-@app.get("/clients/{agent_id}")
-async def get_client(agent_id: str):
-    maybe_reload_clients()
-    if agent_id not in CLIENTS:
-        raise HTTPException(status_code=404, detail="Cliente non trovato")
-    return {"status": "ok", "client": CLIENTS[agent_id]}
-
-
-@app.post("/clients/{agent_id}/update")
-async def update_client(agent_id: str, payload: ClientSettingsUpdate):
-    maybe_reload_clients()
-    if agent_id not in CLIENTS:
-        raise HTTPException(status_code=404, detail="Cliente non trovato")
-
-    client = CLIENTS[agent_id]
-
-    if payload.studio_name is not None:
-        client["studio_name"] = payload.studio_name
-    if payload.email_to is not None:
-        client["email_to"] = payload.email_to
-    if payload.greeting is not None:
-        client["greeting"] = payload.greeting
-    if payload.notes is not None:
-        client["notes"] = payload.notes
-    # 🔥 nuovi campi:
-    if payload.agent_phone_number_id is not None:
-        client["agent_phone_number_id"] = payload.agent_phone_number_id
-    if payload.test_phone_number is not None:
-        client["test_phone_number"] = payload.test_phone_number
-
-    with open(CLIENTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(CLIENTS, f, indent=2, ensure_ascii=False)
-
-    maybe_reload_clients()
-    return {"status": "ok", "client": client}
-
-
-
-
-def get_client_config(agent_id: Optional[str]) -> Dict[str, Any]:
-    """
-    Ritorna la configurazione cliente a partire da agent_id.
-    Se non trova nulla, usa il fallback (singolo studio).
-    """
-    if agent_id and agent_id in CLIENTS:
-        cfg = CLIENTS[agent_id]
-        studio_name = cfg.get("studio_name", STUDIO_NAME)
-        email_to = cfg.get("email_to", EMAIL_TO_FALLBACK)
-        logger.info(f"[ROUTING] Trovato client per agent_id={agent_id}: {studio_name} -> {email_to}")
-    else:
-        logger.warning(f"[ROUTING] Nessun client configurato per agent_id={agent_id}, uso fallback.")
-        studio_name = STUDIO_NAME
-        email_to = EMAIL_TO_FALLBACK
-
-    if not email_to:
-        raise RuntimeError(
-            "Nessuna email di destinazione configurata: "
-            "controlla clients.json o la variabile di ambiente EMAIL_TO."
-        )
-
-    return {
-        "studio_name": studio_name,
-        "email_to": email_to,
-    }
+    agent_phone_number_id: str | None = None
+    test_phone_number: str | None = None
 
 # ================== HEALTH ENDPOINTS ==================
 
@@ -440,7 +312,6 @@ async def admin_create_client(username: str = Form(...), email: str = Form(...),
     service = AdminService(db)
     try:
         client = service.create_client(username, email, password, studio_name)
-        service.sync_clients_to_json()
         return {"status": "ok", "client_id": client.id}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -450,7 +321,6 @@ async def admin_create_agent(agent_id: str = Form(...), display_name: str = Form
     service = AdminService(db)
     try:
         agent = service.create_agent(agent_id, display_name, phone_number_id)
-        service.sync_clients_to_json()
         return {"status": "ok", "agent_id": agent.id}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -460,7 +330,6 @@ async def admin_assign_agent(user_id: int, agent_id: int = Form(...), db: Sessio
     service = AdminService(db)
     try:
         client = service.assign_agent_to_client(user_id, agent_id)
-        service.sync_clients_to_json()
         return {"status": "ok", "client_id": client.id, "assigned_agents": [a.id for a in client.agents]}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -473,12 +342,6 @@ async def admin_create_subscription(user_id: int, plan_code: str = Form(...), db
         return {"status": "ok", "subscription_id": subscription.id, "state": subscription.state}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/admin/sync-clients-json")
-async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
-    summary = service.sync_clients_to_json()
-    return {"status": "ok", **summary}
 
 @app.get("/admin/phone-numbers", response_class=HTMLResponse)
 async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user_page)):
@@ -974,81 +837,6 @@ async def elevenlabs_webhook(request: Request):
     # 5) Return Immediate Success
     return {"status": "ok"}
 
-@app.get("/clients")
-async def list_clients(admin: User = Depends(get_current_admin_user)):
-    """
-    Restituisce la lista dei client configurati (agent_id -> dati).
-    Prima ricarica dinamicamente clients.json se è cambiato.
-    """
-    maybe_reload_clients()
-
-    from copy import deepcopy
-    visible_clients = deepcopy(CLIENTS)
-
-    return {
-        "status": "ok",
-        "count": len(visible_clients),
-        "mtime": CLIENTS_MTIME,
-        "clients": visible_clients,
-    }
-
-
-def save_clients_to_file():
-    """Scrive CLIENTS su clients.json."""
-    path = Path(CLIENTS_FILE)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(CLIENTS, f, indent=2, ensure_ascii=False)
-    logger.info("[CLIENTS] Salvato clients.json aggiornato.")
-
-
-@app.post("/clients/add")
-async def add_client(
-    agent_id: str = Body(...),
-    studio_name: str = Body(...),
-    email_to: str = Body(...),
-    admin: User = Depends(get_current_admin_user)
-):
-    """
-    Aggiunge un nuovo cliente a clients.json.
-    """
-    maybe_reload_clients()
-
-    if agent_id in CLIENTS:
-        return {"status": "error", "message": "Client già esistente."}
-
-    CLIENTS[agent_id] = {
-        "studio_name": studio_name,
-        "email_to": email_to
-    }
-
-    save_clients_to_file()
-    maybe_reload_clients()
-
-    return {"status": "ok", "message": "Cliente aggiunto.", "client": CLIENTS[agent_id]}
-
-
-class RemoveClientRequest(BaseModel):
-    agent_id: str
-
-@app.post("/clients/remove")
-async def remove_client(body: RemoveClientRequest, admin: User = Depends(get_current_admin_user)):
-    maybe_reload_clients()
-
-    agent_id = body.agent_id
-
-    if agent_id not in CLIENTS:
-        return {"status": "error", "message": "Client non trovato."}
-
-    # Rimuovi dal dizionario
-    CLIENTS.pop(agent_id)
-
-    # Riscrivi il file
-    with open(CLIENTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(CLIENTS, f, indent=4, ensure_ascii=False)
-
-    return {"status": "ok", "message": f"Client {agent_id} rimosso correttamente."}
-
-
 @app.get("/logs/{agent_id}/list")
 async def view_logs_list(
     agent_id: str,
@@ -1067,8 +855,6 @@ async def view_logs_list(
     - Admin: può accedere a qualsiasi agent_id
     - Client: può accedere solo ai suoi agent_id
     """
-    maybe_reload_clients()
-
     # RBAC Check
     if current_user.role != "admin":
         # Check ownership
@@ -1078,26 +864,24 @@ async def view_logs_list(
             raise HTTPException(status_code=403, detail="Access denied to this agent")
 
     # Delegate to _read_logs which handles filtering/reading
-    return _read_logs([agent_id], limit, offset, status, date_from, date_to, q)
+    return _read_logs(db, [agent_id], limit, offset, status, date_from, date_to, q)
 
 @app.get("/logs/{agent_id}")
 async def view_logs(agent_id: str, admin: User = Depends(get_current_admin_user)):
     """
     Restituisce lo storico completo (legacy endpoint, o per debug).
     """
-    maybe_reload_clients()
-
-    log_path = LOGS_DIR / f"{agent_id}.log"
-    if not log_path.exists():
-        return {"status": "ok", "message": "Nessun log per questo client.", "logs": []}
-
-    logs = []
-    with log_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                logs.append(json.loads(line))
-            except:
-                pass
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(CallLog)
+            .filter(CallLog.agent_id == agent_id)
+            .order_by(CallLog.timestamp.desc())
+            .all()
+        )
+        logs = [row.raw_data for row in rows if row.raw_data]
+    finally:
+        db.close()
 
     return {
         "status": "ok",
@@ -1106,7 +890,7 @@ async def view_logs(agent_id: str, admin: User = Depends(get_current_admin_user)
     }
 
 
-def _calculate_analytics(agent_ids: List[str]) -> Dict[str, Any]:
+def _calculate_analytics(db: Session, agent_ids: List[str]) -> Dict[str, Any]:
     stats_by_day: Dict[str, int] = {}
     stats_by_client: Dict[str, int] = {}
     stats_by_category: Dict[str, int] = {}
@@ -1123,84 +907,114 @@ def _calculate_analytics(agent_ids: List[str]) -> Dict[str, Any]:
     # heatmap[hour][weekday] – 24 ore x 7 giorni
     heatmap = [[0 for _ in range(7)] for _ in range(24)]
 
-    for agent_id in agent_ids:
-        log_path = LOGS_DIR / f"{agent_id}.log"
-        if not log_path.exists():
-            continue
+    if not agent_ids:
+        return {
+            "status": "ok",
+            "total_calls": 0,
+            "by_day": {},
+            "by_client": {},
+            "calls_today": 0,
+            "calls_last_7_days": 0,
+            "errors": 0,
+            "clients_count": 0,
+            "heatmap": heatmap,
+            "by_category": {},
+            "by_urgency": {},
+        }
 
-        with log_path.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
+    logs = (
+        db.query(CallLog)
+        .filter(CallLog.agent_id.in_(agent_ids))
+        .order_by(CallLog.timestamp.asc())
+        .all()
+    )
 
-                # --- parse JSON ---
-                try:
-                    entry = json.loads(line)
-                except Exception:
-                    # riga corrotta, la saltiamo
-                    continue
+    if logs:
+        db_agents = {log.agent_id for log in logs}
+        for log in logs:
+            if not log.timestamp:
+                continue
 
-                ts = entry.get("timestamp")
-                if not ts:
-                    continue
+            dt = log.timestamp
+            total_calls += 1
 
-                try:
-                    dt = datetime.fromisoformat(ts)
-                except Exception:
-                    continue
+            # ---- per giorno ----
+            day_str = dt.date().isoformat()
+            stats_by_day[day_str] = stats_by_day.get(day_str, 0) + 1
 
-                total_calls += 1
+            # ---- per cliente ----
+            stats_by_client[log.agent_id] = stats_by_client.get(log.agent_id, 0) + 1
 
-                # ---- per giorno ----
-                day_str = dt.date().isoformat()
-                stats_by_day[day_str] = stats_by_day.get(day_str, 0) + 1
+            # ---- oggi / ultimi 7 giorni ----
+            d = dt.date()
+            if d == today:
+                calls_today += 1
+            if d >= last_7_start:
+                calls_last_7 += 1
 
-                # ---- per cliente ----
-                stats_by_client[agent_id] = stats_by_client.get(agent_id, 0) + 1
+            # ---- errori / fallite ----
+            inner_data = (log.raw_data or {}).get("data", {})
+            status = log.status or inner_data.get("status")
 
-                # ---- oggi / ultimi 7 giorni ----
-                d = dt.date()
-                if d == today:
-                    calls_today += 1
-                if d >= last_7_start:
-                    calls_last_7 += 1
+            if status == "failure":
+                errors += 1
+            elif status == "success":
+                pass
+            else:
+                analysis = inner_data.get("analysis", {})
+                call_successful = None
+                termination_reason = None
+                if isinstance(analysis, dict):
+                    call_successful = analysis.get("call_successful")
+                    termination_reason = analysis.get("termination_reason")
 
-                # ---- errori / fallite ----
-                # 1) Check status in log data (nested)
-                inner_data = entry.get("data", {})
-                status = inner_data.get("status")
-
-                if status == "failure":
+                if call_successful == "failure" or termination_reason:
                     errors += 1
-                elif status == "success":
-                    pass
-                else:
-                    # 2) Fallback logic (old logs)
-                    # inner_data is already entry.get("data")
-                    analysis = inner_data.get("analysis", {})
-                    call_successful = None
-                    termination_reason = None
-                    if isinstance(analysis, dict):
-                        call_successful = analysis.get("call_successful")
-                        termination_reason = analysis.get("termination_reason")
 
-                    if call_successful == "failure" or termination_reason:
-                        errors += 1
+            # ---- AI enrichment (categoria / urgenza) ----
+            ai = (log.raw_data or {}).get("ai_enrichment", {})
+            cat = ai.get("category", "altro")
+            urg = ai.get("urgency", "media")
 
-                # ---- AI enrichment (categoria / urgenza) ----
-                ai = entry.get("ai_enrichment", {})
-                cat = ai.get("category", "altro")
-                urg = ai.get("urgency", "media")
+            stats_by_category[cat] = stats_by_category.get(cat, 0) + 1
+            stats_by_urgency[urg] = stats_by_urgency.get(urg, 0) + 1
 
-                stats_by_category[cat] = stats_by_category.get(cat, 0) + 1
-                stats_by_urgency[urg] = stats_by_urgency.get(urg, 0) + 1
-
-                # ---- heatmap ora x giorno ----
-                hour = dt.hour
-                weekday = dt.weekday()  # 0 = Monday, 6 = Sunday
-                if 0 <= hour < 24 and 0 <= weekday < 7:
-                    heatmap[hour][weekday] += 1
+            # ---- heatmap ora x giorno ----
+            hour = dt.hour
+            weekday = dt.weekday()  # 0 = Monday, 6 = Sunday
+            if 0 <= hour < 24 and 0 <= weekday < 7:
+                heatmap[hour][weekday] += 1
+        total_calls, errors, calls_today, calls_last_7 = _merge_legacy_file_stats(
+            agent_ids,
+            db_agents,
+            stats_by_day,
+            stats_by_client,
+            stats_by_category,
+            stats_by_urgency,
+            heatmap,
+            today,
+            last_7_start,
+            total_calls,
+            errors,
+            calls_today,
+            calls_last_7,
+        )
+    else:
+        total_calls, errors, calls_today, calls_last_7 = _merge_legacy_file_stats(
+            agent_ids,
+            set(),
+            stats_by_day,
+            stats_by_client,
+            stats_by_category,
+            stats_by_urgency,
+            heatmap,
+            today,
+            last_7_start,
+            total_calls,
+            errors,
+            calls_today,
+            calls_last_7,
+        )
 
     return {
         "status": "ok",
@@ -1216,14 +1030,103 @@ def _calculate_analytics(agent_ids: List[str]) -> Dict[str, Any]:
         "by_urgency": stats_by_urgency,
     }
 
+
+def _merge_legacy_file_stats(
+    agent_ids: List[str],
+    db_agents: set[str],
+    stats_by_day: Dict[str, int],
+    stats_by_client: Dict[str, int],
+    stats_by_category: Dict[str, int],
+    stats_by_urgency: Dict[str, int],
+    heatmap: list[list[int]],
+    today: date,
+    last_7_start: date,
+    total_calls: int,
+    errors: int,
+    calls_today: int,
+    calls_last_7: int,
+) -> tuple[int, int, int, int]:
+    for agent_id in agent_ids:
+        if agent_id in db_agents:
+            continue
+        log_path = LOGS_DIR / f"{agent_id}.log"
+        if not log_path.exists():
+            continue
+
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+
+                ts = entry.get("timestamp")
+                if not ts:
+                    continue
+
+                try:
+                    dt = datetime.fromisoformat(ts)
+                except Exception:
+                    continue
+
+                total_calls += 1
+
+                day_str = dt.date().isoformat()
+                stats_by_day[day_str] = stats_by_day.get(day_str, 0) + 1
+                stats_by_client[agent_id] = stats_by_client.get(agent_id, 0) + 1
+
+                d = dt.date()
+                if d == today:
+                    calls_today += 1
+                if d >= last_7_start:
+                    calls_last_7 += 1
+
+                inner_data = entry.get("data", {})
+                status = inner_data.get("status")
+
+                if status == "failure":
+                    errors += 1
+                elif status == "success":
+                    pass
+                else:
+                    analysis = inner_data.get("analysis", {})
+                    call_successful = None
+                    termination_reason = None
+                    if isinstance(analysis, dict):
+                        call_successful = analysis.get("call_successful")
+                        termination_reason = analysis.get("termination_reason")
+
+                    if call_successful == "failure" or termination_reason:
+                        errors += 1
+
+                ai = entry.get("ai_enrichment", {})
+                cat = ai.get("category", "altro")
+                urg = ai.get("urgency", "media")
+
+                stats_by_category[cat] = stats_by_category.get(cat, 0) + 1
+                stats_by_urgency[urg] = stats_by_urgency.get(urg, 0) + 1
+
+                hour = dt.hour
+                weekday = dt.weekday()
+                if 0 <= hour < 24 and 0 <= weekday < 7:
+                    heatmap[hour][weekday] += 1
+
+    return total_calls, errors, calls_today, calls_last_7
+
 @app.get("/analytics/global")
-async def analytics_global(admin: User = Depends(get_current_admin_user)):
+async def analytics_global(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
     """
     Ritorna statistiche aggregate da TUTTI i log.
     """
-    maybe_reload_clients()
-    # Pass all configured clients
-    return _calculate_analytics(list(CLIENTS.keys()))
+    agent_ids = [agent.agent_id for agent in db.query(Agent).all()]
+    return _calculate_analytics(db, agent_ids)
 
 @app.get("/api/analytics")
 async def analytics_user(
@@ -1238,7 +1141,7 @@ async def analytics_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     agent_ids = [a.agent_id for a in user.agents]
-    return _calculate_analytics(agent_ids)
+    return _calculate_analytics(db, agent_ids)
 
 
 
@@ -1247,6 +1150,18 @@ class AdminUpdateUserRequest(BaseModel):
     studio_name: Optional[str] = None
     email: Optional[str] = None
     # Potentially other fields like notification_email if we add it later
+
+
+def _apply_admin_user_update(user: User, payload: AdminUpdateUserRequest, db: Session) -> None:
+    if payload.email is not None:
+        if payload.email != user.email:
+            existing = db.query(User).filter(User.email == payload.email).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="Email already in use")
+            user.email = payload.email
+
+    if payload.studio_name is not None:
+        user.studio_name = payload.studio_name
 
 @app.get("/admin/users")
 async def admin_list_users(
@@ -1297,26 +1212,47 @@ async def admin_update_user(
 ):
     """
     Updates user details (email, studio_name).
-    Acts as the DB-backed replacement for modifying clients.json.
     """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if payload.email is not None:
-        # Check uniqueness if changed
-        if payload.email != user.email:
-            existing = db.query(User).filter(User.email == payload.email).first()
-            if existing:
-                raise HTTPException(status_code=400, detail="Email already in use")
-            user.email = payload.email
-
-    if payload.studio_name is not None:
-        user.studio_name = payload.studio_name
+    _apply_admin_user_update(user, payload, db)
 
     db.commit()
 
     # Audit log
+    audit_logger.log_audit_event(
+        db=db,
+        actor_type="admin",
+        action="update_user",
+        entity_type="user",
+        entity_id=str(user.id),
+        admin_username=admin.username,
+        meta={"changes": payload.dict(exclude_unset=True)}
+    )
+
+    return {"status": "ok", "user": {"id": user.id, "email": user.email, "studio_name": user.studio_name}}
+
+
+@app.put("/admin/users/{user_id}")
+async def admin_put_user(
+    user_id: int,
+    payload: AdminUpdateUserRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    """
+    Replaces user details (email, studio_name).
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    _apply_admin_user_update(user, payload, db)
+
+    db.commit()
+
     audit_logger.log_audit_event(
         db=db,
         actor_type="admin",
@@ -1347,9 +1283,6 @@ async def api_admin_agent_users(
         if r.user_id:
             user = db.query(User).filter(User.id == r.user_id).first()
             if user:
-                # Get associated phone number e164 if linked in routing
-                phone_e164 = r.phone_number.e164 if r.phone_number else None
-
                 # We map by agent_id because the frontend selects by agent_id
                 mapping[r.agent_id] = {
                     "user_id": user.id,
@@ -1357,20 +1290,76 @@ async def api_admin_agent_users(
                     "studio_name": user.studio_name,
                     "username": user.username,
                     "agent_phone_number_id": r.phone_number_id, # Internal DB ID
-                    # We might need the ElevenLabs ID from clients.json legacy or stored elsewhere?
-                    # For now, let's assume 'agent_phone_number_id' in settings meant the ElevenLabs ID string.
-                    # But the DB has 'phone_number_id' as Integer FK.
-                    # If the user input was a string (e.g. "pn_..."), we don't have a column for that on AgentRouting yet?
-                    # Let's check the clients.json structure. It had "agent_phone_number_id".
-                    # If this is an ElevenLabs specific ID, it should probably be on Agent or AgentRouting.
-                    # For now, we return what we have. If the frontend needs to edit legacy JSON fields,
-                    # we might need to keep reading JSON for those specific fields OR migrate them to DB.
-                    # The prompt says: "la sezione che modifica email_to deve aggiornare User.email... studio_name -> User.studio_name".
-                    # "rimuovi dipendenza da /clients/...".
-                    # We will rely on User data.
                 }
 
     return {"status": "ok", "mapping": mapping}
+
+
+@app.get("/api/admin/agent-settings/{agent_id}")
+async def get_agent_settings(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    settings = db.query(AgentSettings).filter(AgentSettings.agent_id == agent_id).first()
+    if not settings:
+        return {
+            "status": "ok",
+            "settings": {
+                "agent_id": agent_id,
+                "greeting": "",
+                "notes": "",
+                "agent_phone_number_id": "",
+                "test_phone_number": "",
+            },
+        }
+
+    return {
+        "status": "ok",
+        "settings": {
+            "agent_id": settings.agent_id,
+            "greeting": settings.greeting,
+            "notes": settings.notes,
+            "agent_phone_number_id": settings.agent_phone_number_id,
+            "test_phone_number": settings.test_phone_number,
+        },
+    }
+
+
+@app.put("/api/admin/agent-settings/{agent_id}")
+async def update_agent_settings(
+    agent_id: str,
+    payload: AgentSettingsUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    settings = db.query(AgentSettings).filter(AgentSettings.agent_id == agent_id).first()
+    if not settings:
+        settings = AgentSettings(agent_id=agent_id)
+        db.add(settings)
+
+    if payload.greeting is not None:
+        settings.greeting = payload.greeting
+    if payload.notes is not None:
+        settings.notes = payload.notes
+    if payload.agent_phone_number_id is not None:
+        settings.agent_phone_number_id = payload.agent_phone_number_id
+    if payload.test_phone_number is not None:
+        settings.test_phone_number = payload.test_phone_number
+
+    db.commit()
+    db.refresh(settings)
+
+    return {
+        "status": "ok",
+        "settings": {
+            "agent_id": settings.agent_id,
+            "greeting": settings.greeting,
+            "notes": settings.notes,
+            "agent_phone_number_id": settings.agent_phone_number_id,
+            "test_phone_number": settings.test_phone_number,
+        },
+    }
 
 @app.post("/admin/users/{user_id}/suspend")
 async def admin_suspend_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
@@ -1519,23 +1508,24 @@ async def admin_metrics(db: Session = Depends(get_db), admin: User = Depends(get
 
 
 @app.get("/analytics/{agent_id}")
-async def analytics_client(agent_id: str, admin: User = Depends(get_current_admin_user)):
+async def analytics_client(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
     """
     Statistiche temporali solo per un client.
     Grafico linea → chiamate ordinate nel tempo.
     """
-    log_path = LOGS_DIR / f"{agent_id}.log"
-    if not log_path.exists():
-        return {"status": "ok", "points": []}
-
-    points = []
-    with log_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                entry = json.loads(line)
-                points.append(entry["timestamp"])
-            except:
-                pass
+    points = [
+        row.timestamp.isoformat()
+        for row in (
+            db.query(CallLog)
+            .filter(CallLog.agent_id == agent_id)
+            .order_by(CallLog.timestamp.asc())
+            .all()
+        )
+    ]
 
     points.sort()
     return {
@@ -1551,8 +1541,6 @@ async def dashboard(
     user: User = Depends(get_current_user_page),
     db: Session = Depends(get_db)
 ):
-    maybe_reload_clients()
-
     # Logic to fetch subscription
     sub = db.query(Subscription).filter(
         Subscription.user_id == user.id,
@@ -2177,6 +2165,7 @@ async def admin_debug_users(
 
 
 def _read_logs(
+    db: Session,
     agent_ids: List[str],
     limit: int = 50,
     offset: int = 0,
@@ -2186,67 +2175,106 @@ def _read_logs(
     q: Optional[str] = None
 ):
     """
-    Helper to read, filter, sort and paginate logs from multiple agent files.
+    Helper to read, filter, sort and paginate logs from the database.
     """
     items = []
 
     df = datetime.fromisoformat(date_from).date() if date_from else None
     dt = datetime.fromisoformat(date_to).date() if date_to else None
 
-    for agent_id in agent_ids:
-        log_path = LOGS_DIR / f"{agent_id}.log"
-        if not log_path.exists():
-            continue
+    query = db.query(CallLog)
+    if agent_ids:
+        query = query.filter(CallLog.agent_id.in_(agent_ids))
+    if df:
+        query = query.filter(CallLog.timestamp >= datetime.combine(df, datetime.min.time()))
+    if dt:
+        query = query.filter(CallLog.timestamp <= datetime.combine(dt, datetime.max.time()))
+    if status in {"success", "failure"}:
+        query = query.filter(CallLog.status == status)
 
-        with log_path.open("r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    raw = json.loads(line)
-                    ts = raw.get("timestamp")
-                    if not ts:
-                        continue
-                    d = datetime.fromisoformat(ts)
-                    d_date = d.date()
+    logs = query.order_by(CallLog.timestamp.desc()).all()
 
-                    # --- FILTRO DATA ---
-                    if df and d_date < df:
-                        continue
-                    if dt and d_date > dt:
-                        continue
+    if logs:
+        for log in logs:
+            raw = log.raw_data or {}
+            ts = log.timestamp.isoformat() if log.timestamp else None
+            if not ts:
+                continue
 
-                    # --- DETERMINA SUCCESS / FAILURE ---
-                    analysis = raw.get("data", {}).get("analysis", {})
-                    call_ok = analysis.get("call_successful")
-                    is_failure = (call_ok == "failure")
+            data = raw.get("data", {}) or {}
+            analysis = data.get("analysis", {}) or {}
+            summary = (
+                analysis.get("transcript_summary")
+                or analysis.get("summary")
+                or data.get("summary")
+                or ""
+            )
+            duration = data.get("duration_secs") or data.get("metadata", {}).get("call_duration_secs")
+            caller = data.get("caller_number") or data.get("user_id") or "unknown"
+            status_value = log.status or data.get("status") or "success"
 
-                    if status == "success" and is_failure:
-                        continue
-                    if status == "failure" and not is_failure:
-                        continue
+            item = {
+                "timestamp": ts,
+                "caller": caller,
+                "status": status_value,
+                "summary": str(summary).strip(),
+                "duration_secs": duration,
+                "raw": raw
+            }
 
-                    # --- COSTRUZIONE ITEM ---
-                    item = {
-                        "timestamp": ts,
-                        "caller": raw.get("data", {}).get("user_id", "unknown"),
-                        "status": "failure" if is_failure else "success",
-                        "summary": raw.get("data", {}).get("analysis", {}).get("transcript_summary", "").strip(),
-                        "duration_secs": raw.get("data", {}).get("metadata", {}).get("call_duration_secs", None),
-                        "raw": raw  # per modal dettagliata
-                    }
-
-                    # --- SEARCH ---
-                    if q:
-                        q_low = q.lower()
-                        if q_low not in json.dumps(item, ensure_ascii=False).lower():
-                            continue
-
-                    items.append(item)
-
-                except:
+            if q:
+                q_low = q.lower()
+                if q_low not in json.dumps(item, ensure_ascii=False).lower():
                     continue
 
-    # Sort by timestamp desc
-    items.sort(key=lambda x: x["timestamp"], reverse=True)
+            items.append(item)
+    else:
+        for agent_id in agent_ids:
+            log_path = LOGS_DIR / f"{agent_id}.log"
+            if not log_path.exists():
+                continue
+
+            with log_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        raw = json.loads(line)
+                        ts = raw.get("timestamp")
+                        if not ts:
+                            continue
+                        d = datetime.fromisoformat(ts)
+                        d_date = d.date()
+
+                        if df and d_date < df:
+                            continue
+                        if dt and d_date > dt:
+                            continue
+
+                        analysis = raw.get("data", {}).get("analysis", {})
+                        call_ok = analysis.get("call_successful")
+                        is_failure = (call_ok == "failure")
+
+                        if status == "success" and is_failure:
+                            continue
+                        if status == "failure" and not is_failure:
+                            continue
+
+                        item = {
+                            "timestamp": ts,
+                            "caller": raw.get("data", {}).get("user_id", "unknown"),
+                            "status": "failure" if is_failure else "success",
+                            "summary": raw.get("data", {}).get("analysis", {}).get("transcript_summary", "").strip(),
+                            "duration_secs": raw.get("data", {}).get("metadata", {}).get("call_duration_secs", None),
+                            "raw": raw
+                        }
+
+                        if q:
+                            q_low = q.lower()
+                            if q_low not in json.dumps(item, ensure_ascii=False).lower():
+                                continue
+
+                        items.append(item)
+                    except Exception:
+                        continue
 
     total = len(items)
     paginated_items = items[offset:offset + limit]
@@ -2284,12 +2312,9 @@ async def get_my_logs(
     agent_ids = [a.agent_id for a in user.agents]
 
     if not agent_ids:
-        # If user has no agents assigned but relies on clients.json matching?
-        # The new model uses DB relations. If legacy relying on clients.json, we can't easily map user -> agent_id without DB.
-        # Assuming Phase 4A migration populated UserAgentAccess.
         return {"status": "ok", "total": 0, "items": []}
 
-    return _read_logs(agent_ids, limit, offset, status, date_from, date_to, q)
+    return _read_logs(db, agent_ids, limit, offset, status, date_from, date_to, q)
 
 
 
@@ -2297,7 +2322,7 @@ async def get_my_logs(
 
     # …qui il tuo log_call(entry, agent_id) o simile…
     # …e la parte di email che già hai…
-@app.post("/clients/{agent_id}/test-call")
+@app.post("/api/admin/agents/{agent_id}/test-call")
 async def test_call(agent_id: str, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     """
     Avvia una chiamata di test tramite ElevenLabs/Twilio verso il numero di test
@@ -2319,19 +2344,17 @@ async def test_call(agent_id: str, db: Session = Depends(get_db), admin: User = 
             if not active_sub:
                  raise HTTPException(status_code=403, detail="No active subscription.")
 
-    maybe_reload_clients()
-    if agent_id not in CLIENTS:
+    settings = db.query(AgentSettings).filter(AgentSettings.agent_id == agent_id).first()
+    if not settings:
         raise HTTPException(status_code=404, detail="Cliente non trovato")
 
     if not ELEVEN_API_KEY:
         raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY non configurata")
 
-    client_cfg = CLIENTS[agent_id]
-
     # agent_id di ElevenLabs = agent_id delle nostre config (stiamo usando lo stesso)
     eleven_agent_id = agent_id
-    phone_id = client_cfg.get("agent_phone_number_id")
-    to_number = client_cfg.get("test_phone_number")
+    phone_id = settings.agent_phone_number_id
+    to_number = settings.test_phone_number
 
     if not phone_id or not to_number:
         raise HTTPException(
