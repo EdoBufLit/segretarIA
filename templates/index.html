@@ -13,8 +13,7 @@
     <link rel="stylesheet" href="/static/css/effects.css">
     <style>
         body { font-family: 'Outfit', sans-serif; background-color: #ffffff; color: #171717; }
-        .nav-scrolled {
-            background: rgba(255, 255, 255, 0.8);
+        .nav-scrolled {            background: rgba(255, 255, 255, 0.8);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid #e5e5e5;
         }
@@ -33,6 +32,16 @@
             background: linear-gradient(to right, #171717, #525252);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+        }
+        .fade-in-section {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+            will-change: opacity, transform;
+        }
+        .fade-in-section.is-visible {
+            opacity: 1;
+            transform: translateY(0);
         }
     </style>
 </head>
@@ -281,6 +290,7 @@
     <div id="booking-wizard" class="booking-wizard" aria-hidden="true">
         <div class="booking-wizard__backdrop" data-booking-close></div>
         <div class="booking-wizard__card" role="dialog" aria-modal="true" aria-labelledby="booking-wizard-title">
+            <!-- Existing Wizard Content (Managed by JS) -->
             <button type="button" class="booking-wizard__close" data-booking-close aria-label="Chiudi wizard">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
