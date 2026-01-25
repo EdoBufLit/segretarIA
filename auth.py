@@ -1,6 +1,8 @@
 import secrets
 import string
 import os
+import hmac
+import hashlib
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -79,6 +81,49 @@ def generate_random_password(length=12):
                 and any(c.isupper() for c in password)
                 and any(c.isdigit() for c in password)):
             return password
+
+
+def verify_elevenlabs_signature(raw_body: bytes, headers: dict, secret: str) -> bool:
+    """
+    Verifies the ElevenLabs webhook signature.
+    Header format: "t=TIMESTAMP,v1=SIGNATURE" (or v0)
+    Signature = HMAC-SHA256(secret, "{timestamp}.{body}")
+    """
+    sig_header = headers.get("elevenlabs-signature")
+    if not sig_header:
+        return False
+
+    timestamp = None
+    signature = None
+
+    # Parse header
+    try:
+        parts = sig_header.split(",")
+        for part in parts:
+            if part.startswith("t="):
+                timestamp = part[2:]
+            elif part.startswith("v1=") or part.startswith("v0="):
+                signature = part[3:]
+    except Exception:
+        return False
+
+    if not timestamp or not signature:
+        return False
+
+    # Construct payload
+    # timestamp + "." + body
+    try:
+        payload = f"{timestamp}.".encode("utf-8") + raw_body
+
+        expected_signature = hmac.new(
+            secret.encode("utf-8"),
+            payload,
+            hashlib.sha256
+        ).hexdigest()
+
+        return hmac.compare_digest(expected_signature, signature)
+    except Exception:
+        return False
 
 
 class NotAuthenticatedPage(Exception):

@@ -41,6 +41,7 @@ from auth import (
     get_current_admin_user_page,
     require_role_page,
     normalize_identifier,
+    verify_elevenlabs_signature,
 )
 from admin_service import AdminService
 from admin_seed import ensure_default_admin, ensure_plans
@@ -53,7 +54,6 @@ from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
-from call_utils import extract_transcript_text, summarize_call, build_email_body_html, enrich_call_with_ai, log_call
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -920,189 +920,51 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 async def elevenlabs_webhook(request: Request):
     """
     Webhook ElevenLabs.
+    - Single body read
+    - Signature verification
+    - Type validation
+    - Async processing
     """
-    # Controlla se clients.json è cambiato e, se sì, ricarica
-    maybe_reload_clients()
+    # 0) Auth & Body Read
+    secret = os.getenv("ELEVENLABS_WEBHOOK_SECRET")
     raw_body = await request.body()
-    payload = json.loads(raw_body.decode("utf-8"))
 
-    # estrai transcript
-    transcript_text = extract_transcript_text(payload)
+    if secret:
+        if not verify_elevenlabs_signature(raw_body, request.headers, secret):
+            logger.warning("[WEBHOOK] Invalid signature")
+            return Response(status_code=401)
 
-    # arricchimento AI
-    ai_data = enrich_call_with_ai(transcript_text)
-
-    # quando costruisci l'entry di log:
-    entry = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "data": payload,
-        "transcript_text": transcript_text,
-        "ai_enrichment": ai_data,
-    }
-    # 1) Body grezzo
+    # 1) Parse
     try:
-        raw_body = await request.body()
-        body_str = raw_body.decode("utf-8", errors="replace")
+        payload = json.loads(raw_body.decode("utf-8"))
     except Exception as e:
-        logger.exception("[WEBHOOK] Errore lettura body")
-        return {"status": "ignored", "reason": f"body read error: {e}"}
+        logger.error(f"[WEBHOOK] JSON Decode Error: {e}")
+        return Response(status_code=400, content="Invalid JSON")
 
-    if not body_str.strip():
-        logger.warning("[WEBHOOK] Body vuoto.")
-        return {"status": "ignored", "reason": "empty body"}
-
-    # 2) JSON
-    try:
-        payload = json.loads(body_str)
-    except json.JSONDecodeError as e:
-        logger.exception("[WEBHOOK] JSON non valido")
-        return {"status": "ignored", "reason": f"invalid json: {e}"}
-
-    logger.info("[WEBHOOK] Payload ElevenLabs ricevuto")
-
-    # 3) Tipo evento
+    # 2) Validate Type
     event_type = payload.get("type")
     if event_type != "post_call_transcription":
-        logger.info(f"[WEBHOOK] Ignoro evento di tipo {event_type}")
-        return {"status": "ignored", "reason": f"unsupported type {event_type}"}
+        # Return 200 to acknowledge receipt but ignore logic
+        return {"status": "ignored", "reason": "unsupported type"}
 
-    data: Dict[str, Any] = payload.get("data", {}) or {}
+    # 3) Extract Minimal Info for Log
+    data = payload.get("data", {})
+    agent_id = data.get("agent_id")
+    call_id = data.get("metadata", {}).get("phone_call", {}).get("call_sid")
 
-    # 3b) Agent ID (chi identifica il cliente)
-    agent_id: Optional[str] = data.get("agent_id")
+    logger.info(f"[WEBHOOK] Enqueuing event type={event_type} agent={agent_id} call={call_id}")
 
-    # Metadati chiamata
-    metadata: Dict[str, Any] = data.get("metadata", {}) or {}
-    start_unix = metadata.get("start_time_unix_secs")
-    duration_secs = metadata.get("call_duration_secs")
-
-    # Extract inbound number (the number called)
-    # ElevenLabs payload structure varies, check documentation or logs
-    # Usually metadata -> phone_call -> to_number (or similar)
-    phone_call_meta = metadata.get("phone_call", {})
-    to_number = phone_call_meta.get("number") or phone_call_meta.get("to_number")
-    # Also check inbound_phone_number_id if needed, but we rely on E.164
-
-    started_at: Optional[str] = None
-    ended_at: Optional[str] = None
-
+    # 4) Enqueue
     try:
-        if isinstance(start_unix, (int, float)):
-            started_dt = datetime.utcfromtimestamp(start_unix)
-            started_at = started_dt.isoformat()
-            if isinstance(duration_secs, (int, float)):
-                ended_dt = datetime.utcfromtimestamp(start_unix + duration_secs)
-                ended_at = ended_dt.isoformat()
+        queue = get_queue()
+        queue.enqueue(process_elevenlabs_event_job, payload)
     except Exception as e:
-        logger.warning(f"[WEBHOOK] Errore calcolo orari chiamata: {e}")
+        logger.error(f"[WEBHOOK] Failed to enqueue: {e}")
+        # Return 500 so ElevenLabs retries if our infrastructure is down
+        raise HTTPException(status_code=500, detail="Queue unavailable")
 
-    # --- UPSERT ROUTING & PHONE NUMBER ---
-    # We do this BEFORE enforcement so we capture unassigned agents/numbers
-    with SessionLocal() as db:
-        try:
-            # 1. Upsert PhoneNumber if present
-            phone_obj = None
-            if to_number:
-                # Basic normalization
-                if not to_number.startswith("+"):
-                    to_number = "+" + to_number
-
-                phone_obj = db.query(PhoneNumber).filter(PhoneNumber.e164 == to_number).first()
-                if not phone_obj:
-                    logger.info(f"[WEBHOOK] Discovered new phone number {to_number}")
-                    phone_obj = PhoneNumber(
-                        e164=to_number,
-                        provider="elevenlabs",
-                        status="active",
-                        user_id=None # Unknown initially
-                    )
-                    db.add(phone_obj)
-                    db.flush() # Get ID
-
-            # 2. Upsert AgentRouting
-            if agent_id:
-                routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id).first()
-                if routing:
-                    routing.last_event_at = datetime.utcnow()
-                    # Optionally link phone number if missing
-                    if not routing.phone_number_id and phone_obj:
-                        routing.phone_number_id = phone_obj.id
-                else:
-                    logger.info(f"[WEBHOOK] Discovered new unassigned agent {agent_id}")
-                    routing = AgentRouting(
-                        agent_id=agent_id,
-                        user_id=None,
-                        status="unassigned",
-                        phone_number_id=phone_obj.id if phone_obj else None,
-                        last_event_at=datetime.utcnow()
-                    )
-                    db.add(routing)
-                db.commit()
-        except Exception as e:
-            logger.error(f"[WEBHOOK] Error upserting routing/phone: {e}")
-            db.rollback()
-            # Continue execution, do not crash webhook
-
-        # --- ENFORCEMENT & IDEMPOTENCY ---
-        # Re-query agent using Agent model (legacy/primary logic)
-        agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
-        user = None
-        if agent_obj:
-            user = db.query(User).filter(User.agents.contains(agent_obj)).first()
-
-        if not agent_obj or not user:
-            logger.warning(f"[WEBHOOK] Unassigned agent/user for agent_id {agent_id}. Storing as unassigned.")
-            # Store in UnassignedEvent
-            try:
-                unassigned = UnassignedEvent(
-                    agent_id=agent_id,
-                    phone_number=to_number,
-                    payload=payload
-                )
-                db.add(unassigned)
-                db.commit()
-            except Exception as e:
-                logger.error(f"[WEBHOOK] Failed to save unassigned event: {e}")
-
-            return {"status": "ok", "message": "Event stored as unassigned"}
-
-        # Check User Active
-        if not user.is_active:
-            logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
-            return {"status": "suspended"}
-
-        # Check Subscription Active
-        active_sub = db.query(Subscription).filter(
-            Subscription.user_id == user.id,
-            Subscription.state == "active"
-        ).first()
-        if not active_sub:
-            logger.warning(f"[WEBHOOK] No active subscription for user {user.username} (agent {agent_id}). Blocking.")
-            return {"status": "suspended", "reason": "no_active_subscription"}
-
-        # IDEMPOTENCY CHECK
-        if duration_secs and agent_id:
-            call_id = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
-            if call_id:
-                from models import UsageEvent
-                exists = db.query(UsageEvent).filter_by(call_id=call_id).first()
-                if exists:
-                    logger.info(f"[WEBHOOK] Duplicate call_id {call_id}. Idempotency check passed. Skipping.")
-                    return {"status": "ok", "message": "Duplicate event ignored"}
-
-        # Enqueue processing job - MOVED INSIDE VALIDATION SCOPE (or after successful checks)
-        try:
-            queue = get_queue()
-            queue.enqueue(process_elevenlabs_event_job, payload)
-            logger.info(f"[WEBHOOK] Job enqueued for agent {agent_id}")
-        except Exception as e:
-            logger.error(f"[WEBHOOK] Failed to enqueue job (Redis down?): {e}")
-            # Fallback logic could be added here, but for now we return 200
-            # and rely on the queue. In real prod, might return 500 to trigger retry.
-            # Given requirement to return fast response, we accept queue dependency.
-            raise HTTPException(status_code=500, detail="Queue unavailable")
-
-    return {"status": "ok", "message": "Webhook received and processing enqueued."}
+    # 5) Return Immediate Success
+    return {"status": "ok"}
 
 @app.get("/clients")
 async def list_clients(admin: User = Depends(get_current_admin_user)):
@@ -1182,64 +1044,33 @@ async def remove_client(body: RemoveClientRequest, admin: User = Depends(get_cur
 @app.get("/logs/{agent_id}/list")
 async def view_logs_list(
     agent_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    status: Optional[str] = None,
-    q: Optional[str] = None,
-    admin: User = Depends(get_current_admin_user)
-    # date_from, date_to ... si possono aggiungere
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    status: str = Query("all"),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
+    q: str = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     Restituisce i log impaginati e filtrabili per la dashboard.
+    RBAC:
+    - Admin: può accedere a qualsiasi agent_id
+    - Client: può accedere solo ai suoi agent_id
     """
     maybe_reload_clients()
-    
-    log_path = LOGS_DIR / f"{agent_id}.log"
-    if not log_path.exists():
-        return {"items": [], "total": 0}
-        
-    all_logs = []
-    with log_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                entry = json.loads(line)
-                inner_data = entry.get("data", {})
-                
-                # Se c'è un filtro 'q' (search)
-                if q:
-                    # Cerca in caller_number, summary, analysis
-                    search_content = f"{inner_data.get('caller_number','')} {inner_data.get('summary','')} {str(inner_data.get('analysis',''))}".lower()
-                    if q.lower() not in search_content:
-                        continue
-                        
-                # Se c'è un filtro status
-                row_status = inner_data.get("status", "success")
-                if status and status != "all":
-                    if row_status != status:
-                        continue
-                
-                item = {
-                    "timestamp": entry.get("timestamp"),
-                    "caller": inner_data.get("caller_number", "Unknown"),
-                    "status": row_status,
-                    "duration_secs": inner_data.get("duration_secs"),
-                    "summary": inner_data.get("summary") or inner_data.get("analysis", {}).get("summary", ""),
-                    "raw": entry
-                }
-                all_logs.append(item)
-            except:
-                pass
-                
-    # Ordinamento: dal più recente
-    all_logs.reverse()
-    
-    total = len(all_logs)
-    paginated = all_logs[offset : offset + limit]
-    
-    return {
-        "items": paginated,
-        "total": total
-    }
+
+    # RBAC Check
+    if current_user.role != "admin":
+        # Check ownership
+        user = db.query(User).filter(User.id == current_user.id).first()
+        user_agents = [a.agent_id for a in user.agents]
+        if agent_id not in user_agents:
+            raise HTTPException(status_code=403, detail="Access denied to this agent")
+
+    # Delegate to _read_logs which handles filtering/reading
+    return _read_logs([agent_id], limit, offset, status, date_from, date_to, q)
 
 @app.get("/logs/{agent_id}")
 async def view_logs(agent_id: str, admin: User = Depends(get_current_admin_user)):
@@ -1877,21 +1708,22 @@ async def reset_password_submit(
     password_confirm: str = Form(...),
     db: Session = Depends(get_db)
 ):
+    # Retrieve user first to have context for re-rendering form on validation error
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+         return templates.TemplateResponse("forgot_password.html", {"request": request, "error": "Utente non trovato."})
+
     if len(password) < 8:
          return templates.TemplateResponse(
             "reset_password.html",
-            {"request": request, "token": token, "uid": uid, "error": "La password deve essere di almeno 8 caratteri."}
+            {"request": request, "token": token, "uid": uid, "email": user.email, "error": "La password deve essere di almeno 8 caratteri."}
         )
 
     if password != password_confirm:
         return templates.TemplateResponse(
             "reset_password.html",
-            {"request": request, "token": token, "uid": uid, "error": "Le password non coincidono."}
+            {"request": request, "token": token, "uid": uid, "email": user.email, "error": "Le password non coincidono."}
         )
-
-    user = db.query(User).filter(User.id == uid).first()
-    if not user:
-         return templates.TemplateResponse("forgot_password.html", {"request": request, "error": "Utente non trovato."})
 
     # Verify Token
     tokens = db.query(PasswordResetToken).filter(
@@ -2324,26 +2156,6 @@ def _read_logs(
     return {"status": "ok", "total": total, "items": paginated_items}
 
 
-@app.get("/logs/{agent_id}/list")
-async def get_logs_filtered(
-    agent_id: str,
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    status: str = Query("all"),
-    date_from: str = Query(None),
-    date_to: str = Query(None),
-    q: str = Query(None),
-    admin: User = Depends(get_current_admin_user)
-):
-    """
-    Ritorna i log del cliente in formato filtrabile e paginato (Admin-only).
-    """
-    maybe_reload_clients()
-
-    if agent_id not in CLIENTS:
-        raise HTTPException(status_code=404, detail="Cliente non trovato")
-
-    return _read_logs([agent_id], limit, offset, status, date_from, date_to, q)
 
 
 @app.get("/api/logs")
