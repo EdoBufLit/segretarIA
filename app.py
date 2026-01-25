@@ -1027,6 +1027,37 @@ async def analytics_user(
     return _calculate_analytics(db, agent_ids)
 
 
+@app.get("/api/client/phone-numbers")
+async def api_client_phone_numbers(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns phone numbers assigned to the current client.
+    Uses AgentRouting as the source of truth.
+    """
+    # Fetch active routing for this user
+    routings = db.query(AgentRouting).filter(
+        AgentRouting.user_id == current_user.id,
+        AgentRouting.is_active == True
+    ).all()
+
+    items = []
+    for r in routings:
+        # Get Phone Number details
+        phone = db.query(PhoneNumber).filter(PhoneNumber.id == r.phone_number_id).first()
+        # Get Agent details (optional, for display name)
+        agent = db.query(Agent).filter(Agent.agent_id == r.agent_id).first()
+
+        items.append({
+            "agent_id": r.agent_id,
+            "display_name": agent.display_name if agent else "Agente",
+            "phone_number": phone.e164 if phone else "N/D",
+            "notes": phone.notes if phone else None,
+            "status": r.status
+        })
+
+    return {"status": "ok", "items": items}
 
 
 class AdminUpdateUserRequest(BaseModel):
