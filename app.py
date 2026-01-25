@@ -134,6 +134,17 @@ async def startup_event():
     else:
         logger.info(f"DATABASE_URL configured: {db_url}")
 
+    # Log Current DB Revision
+    try:
+        # Avoid circular import or complex dependency if possible, but we need DB session
+        with SessionLocal() as db:
+            result = db.execute(text("SELECT version_num FROM alembic_version"))
+            row = result.fetchone()
+            rev = row[0] if row else "unknown"
+            logger.info(f"DB Schema Revision: {rev}")
+    except Exception as e:
+        logger.warning(f"Could not read alembic_version: {e}")
+
     # Log ADMIN_EMAIL status
     admin_email_configured = "yes" if os.getenv("ADMIN_EMAIL") else "no"
     logger.info(f"ADMIN_EMAIL configured: {admin_email_configured}")
