@@ -41,6 +41,7 @@ from auth import (
     get_current_admin_user_page,
     require_role_page,
     normalize_identifier,
+    verify_elevenlabs_signature,
 )
 from admin_service import AdminService
 from admin_seed import ensure_default_admin, ensure_plans
@@ -921,10 +922,50 @@ async def elevenlabs_webhook(request: Request):
     """
     Webhook ElevenLabs.
     """
+    # 0) Auth check
+    secret = os.getenv("ELEVENLABS_WEBHOOK_SECRET")
+    # We must read the raw body for verification
+    raw_body = await request.body()
+
+    if secret:
+        if not verify_elevenlabs_signature(raw_body, request.headers, secret):
+            logger.warning("invalid signature")
+            return Response(status_code=401)
+
     # Controlla se clients.json è cambiato e, se sì, ricarica
     maybe_reload_clients()
-    raw_body = await request.body()
-    payload = json.loads(raw_body.decode("utf-8"))
+
+    # payload decoding was handled below, let's keep it safe
+    # If raw_body is consumed, it's cached in Starlette Request, so await request.body() again works or we reuse raw_body variable.
+    # We already read it into raw_body.
+
+    try:
+         payload = json.loads(raw_body.decode("utf-8"))
+    except Exception:
+         # Fallback to existing logic flow if needed, but below we have try/catch blocks too.
+         # The original code did:
+         # raw_body = await request.body()
+         # payload = json.loads(raw_body.decode("utf-8"))
+         # But then it repeated body reading/decoding later in 1) Body grezzo.
+         # Let's fix the flow to be cleaner using the raw_body we just read.
+         pass
+
+    # 1) Body Parsing & Validation
+    try:
+        body_str = raw_body.decode("utf-8", errors="replace")
+    except Exception as e:
+        logger.exception("[WEBHOOK] Errore lettura body")
+        return {"status": "ignored", "reason": f"body read error: {e}"}
+
+    if not body_str.strip():
+        logger.warning("[WEBHOOK] Body vuoto.")
+        return {"status": "ignored", "reason": "empty body"}
+
+    try:
+        payload = json.loads(body_str)
+    except json.JSONDecodeError as e:
+        logger.exception("[WEBHOOK] JSON non valido")
+        return {"status": "ignored", "reason": f"invalid json: {e}"}
 
     # estrai transcript
     transcript_text = extract_transcript_text(payload)
@@ -939,24 +980,6 @@ async def elevenlabs_webhook(request: Request):
         "transcript_text": transcript_text,
         "ai_enrichment": ai_data,
     }
-    # 1) Body grezzo
-    try:
-        raw_body = await request.body()
-        body_str = raw_body.decode("utf-8", errors="replace")
-    except Exception as e:
-        logger.exception("[WEBHOOK] Errore lettura body")
-        return {"status": "ignored", "reason": f"body read error: {e}"}
-
-    if not body_str.strip():
-        logger.warning("[WEBHOOK] Body vuoto.")
-        return {"status": "ignored", "reason": "empty body"}
-
-    # 2) JSON
-    try:
-        payload = json.loads(body_str)
-    except json.JSONDecodeError as e:
-        logger.exception("[WEBHOOK] JSON non valido")
-        return {"status": "ignored", "reason": f"invalid json: {e}"}
 
     logger.info("[WEBHOOK] Payload ElevenLabs ricevuto")
 
