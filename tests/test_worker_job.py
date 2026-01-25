@@ -1,0 +1,160 @@
+
+import json
+import uuid
+import os
+from unittest.mock import MagicMock, patch
+from datetime import datetime, timedelta
+from sqlalchemy.exc import IntegrityError
+from db import SessionLocal
+from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription, Plan
+from jobs.eleven_jobs import process_elevenlabs_event_job
+
+# Mocks
+MOCK_PAYLOAD = {
+    "type": "post_call_transcription",
+    "data": {
+        "agent_id": "test_agent_id",
+        "metadata": {
+            "start_time_unix_secs": 1700000000,
+            "call_duration_secs": 60,
+            "phone_call": {
+                "call_sid": "test_call_id_unique",
+                "number": "+390000000000",
+                "external_number": "+393331234567"
+            }
+        },
+        "transcript": [
+            {"role": "user", "message": "Ciao"},
+            {"role": "agent", "message": "Buongiorno"}
+        ]
+    }
+}
+
+def setup_test_db(db):
+    # Setup dependencies
+    # Plan
+    plan = Plan(code="test_plan", minutes_per_cycle=1000)
+    db.add(plan)
+    db.flush()
+
+    # User
+    user = User(username="testuser", email="test@example.com", password_hash="hash", role="client", is_active=True)
+    db.add(user)
+    db.flush()
+
+    # Subscription
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        state="active",
+        cycle_start=datetime.utcnow() - timedelta(days=1),
+        cycle_end=datetime.utcnow() + timedelta(days=30)
+    )
+    db.add(sub)
+    db.flush()
+
+    # Agent
+    agent = Agent(agent_id="test_agent_id", display_name="Test Agent")
+    db.add(agent)
+    db.flush()
+
+    # Link
+    from sqlalchemy import text
+    db.execute(
+        text("INSERT INTO user_agent_access (user_id, agent_id) VALUES (:uid, :aid)"),
+        {"uid": user.id, "aid": agent.id}
+    )
+    db.commit()
+    return user, agent
+
+def test_process_elevenlabs_event_job_success():
+    """Test happy path: valid user, sub, agent -> locks, processes, sends email."""
+    # We mock get_queue and OpenAI to avoid external calls
+    with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
+         patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
+         patch("jobs.eleven_jobs.summarize_call") as mock_summarize:
+
+        # In-memory SQLite for logic
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from db import Base
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        db = Session()
+
+        setup_test_db(db)
+
+        # Mock SessionLocal to return our in-memory DB session
+        # We need a context manager behavior
+        MockSession.return_value.__enter__.return_value = db
+        MockSession.return_value.__exit__.return_value = None
+
+        mock_summarize.return_value = {"summary": "Test summary", "urgency": "media"}
+        mock_queue_instance = MagicMock()
+        mock_get_queue.return_value = mock_queue_instance
+
+        # RUN
+        process_elevenlabs_event_job(MOCK_PAYLOAD)
+
+        # Check DB for UsageEvent (Lock)
+        usage = db.query(UsageEvent).filter_by(call_id="test_call_id_unique").first()
+        assert usage is not None
+        assert usage.billed_seconds == 60
+
+        # Check Email Enqueued
+        mock_queue_instance.enqueue.assert_called_once()
+
+        # Check OpenAI called
+        mock_summarize.assert_called_once()
+
+def test_process_elevenlabs_event_job_idempotency():
+    """Test idempotency: duplicate call_id should not trigger OpenAI or Email."""
+    with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
+         patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
+         patch("jobs.eleven_jobs.summarize_call") as mock_summarize:
+
+        from sqlalchemy import create_engine
+        engine = create_engine("sqlite:///:memory:")
+        from db import Base
+        Base.metadata.create_all(engine)
+        from sqlalchemy.orm import sessionmaker
+        Session = sessionmaker(bind=engine)
+        db = Session()
+
+        user, agent = setup_test_db(db)
+        sub = db.query(Subscription).first()
+
+        # PRE-EXISTING LOCK (UsageEvent)
+        usage = UsageEvent(
+            subscription_id=sub.id,
+            user_id=user.id,
+            agent_id=agent.id,
+            call_id="test_call_id_unique",
+            started_at=datetime.utcnow(),
+            ended_at=datetime.utcnow(),
+            billed_seconds=60
+        )
+        db.add(usage)
+        db.commit()
+
+        MockSession.return_value.__enter__.return_value = db
+        MockSession.return_value.__exit__.return_value = None
+
+        mock_queue_instance = MagicMock()
+        mock_get_queue.return_value = mock_queue_instance
+
+        # RUN (Duplicate)
+        process_elevenlabs_event_job(MOCK_PAYLOAD)
+
+        # Check: No Email, No OpenAI
+        mock_queue_instance.enqueue.assert_not_called()
+        mock_summarize.assert_not_called()
+
+if __name__ == "__main__":
+    # Manually run tests if executed directly
+    from sqlalchemy import create_engine
+    test_process_elevenlabs_event_job_success()
+    test_process_elevenlabs_event_job_idempotency()
+    print("All worker tests passed.")

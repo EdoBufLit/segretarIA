@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
+from sqlalchemy.exc import IntegrityError
 from db import SessionLocal
 from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription
 from billing_service import BillingService
@@ -54,7 +55,21 @@ def process_elevenlabs_event_job(payload: dict):
 
     call_id = phone_call_meta.get("call_sid") or data.get("conversation_id")
 
-    # === DB OPERATIONS (SYNC & VALIDATION) ===
+    # Calculate Timestamps early for UsageEvent
+    started_at = None
+    ended_at = None
+    if isinstance(start_unix, (int, float)):
+        started_dt = datetime.utcfromtimestamp(start_unix)
+        started_at = started_dt.isoformat()
+        if isinstance(duration_secs, (int, float)):
+            ended_dt = datetime.utcfromtimestamp(start_unix + duration_secs)
+            ended_at = ended_dt.isoformat()
+
+    # Defaults for UsageEvent if missing
+    start_dt_obj = datetime.fromisoformat(started_at) if started_at else datetime.utcnow()
+    end_dt_obj = datetime.fromisoformat(ended_at) if ended_at else datetime.utcnow()
+
+    # === DB OPERATIONS (SYNC & VALIDATION & LOCKING) ===
     with SessionLocal() as db:
         try:
             # 1. Upsert PhoneNumber
@@ -124,27 +139,37 @@ def process_elevenlabs_event_job(payload: dict):
                 logger.warning(f"[JOB] No active subscription for user {user.username}. Blocking.")
                 return
 
-            # 5. Idempotency
-            if call_id:
-                exists = db.query(UsageEvent).filter_by(call_id=call_id).first()
-                if exists:
-                    logger.info(f"[JOB] Duplicate call_id {call_id}. Skipping.")
-                    return
+            # 5. IDEMPOTENCY & LOCKING (Insert UsageEvent)
+            # This acts as a lock. If call_id exists, IntegrityError will be raised.
+            if call_id and duration_secs:
+                 billing_service = BillingService(db)
+                 # We insert explicitly here to lock.
+                 # billing_service.meter_call might do a commit, which is fine.
+                 # meter_call checks for existing call_id too? Let's check logic or rely on IntegrityError.
+                 # UsageEvent.call_id is UNIQUE.
+
+                 usage_event = UsageEvent(
+                    subscription_id=active_sub.id,
+                    user_id=user.id,
+                    agent_id=agent_obj.id,
+                    call_id=call_id,
+                    started_at=start_dt_obj,
+                    ended_at=end_dt_obj,
+                    billed_seconds=int(duration_secs)
+                 )
+                 db.add(usage_event)
+                 db.commit() # This will raise IntegrityError if duplicate
+                 logger.info(f"[JOB] Locked call_id {call_id} via UsageEvent insert.")
+
+        except IntegrityError:
+            db.rollback()
+            logger.info(f"[JOB] Duplicate call_id {call_id} detected (IntegrityError). Skipping OpenAI/Email.")
+            return
 
         except Exception as e:
             logger.error(f"[JOB] DB Error: {e}")
             # We treat DB errors as fatal for processing to avoid incorrect billing/logging
             return
-
-    # === LOGIC PROCESSING ===
-    started_at = None
-    ended_at = None
-    if isinstance(start_unix, (int, float)):
-        started_dt = datetime.utcfromtimestamp(start_unix)
-        started_at = started_dt.isoformat()
-        if isinstance(duration_secs, (int, float)):
-            ended_dt = datetime.utcfromtimestamp(start_unix + duration_secs)
-            ended_at = ended_dt.isoformat()
 
     # Extract transcript text
     transcript_text = extract_transcript_text(payload)
@@ -180,21 +205,6 @@ def process_elevenlabs_event_job(payload: dict):
         "status": status,
         "summary": analysis_structured.get("summary")
     })
-
-    # METERING (DB)
-    if duration_secs and agent_id and call_id:
-        try:
-            with SessionLocal() as db:
-                billing_service = BillingService(db)
-                billing_service.meter_call(
-                    agent_id=agent_id,
-                    duration_secs=int(duration_secs),
-                    call_id=call_id,
-                    started_at=datetime.fromisoformat(started_at) if started_at else datetime.utcnow() - timedelta(seconds=duration_secs),
-                    ended_at=datetime.fromisoformat(ended_at) if ended_at else datetime.utcnow()
-                )
-        except Exception as e:
-            logger.error(f"Metering failed: {e}")
 
     # ENQUEUE EMAIL
     clients_file = os.getenv("CLIENTS_FILE", "clients.json")
