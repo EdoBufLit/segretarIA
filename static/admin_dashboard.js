@@ -389,6 +389,28 @@ async function loadClientSettings() {
         }
     }
 
+    try {
+        const res = await fetch(`/clients/${agentId}`);
+        if (res.ok) {
+            const data = await res.json();
+            const client = data.client || {};
+            greeting = client.greeting || "";
+            notes = client.notes || "";
+            agentPhoneId = client.agent_phone_number_id || "";
+            testPhone = client.test_phone_number || "";
+            if (!studioName) {
+                studioName = client.studio_name || "";
+            }
+            if (!emailTo) {
+                emailTo = client.email_to || "";
+            }
+        } else {
+            console.warn("Unable to load client settings from /clients:", await res.text());
+        }
+    } catch (e) {
+        console.error("Error loading client settings:", e);
+    }
+
     document.getElementById("settings-studio-name").value = studioName;
     document.getElementById("settings-email-to").value = emailTo;
 
@@ -425,6 +447,14 @@ async function saveClientSettings() {
         studio_name: document.getElementById("settings-studio-name").value,
         email: document.getElementById("settings-email-to").value
     };
+    const clientPayload = {
+        studio_name: document.getElementById("settings-studio-name").value,
+        email_to: document.getElementById("settings-email-to").value,
+        greeting: document.getElementById("settings-greeting").value,
+        notes: document.getElementById("settings-notes").value,
+        agent_phone_number_id: document.getElementById("settings-agent-phone-id").value.trim(),
+        test_phone_number: document.getElementById("settings-test-phone").value.trim()
+    };
 
     try {
         const res = await fetch(`/admin/users/${userInfo.user_id}`, {
@@ -433,16 +463,35 @@ async function saveClientSettings() {
             body: JSON.stringify(payload)
         });
 
-        if (res.ok) {
-            alert("Impostazioni (Email/Studio) salvate nel DB.");
+        let clientUpdateOk = true;
+        let clientUpdateError = "";
+        try {
+            const clientRes = await fetch(`/clients/${agentId}/update`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(clientPayload)
+            });
+            if (!clientRes.ok) {
+                clientUpdateOk = false;
+                clientUpdateError = await clientRes.text();
+            }
+        } catch (e) {
+            clientUpdateOk = false;
+            clientUpdateError = e.toString();
+        }
+
+        if (res.ok && clientUpdateOk) {
+            alert("Impostazioni salvate.");
             // Refresh mapping
             await initSettingsSection();
             // Reselect
             const select = document.getElementById("settings-client-select");
             select.value = agentId;
-        } else {
+        } else if (!res.ok) {
             const err = await res.json();
             alert("Errore: " + (err.detail || "Impossibile salvare"));
+        } else {
+            alert("Email/Studio salvati nel DB, ma errore nel salvataggio settings cliente: " + clientUpdateError);
         }
     } catch(e) {
         console.error(e);
@@ -1555,6 +1604,5 @@ function closeLogDetail() {
     modal.classList.add("hidden");
     modal.classList.remove("flex");
 }
-
 
 
