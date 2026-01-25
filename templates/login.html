@@ -1,86 +1,74 @@
-<!DOCTYPE html>
-<html lang="it">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login – Segreteria IA</title>
-    <!-- Tailwind -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
-    <!-- Custom Dark Theme -->
-    <link rel="stylesheet" href="/static/styles.css?v=2">
-    <link rel="stylesheet" href="/static/css/effects.css">
-    <style>body { background-color: #0a0a0a; font-family: 'Outfit', sans-serif; }</style>
-</head>
+{% block title %}Accedi - Segreteria IA{% endblock %}
 
-<body class="flex items-center justify-center min-h-screen relative overflow-hidden">
-    <div class="noise-bg"></div>
-    <!-- Aurora Background -->
-    <div class="hero-blob hero-blob--one"></div>
-    <div class="hero-blob hero-blob--two"></div>
+{% block content %}
+<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+    <!-- Background Decor -->
+    <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-100/50 rounded-full blur-[100px] -z-10"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-100/50 rounded-full blur-[100px] -z-10"></div>
 
-    <div class="glass-card w-full max-w-md p-8 relative z-10 fade-in-up visible">
-        <div class="mb-8 flex justify-start">
-            <a href="/" aria-label="Torna alla home"
-                class="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
-                <span aria-hidden="true">←</span>
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 sm:p-10 border border-neutral-100 fade-in">
+        <div class="mb-8">
+            <a href="/" class="inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900 transition-colors mb-6 group">
+                <i data-feather="arrow-left" class="w-4 h-4 transition-transform group-hover:-translate-x-1"></i>
                 Torna alla home
             </a>
+            <h1 class="text-3xl font-bold text-neutral-900 tracking-tight mb-2">Bentornato</h1>
+            <p class="text-neutral-500">Accedi alla tua dashboard per gestire l'IA.</p>
         </div>
-        <h1 class="text-3xl font-bold mb-2 text-center text-white">
-            Bentornato
-        </h1>
-        <p class="text-center text-gray-400 mb-8 text-sm">Accedi alla tua dashboard</p>
 
         {% if just_registered %}
-        <div class="mb-4 bg-green-900/40 border border-green-500 text-green-200 px-4 py-2 rounded">
+        <div class="mb-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+            <i data-feather="check-circle" class="w-4 h-4"></i>
             Registrazione completata. Ora puoi effettuare il login.
         </div>
         {% endif %}
 
         {% if login_error %}
-        <div class="mb-4 bg-red-900/50 border border-red-500 text-red-200 px-4 py-2 rounded">
+        <div class="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+            <i data-feather="alert-circle" class="w-4 h-4"></i>
             Credenziali non valide.
         </div>
         {% endif %}
 
         {% if reset_success %}
-        <div class="mb-4 bg-green-900/40 border border-green-500 text-green-200 px-4 py-2 rounded">
+        <div class="mb-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+            <i data-feather="check-circle" class="w-4 h-4"></i>
             Password reimpostata con successo. Effettua il login.
         </div>
         {% endif %}
 
         <form method="post" action="/login" class="space-y-6">
             <div>
-                <label class="block text-sm font-medium text-gray-400 mb-2">Username</label>
-                <input name="username"
-                    class="w-full input-minimal rounded-lg p-3 text-white focus:outline-none"
+                <label class="block text-sm font-semibold text-neutral-700 mb-2">Username</label>
+                <input name="username" type="text"
+                    class="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-white text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all"
+                    placeholder="Il tuo username"
                     required>
             </div>
 
             <div>
                 <div class="flex justify-between items-baseline mb-2">
-                    <label class="block text-sm font-medium text-gray-400">Password</label>
-                    <a href="/forgot-password" class="text-xs text-blue-400 hover:text-blue-300">Password dimenticata?</a>
+                    <label class="block text-sm font-semibold text-neutral-700">Password</label>
+                    <a href="/forgot-password" class="text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-colors">Password dimenticata?</a>
                 </div>
                 <input type="password" name="password"
-                    class="w-full input-minimal rounded-lg p-3 text-white focus:outline-none"
+                    class="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-white text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all"
+                    placeholder="••••••••"
                     required>
             </div>
 
             <button type="submit"
-                class="w-full btn-glow text-white font-semibold py-3 rounded-xl shadow-lg mt-4">
-                Entra
+                class="w-full bg-neutral-900 text-white font-semibold py-3.5 rounded-xl hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-900 transition-all shadow-lg shadow-neutral-200/50">
+                Accedi
             </button>
         </form>
 
-        <p class="text-sm text-center text-[var(--muted)] mt-6">
+        <p class="text-sm text-center text-neutral-500 mt-8">
             Non hai un account?
-            <a href="/register" class="text-blue-400 hover:text-blue-300 font-semibold">Registrati</a>
+            <a href="/register" class="text-neutral-900 font-semibold hover:underline">Registrati</a>
         </p>
     </div>
-
-</body>
-
-</html>
+</div>
+{% endblock %}

@@ -78,34 +78,32 @@ function renderDashboardUI() {
     if (isClient) {
         container.innerHTML = `
             <!-- GRAFICO GENERALE -->
-            <div class="glass-card mb-10">
-                <h2 class="text-2xl font-semibold mb-4 text-white">📈 Attività giornaliera</h2>
+            <div class="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm mb-10">
+                <h2 class="text-2xl font-semibold mb-4 text-neutral-900">📈 Attività giornaliera</h2>
                 <canvas id="chart_all_clients"></canvas>
             </div>
 
             <!-- MODAL LOGS -->
-            <div id="logModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm">
-                <div class="glass-card w-11/12 max-w-2xl p-6">
-                    <h2 class="text-xl font-semibold mb-4 text-white">Log chiamate</h2>
+            <div id="logModal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+                <div class="bg-white rounded-xl shadow-2xl w-11/12 max-w-2xl p-6 border border-neutral-200">
+                    <h2 class="text-xl font-semibold mb-4 text-neutral-900">Log chiamate</h2>
                     <canvas id="clientChart" class="mb-4"></canvas>
-                    <div id="logContent" class="bg-black/20 p-3 rounded h-80 overflow-auto text-sm font-mono text-gray-300"></div>
-                    <button onclick="closeModal()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500 transition-colors">
+                    <div id="logContent" class="bg-neutral-50 p-3 rounded h-80 overflow-auto text-sm font-mono text-neutral-600 border border-neutral-200"></div>
+                    <button onclick="closeModal()" class="mt-4 bg-neutral-900 text-white px-4 py-2 rounded-lg hover:bg-neutral-800 transition-colors shadow-sm">
                         Chiudi
                     </button>
                 </div>
             </div>
         `;
     } else {
-        // Admin View - Removed Widgets (Clienti attuali & Chart) as requested.
-        // The container is left empty or can be used for other Admin-specific widgets in the future.
+        // Admin View
         container.innerHTML = `
-            <!-- MODAL LOGS (Optional, kept if needed for deep links, though usually accessed via Logs tab) -->
-            <div id="logModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm">
-                <div class="glass-card w-11/12 max-w-2xl p-6">
-                    <h2 class="text-xl font-semibold mb-4 text-white">Log chiamate</h2>
+            <div id="logModal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+                <div class="bg-white rounded-xl shadow-2xl w-11/12 max-w-2xl p-6 border border-neutral-200">
+                    <h2 class="text-xl font-semibold mb-4 text-neutral-900">Log chiamate</h2>
                     <canvas id="clientChart" class="mb-4"></canvas>
-                    <div id="logContent" class="bg-black/20 p-3 rounded h-80 overflow-auto text-sm font-mono text-gray-300"></div>
-                    <button onclick="closeModal()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500 transition-colors">
+                    <div id="logContent" class="bg-neutral-50 p-3 rounded h-80 overflow-auto text-sm font-mono text-neutral-600 border border-neutral-200"></div>
+                    <button onclick="closeModal()" class="mt-4 bg-neutral-900 text-white px-4 py-2 rounded-lg hover:bg-neutral-800 transition-colors shadow-sm">
                         Chiudi
                     </button>
                 </div>
@@ -465,14 +463,14 @@ async function loadAdminMetrics() {
             if (data.recent_payments && data.recent_payments.length > 0) {
                 data.recent_payments.forEach(p => {
                     const tr = document.createElement("tr");
-                    tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+                    tr.className = "hover:bg-neutral-50 transition-colors border-b border-neutral-100 text-sm text-neutral-600";
                     tr.innerHTML = `
-                        <td class="px-4 py-2">${p.date}</td>
-                        <td class="px-4 py-2">${p.email}</td>
-                        <td class="px-4 py-2 font-mono">${p.amount}</td>
-                        <td class="px-4 py-2">
-                            <span class="px-2 py-0.5 rounded text-xs uppercase font-bold
-                                ${p.status === 'succeeded' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}">
+                        <td class="px-6 py-3 text-xs">${p.date}</td>
+                        <td class="px-6 py-3 text-xs">${p.email}</td>
+                        <td class="px-6 py-3 font-mono text-xs">${p.amount}</td>
+                        <td class="px-6 py-3">
+                            <span class="px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wide
+                                ${p.status === 'succeeded' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-yellow-100 text-yellow-700 border border-yellow-200'}">
                                 ${p.status}
                             </span>
                         </td>
@@ -480,7 +478,7 @@ async function loadAdminMetrics() {
                     tbody.appendChild(tr);
                 });
             } else {
-                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-[var(--muted)]">Nessun pagamento recente trovato.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-neutral-500 text-sm">Nessun pagamento recente trovato.</td></tr>`;
             }
         }
     } catch (e) {
@@ -517,35 +515,35 @@ async function loadUsersTable(offsetOverride = null) {
 
         items.forEach(u => {
             const tr = document.createElement("tr");
-            tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+            tr.className = "hover:bg-neutral-50 transition-colors border-b border-neutral-100 text-sm text-neutral-600";
 
             const activeBadge = u.is_active
-                ? `<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">ATTIVO</span>`
-                : `<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-500/20 text-red-400">SOSPESO</span>`;
+                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">ATTIVO</span>`
+                : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">SOSPESO</span>`;
 
-            let subBadgeClass = "bg-gray-500/20 text-gray-400";
-            if (u.subscription_status === 'active') subBadgeClass = "bg-green-500/20 text-green-400";
-            if (u.subscription_status === 'past_due') subBadgeClass = "bg-yellow-500/20 text-yellow-400";
-            if (u.subscription_status === 'canceled') subBadgeClass = "bg-red-500/20 text-red-400";
+            let subBadgeClass = "bg-neutral-100 text-neutral-500 border border-neutral-200";
+            if (u.subscription_status === 'active') subBadgeClass = "bg-green-100 text-green-700 border border-green-200";
+            if (u.subscription_status === 'past_due') subBadgeClass = "bg-yellow-100 text-yellow-700 border border-yellow-200";
+            if (u.subscription_status === 'canceled') subBadgeClass = "bg-red-100 text-red-700 border border-red-200";
 
-            const subBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold ${subBadgeClass}">${u.subscription_status.toUpperCase()}</span>`;
+            const subBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${subBadgeClass}">${u.subscription_status.toUpperCase()}</span>`;
 
             const safeUsername = u.username.replace(/'/g, "\\'");
             const actionBtn = u.is_active
-                ? `<button onclick="suspendUser(${u.id}, '${safeUsername}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">SOSPENDI</button>`
+                ? `<button onclick="suspendUser(${u.id}, '${safeUsername}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors">SOSPENDI</button>`
                 : `<div class="flex gap-2 justify-end">
-                     <button onclick="unsuspendUser(${u.id}, '${safeUsername}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">RIATTIVA</button>
-                     <button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-white hover:text-red-200 text-xs font-bold bg-red-600 hover:bg-red-700 px-2 py-1 rounded shadow">ELIMINA</button>
+                     <button onclick="unsuspendUser(${u.id}, '${safeUsername}')" class="text-green-600 hover:text-green-800 text-xs font-semibold border border-green-200 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition-colors">RIATTIVA</button>
+                     <button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-white text-xs font-semibold bg-red-600 hover:bg-red-700 px-2 py-1 rounded shadow transition-colors">ELIMINA</button>
                    </div>`;
 
             tr.innerHTML = `
-                <td class="px-4 py-2">${u.id}</td>
-                <td class="px-4 py-2">${u.email}</td>
-                <td class="px-4 py-2 text-[var(--muted)]">${u.role}</td>
-                <td class="px-4 py-2">${activeBadge}</td>
-                <td class="px-4 py-2 text-[var(--muted)] uppercase text-xs">${u.plan_code}</td>
-                <td class="px-4 py-2">${subBadge}</td>
-                <td class="px-4 py-2 text-right">
+                <td class="px-6 py-3 font-mono text-xs text-neutral-500">${u.id}</td>
+                <td class="px-6 py-3 font-medium text-neutral-900">${u.email}</td>
+                <td class="px-6 py-3 text-neutral-500">${u.role}</td>
+                <td class="px-6 py-3">${activeBadge}</td>
+                <td class="px-6 py-3 text-neutral-500 uppercase text-xs">${u.plan_code}</td>
+                <td class="px-6 py-3">${subBadge}</td>
+                <td class="px-6 py-3 text-right">
                     ${u.role === 'client' ? actionBtn : ''}
                 </td>
             `;
@@ -641,34 +639,34 @@ async function loadPhoneNumbersTable() {
 
         items.forEach(n => {
             const tr = document.createElement("tr");
-            tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+            tr.className = "hover:bg-neutral-50 transition-colors border-b border-neutral-100 text-sm text-neutral-600";
 
             let statusBadge = "";
-            if (n.status === 'active') statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">ATTIVO</span>`;
-            else if (n.status === 'released') statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-gray-500/20 text-gray-400">RILASCIATO</span>`;
-            else if (n.status === 'pending_deprovision') statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400">IN RILASCIO</span>`;
-            else statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-500/20 text-red-400">${n.status}</span>`;
+            if (n.status === 'active') statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">ATTIVO</span>`;
+            else if (n.status === 'released') statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-500 border border-neutral-200">RILASCIATO</span>`;
+            else if (n.status === 'pending_deprovision') statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">IN RILASCIO</span>`;
+            else statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">${n.status}</span>`;
 
             let actions = "";
             if (n.status === 'active') {
-                actions = `<button onclick="releasePhoneNumber(${n.id}, '${n.e164}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">RILASCIA</button>`;
+                actions = `<button onclick="releasePhoneNumber(${n.id}, '${n.e164}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors">RILASCIA</button>`;
             } else if (n.status === 'pending_deprovision') {
-                actions = `<button onclick="cancelDeprovision(${n.id}, '${n.e164}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">ANNULLA RILASCIO</button>`;
+                actions = `<button onclick="cancelDeprovision(${n.id}, '${n.e164}')" class="text-green-600 hover:text-green-800 text-xs font-semibold border border-green-200 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition-colors">ANNULLA RILASCIO</button>`;
             } else {
-                 actions = `<span class="text-xs text-[var(--muted)]">Nessuna azione</span>`;
+                 actions = `<span class="text-xs text-neutral-400">Nessuna azione</span>`;
             }
 
-            const username = n.username ? `${n.username} (ID: ${n.user_id})` : `<span class="text-yellow-500">Non assegnato</span>`;
+            const username = n.username ? `${n.username} (ID: ${n.user_id})` : `<span class="text-yellow-600 font-medium">Non assegnato</span>`;
             const created = n.created_at ? n.created_at.split('T')[0] : "-";
-            const notes = n.notes ? `<span title="${n.notes}" class="truncate max-w-[150px] inline-block cursor-help border-b border-dotted border-gray-500">${n.notes}</span>` : "-";
+            const notes = n.notes ? `<span title="${n.notes}" class="truncate max-w-[150px] inline-block cursor-help border-b border-dotted border-neutral-400">${n.notes}</span>` : "-";
 
             tr.innerHTML = `
-                <td class="px-4 py-2 font-mono">${n.e164}</td>
-                <td class="px-4 py-2">${username}</td>
-                <td class="px-4 py-2">${statusBadge}</td>
-                <td class="px-4 py-2 text-sm text-[var(--muted)]">${notes}</td>
-                <td class="px-4 py-2 text-sm text-[var(--muted)]">${created}</td>
-                <td class="px-4 py-2 text-right">${actions}</td>
+                <td class="px-6 py-3 font-mono text-xs text-neutral-900">${n.e164}</td>
+                <td class="px-6 py-3 text-neutral-600">${username}</td>
+                <td class="px-6 py-3">${statusBadge}</td>
+                <td class="px-6 py-3 text-neutral-500">${notes}</td>
+                <td class="px-6 py-3 text-neutral-500">${created}</td>
+                <td class="px-6 py-3 text-right">${actions}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -793,30 +791,30 @@ async function loadRoutingTable() {
 
         items.forEach(r => {
             const tr = document.createElement("tr");
-            tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+            tr.className = "hover:bg-neutral-50 transition-colors border-b border-neutral-100 text-sm text-neutral-600";
 
             const statusBadge = r.is_active
-                ? `<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">ATTIVO</span>`
-                : `<span class="px-2 py-0.5 rounded text-xs font-bold bg-gray-500/20 text-gray-400">INATTIVO</span>`;
+                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">ATTIVO</span>`
+                : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-500 border border-neutral-200">INATTIVO</span>`;
 
-            const actions = `<button onclick="deleteRouting(${r.id})" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">ELIMINA</button>`;
+            const actions = `<button onclick="deleteRouting(${r.id})" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors">ELIMINA</button>`;
 
-            let username = `<span class="text-yellow-500">Sconosciuto</span>`;
+            let username = `<span class="text-yellow-600 font-medium">Sconosciuto</span>`;
             if (r.username && r.username !== "Unknown") {
                 username = `${r.username} (ID: ${r.user_id})`;
             } else if (r.status === "unassigned") {
-                username = `<span class="text-red-400 font-bold animate-pulse">NON ASSEGNATO</span>`;
+                username = `<span class="text-red-600 font-bold animate-pulse">NON ASSEGNATO</span>`;
             }
 
             const lastEvent = r.last_event_at ? r.last_event_at.split('T')[0] : "-";
 
             tr.innerHTML = `
-                <td class="px-4 py-2">${username}</td>
-                <td class="px-4 py-2 font-mono text-xs">${r.agent_id}</td>
-                <td class="px-4 py-2 font-mono">${r.e164}</td>
-                <td class="px-4 py-2">${statusBadge}</td>
-                <td class="px-4 py-2 text-sm text-[var(--muted)]">${lastEvent}</td>
-                <td class="px-4 py-2 text-right">${actions}</td>
+                <td class="px-6 py-3 text-neutral-900 font-medium">${username}</td>
+                <td class="px-6 py-3 font-mono text-xs text-neutral-500">${r.agent_id}</td>
+                <td class="px-6 py-3 font-mono text-xs text-neutral-500">${r.e164}</td>
+                <td class="px-6 py-3">${statusBadge}</td>
+                <td class="px-6 py-3 text-neutral-500">${lastEvent}</td>
+                <td class="px-6 py-3 text-right">${actions}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -1132,8 +1130,8 @@ function renderActivationBanner(isActive, subState) {
     }
 
     banner.innerHTML = `
-        <div class="flex items-center gap-3 text-red-100">
-            <i data-feather="alert-octagon" class="w-6 h-6 text-red-400"></i>
+        <div class="flex items-center gap-3 text-red-800">
+            <i data-feather="alert-octagon" class="w-6 h-6 text-red-600"></i>
             <span class="font-medium">${msg}</span>
         </div>
         ${btnHtml}
@@ -1339,30 +1337,36 @@ async function loadLogsTable(offsetOverride = null) {
 
     items.forEach((item) => {
         const tr = document.createElement("tr");
-        tr.className = item.status === "failure" ? "bg-red-50" : "";
+        tr.className = "hover:bg-neutral-50 transition-colors border-b border-neutral-100";
+        if (item.status === "failure") tr.classList.add("bg-red-50/50");
+
+        const statusClass = item.status === "failure" ? "text-red-600" : "text-green-600";
+        const statusIcon = item.status === "failure" ? "alert-circle" : "check-circle";
 
         tr.innerHTML = `
-            <td class="border p-2">${item.timestamp}</td>
-            <td class="border p-2">${window.isClientUser ? "Me" : client}</td>
-            <td class="border p-2">${item.caller}</td>
-            <td class="border p-2 font-bold ${item.status === "failure" ? "text-red-600" : "text-green-600"}">
-                ${item.status}
+            <td class="px-6 py-3 text-xs text-neutral-500 whitespace-nowrap">${item.timestamp}</td>
+            <td class="px-6 py-3 text-sm text-neutral-900 font-medium">${window.isClientUser ? "Me" : client}</td>
+            <td class="px-6 py-3 text-xs text-neutral-500 font-mono">${item.caller}</td>
+            <td class="px-6 py-3">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${item.status === "failure" ? "bg-red-100 text-red-700 border border-red-200" : "bg-green-100 text-green-700 border border-green-200"}">
+                    ${item.status.toUpperCase()}
+                </span>
             </td>
-            <td class="border p-2">${item.duration_secs ?? "-"}</td>
-            <td class="border p-2">${item.summary || "-"}</td>
-            <td class="border p-2 text-center">
-                <button class="log-detail-btn text-blue-600 underline text-sm">
-                    Dettagli
+            <td class="px-6 py-3 text-sm text-neutral-600">${item.duration_secs ?? "-"}s</td>
+            <td class="px-6 py-3 text-sm text-neutral-600 max-w-xs truncate" title="${item.summary || ""}">${item.summary || "-"}</td>
+            <td class="px-6 py-3 text-center">
+                <button class="log-detail-btn text-neutral-400 hover:text-neutral-900 p-1.5 hover:bg-neutral-100 rounded-lg transition-colors">
+                    <i data-feather="eye" class="w-4 h-4"></i>
                 </button>
             </td>
         `;
 
         tbody.appendChild(tr);
 
-        // Attach event listener immediately after appending or creation
         const btn = tr.querySelector(".log-detail-btn");
         if (btn) {
             btn.onclick = () => openLogDetail(item);
+            feather.replace(); // Replace icon for this row
         }
     });
 
@@ -1471,38 +1475,42 @@ function openLogDetail(item) {
 
     content.innerHTML = `
       <!-- box titolo + riassunto -->
-      <div class="border rounded bg-gray-50 p-3 mb-4">
-        <p class="text-xs text-gray-400 mb-1">${escapeHtml(timestamp)}</p>
-        <h4 class="font-semibold mb-1 text-base">${escapeHtml(title)}</h4>
+      <div class="border border-neutral-200 rounded-xl bg-neutral-50 p-4 mb-6">
+        <p class="text-xs text-neutral-400 mb-2 font-medium">${escapeHtml(timestamp)}</p>
+        <h4 class="font-bold mb-2 text-lg text-neutral-900">${escapeHtml(title)}</h4>
         ${summary
-            ? `<p class="text-sm whitespace-pre-wrap break-words">${escapeHtml(summary)}</p>`
-            : `<p class="text-sm text-gray-500">Nessun riassunto disponibile per questa chiamata.</p>`
+            ? `<p class="text-sm text-neutral-600 whitespace-pre-wrap break-words leading-relaxed">${escapeHtml(summary)}</p>`
+            : `<p class="text-sm text-neutral-400 italic">Nessun riassunto disponibile per questa chiamata.</p>`
         }
       </div>
 
       <!-- griglia con info contatto e chiamata -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <div class="border rounded p-3">
-          <h5 class="font-semibold text-xs uppercase text-gray-500 mb-2">Dati contatto</h5>
-          <p><span class="font-semibold">Nome:</span> ${escapeHtml(contact_name || "–")}</p>
-          <p><span class="font-semibold">Telefono:</span> ${escapeHtml(phoneDisplay)}</p>
-          <p><span class="font-semibold">Email:</span> ${escapeHtml(email || "–")}</p>
-          <p><span class="font-semibold">Richiamare:</span> ${escapeHtml(callback || "–")}</p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div class="border border-neutral-200 rounded-xl p-4 bg-white shadow-sm">
+          <h5 class="font-bold text-xs uppercase text-neutral-400 tracking-wider mb-3">Dati contatto</h5>
+          <div class="space-y-2 text-sm">
+              <p class="flex justify-between"><span class="text-neutral-500">Nome:</span> <span class="font-medium text-neutral-900">${escapeHtml(contact_name || "–")}</span></p>
+              <p class="flex justify-between"><span class="text-neutral-500">Telefono:</span> <span class="font-medium text-neutral-900">${escapeHtml(phoneDisplay)}</span></p>
+              <p class="flex justify-between"><span class="text-neutral-500">Email:</span> <span class="font-medium text-neutral-900">${escapeHtml(email || "–")}</span></p>
+              <p class="flex justify-between"><span class="text-neutral-500">Richiamare:</span> <span class="font-medium text-neutral-900">${escapeHtml(callback || "–")}</span></p>
+          </div>
         </div>
-        <div class="border rounded p-3">
-          <h5 class="font-semibold text-xs uppercase text-gray-500 mb-2">Info chiamata</h5>
-          <p><span class="font-semibold">Stato:</span> ${escapeHtml(status || "–")}</p>
-          <p><span class="font-semibold">Durata:</span> ${escapeHtml(duration)}</p>
-          <p><span class="font-semibold">Categoria:</span> ${escapeHtml(category)}</p>
-          <p><span class="font-semibold">Urgenza:</span> ${escapeHtml(urgency)}</p>
+        <div class="border border-neutral-200 rounded-xl p-4 bg-white shadow-sm">
+          <h5 class="font-bold text-xs uppercase text-neutral-400 tracking-wider mb-3">Info chiamata</h5>
+          <div class="space-y-2 text-sm">
+             <p class="flex justify-between"><span class="text-neutral-500">Stato:</span> <span class="font-medium text-neutral-900">${escapeHtml(status || "–")}</span></p>
+             <p class="flex justify-between"><span class="text-neutral-500">Durata:</span> <span class="font-medium text-neutral-900">${escapeHtml(duration)}</span></p>
+             <p class="flex justify-between"><span class="text-neutral-500">Categoria:</span> <span class="font-medium text-neutral-900">${escapeHtml(category)}</span></p>
+             <p class="flex justify-between"><span class="text-neutral-500">Urgenza:</span> <span class="font-medium text-neutral-900">${escapeHtml(urgency)}</span></p>
+          </div>
         </div>
       </div>
 
       ${transcript
             ? `
-        <div class="border rounded p-3 bg-gray-50">
-          <h5 class="font-semibold text-xs uppercase text-gray-500 mb-2">Transcript</h5>
-          <p class="text-xs whitespace-pre-wrap break-words leading-relaxed">
+        <div class="border border-neutral-200 rounded-xl p-4 bg-neutral-50">
+          <h5 class="font-bold text-xs uppercase text-neutral-400 tracking-wider mb-3">Transcript</h5>
+          <p class="text-xs text-neutral-600 whitespace-pre-wrap break-words leading-relaxed font-mono">
             ${escapeHtml(transcript)}
           </p>
         </div>
