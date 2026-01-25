@@ -24,15 +24,13 @@ function openSection(name) {
     const section = document.getElementById(`section-${name}`);
     if (section) section.classList.remove("hidden");
 
-    // Update Nav
-    document.querySelectorAll("nav .nav-item").forEach(a => {
+    // Update Sidebar Nav
+    document.querySelectorAll(".sidebar .nav-item").forEach(a => {
         a.classList.remove("nav-item-active");
-        a.classList.add("text-[var(--muted)]");
     });
-    const activeLink = document.querySelector(`nav a[data-section="${name}"]`);
+    const activeLink = document.querySelector(`.sidebar a[data-section="${name}"]`);
     if (activeLink) {
         activeLink.classList.add("nav-item-active");
-        activeLink.classList.remove("text-[var(--muted)]");
     }
 
     // Lazy Load
@@ -105,26 +103,37 @@ function renderMainChart(data) {
         data: {
             labels: days,
             datasets: [{
-                label: "Chiamate totali",
+                label: "Chiamate",
                 data: counts,
-                backgroundColor: "rgba(37, 99, 235, 0.6)"
+                backgroundColor: "#171717", // Neutral-900
+                borderRadius: 4,
+                hoverBackgroundColor: "#262626" // Neutral-800
             }]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             scales: {
                 y: {
                     beginAtZero: true,
-                    ticks: { precision: 0, color: '#9ca3af' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    ticks: { precision: 0, color: '#737373', font: { family: 'Inter', size: 11 } },
+                    grid: { color: '#f5f5f5', drawBorder: false }
                 },
                 x: {
-                    ticks: { color: '#9ca3af' },
+                    ticks: { color: '#737373', font: { family: 'Inter', size: 11 } },
                     grid: { display: false }
                 }
             },
             plugins: {
-                legend: { labels: { color: '#fff' } }
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#171717',
+                    titleFont: { family: 'Inter', size: 13 },
+                    bodyFont: { family: 'Inter', size: 12 },
+                    padding: 10,
+                    cornerRadius: 8,
+                    displayColors: false
+                }
             }
         }
     });
@@ -145,17 +154,21 @@ async function renderHeatmap() {
 
         if (catList && data.by_category) {
             catList.innerHTML = "";
-            Object.entries(data.by_category).forEach(([cat, count]) => {
+            const sortedCats = Object.entries(data.by_category).sort((a,b) => b[1] - a[1]);
+            sortedCats.forEach(([cat, count]) => {
                 const li = document.createElement("li");
-                li.textContent = `${cat}: ${count}`;
+                li.className = "flex justify-between items-center py-1";
+                li.innerHTML = `<span class="capitalize">${cat}</span><span class="font-medium bg-neutral-100 px-2 py-0.5 rounded text-neutral-600 text-xs">${count}</span>`;
                 catList.appendChild(li);
             });
         }
         if (urgList && data.by_urgency) {
             urgList.innerHTML = "";
-            Object.entries(data.by_urgency).forEach(([urg, count]) => {
+            const sortedUrg = Object.entries(data.by_urgency).sort((a,b) => b[1] - a[1]);
+            sortedUrg.forEach(([urg, count]) => {
                 const li = document.createElement("li");
-                li.textContent = `${urg}: ${count}`;
+                li.className = "flex justify-between items-center py-1";
+                li.innerHTML = `<span class="capitalize">${urg}</span><span class="font-medium bg-neutral-100 px-2 py-0.5 rounded text-neutral-600 text-xs">${count}</span>`;
                 urgList.appendChild(li);
             });
         }
@@ -165,47 +178,46 @@ async function renderHeatmap() {
         const days = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
         let html = `
-            <div class="heatmap-grid w-full overflow-x-auto">
-             <div class="min-w-[600px]">
-                <div class="flex">
+            <div class="min-w-[600px] border border-neutral-100 rounded-lg overflow-hidden bg-white">
+                <div class="flex bg-neutral-50 border-b border-neutral-100">
                     <div class="w-16 p-2"></div>
-                    ${days.map(d => `<div class="flex-1 p-2 text-center text-xs font-bold text-gray-300">${d}</div>`).join('')}
+                    ${days.map(d => `<div class="flex-1 p-2 text-center text-xs font-semibold text-neutral-500">${d}</div>`).join('')}
                 </div>
         `;
 
         for (let hour = 0; hour < 24; hour++) {
             const hourLabel = `${hour.toString().padStart(2, '0')}:00`;
-            html += `<div class="flex border-t border-white/5">
-                        <div class="w-16 p-2 text-xs text-gray-400 font-mono text-right border-r border-white/10">${hourLabel}</div>`;
+            html += `<div class="flex border-b border-neutral-50 last:border-b-0">
+                        <div class="w-16 p-2 text-xs text-neutral-400 font-mono text-right border-r border-neutral-50 bg-neutral-50/50">${hourLabel}</div>`;
 
             for (let day = 0; day < 7; day++) {
                 const val = heatmap[hour][day];
-                let bgClass = "bg-transparent";
+                let bgClass = "bg-white";
                 let textClass = "text-transparent";
 
                 if (val > 0) {
-                    textClass = "text-white/80 font-bold";
-                    if (val < 2) bgClass = "bg-blue-900/40";
-                    else if (val < 5) bgClass = "bg-blue-700/60";
-                    else if (val < 10) bgClass = "bg-blue-600/80";
-                    else bgClass = "bg-blue-500";
+                    textClass = "text-white font-bold";
+                    if (val < 2) bgClass = "bg-neutral-200";
+                    else if (val < 5) bgClass = "bg-neutral-400";
+                    else if (val < 10) bgClass = "bg-neutral-600";
+                    else bgClass = "bg-neutral-800";
                 }
 
                 html += `
-                    <div class="flex-1 p-1 h-8 flex items-center justify-center border-r border-white/5 ${bgClass}" title="${days[day]} ${hourLabel}: ${val} chiamate">
-                        <span class="text-xs ${textClass}">${val}</span>
+                    <div class="flex-1 p-1 h-8 flex items-center justify-center border-r border-neutral-50 last:border-r-0 ${bgClass} transition-colors hover:opacity-90" title="${days[day]} ${hourLabel}: ${val} chiamate">
+                        <span class="text-[10px] ${textClass}">${val > 0 ? val : ''}</span>
                     </div>
                 `;
             }
             html += `</div>`;
         }
-        html += `</div></div>`;
+        html += `</div>`;
 
         container.innerHTML = html;
 
     } catch (e) {
         console.warn("Could not render heatmap", e);
-        container.innerHTML = "<p class='text-red-400'>Errore caricamento dati.</p>";
+        container.innerHTML = "<p class='text-red-500 text-sm'>Errore caricamento dati.</p>";
     }
 }
 
@@ -214,7 +226,7 @@ async function renderHeatmap() {
 // =========================
 
 let logsOffset = 0;
-let logsLimit = 25;
+let logsLimit = 15;
 let logsTotal = 0;
 
 async function loadLogsTable(offsetOverride = null) {
@@ -235,23 +247,35 @@ async function loadLogsTable(offsetOverride = null) {
         tbody.innerHTML = "";
 
         if (items.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-[var(--muted)]">Nessuna chiamata trovata.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-neutral-500 text-sm">Nessuna chiamata trovata.</td></tr>`;
         } else {
             items.forEach((item) => {
                 const tr = document.createElement("tr");
-                if (item.status === "failure") tr.className = "bg-red-900/10";
+                tr.className = "hover:bg-neutral-50 transition-colors group";
+                if (item.status === "failure") tr.classList.add("bg-red-50");
 
                 const duration = item.duration_secs ? `${item.duration_secs}s` : "-";
-                const statusColor = item.status === "failure" ? "text-red-400" : "text-green-400";
+
+                let statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Successo</span>`;
+                if (item.status === "failure") {
+                    statusBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Fallita</span>`;
+                }
 
                 tr.innerHTML = `
-                    <td class="px-4 py-2 text-sm">${formatDate(item.timestamp)}</td>
-                    <td class="px-4 py-2 text-sm font-mono">${item.caller}</td>
-                    <td class="px-4 py-2 text-sm font-bold ${statusColor}">${item.status}</td>
-                    <td class="px-4 py-2 text-sm">${duration}</td>
-                    <td class="px-4 py-2 text-sm max-w-xs truncate" title="${escapeHtml(item.summary)}">${escapeHtml(item.summary || "-")}</td>
-                    <td class="px-4 py-2 text-center">
-                        <button class="log-detail-btn text-blue-400 hover:text-blue-300 underline text-xs">Dettagli</button>
+                    <td>
+                        <div class="text-sm font-medium text-neutral-900">${formatDate(item.timestamp)}</div>
+                        <div class="text-xs text-neutral-500">${formatTime(item.timestamp)}</div>
+                    </td>
+                    <td class="text-sm text-neutral-600 font-mono">${item.caller}</td>
+                    <td>${statusBadge}</td>
+                    <td class="text-sm text-neutral-600">${duration}</td>
+                    <td>
+                        <div class="text-sm text-neutral-900 max-w-xs truncate" title="${escapeHtml(item.summary)}">${escapeHtml(item.summary || "-")}</div>
+                    </td>
+                    <td class="text-right">
+                        <button class="log-detail-btn text-neutral-400 hover:text-blue-600 p-1 rounded-md hover:bg-blue-50 transition-colors">
+                            <i data-feather="eye" class="w-4 h-4"></i>
+                        </button>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -259,10 +283,14 @@ async function loadLogsTable(offsetOverride = null) {
                 // Bind click
                 tr.querySelector(".log-detail-btn").addEventListener("click", () => openLogDetail(item));
             });
+            feather.replace();
         }
 
         const info = document.getElementById("logs-info");
         info.textContent = `Mostrando ${logsOffset + 1} – ${Math.min(logsOffset + logsLimit, logsTotal)} di ${logsTotal}`;
+
+        document.getElementById("logs-prev").disabled = logsOffset === 0;
+        document.getElementById("logs-next").disabled = logsOffset + logsLimit >= logsTotal;
 
     } catch (e) {
         console.error("Logs load error", e);
@@ -289,7 +317,13 @@ function logsPrev() {
 function formatDate(isoStr) {
     if (!isoStr) return "-";
     const d = new Date(isoStr);
-    return d.toLocaleString("it-IT", { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString("it-IT", { month: 'short', day: 'numeric' });
+}
+
+function formatTime(isoStr) {
+    if (!isoStr) return "";
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString("it-IT", { hour: '2-digit', minute: '2-digit' });
 }
 
 function escapeHtml(str) {
@@ -300,12 +334,11 @@ function escapeHtml(str) {
         .replace(/>/g, "&gt;");
 }
 
-// Modal Detail Logic (reused roughly)
+// Modal Detail Logic
 function openLogDetail(item) {
     const modal = document.getElementById("log-detail-modal");
     const content = document.getElementById("log-detail-content");
 
-    // Construct detail HTML similar to admin dashboard but safer
     const raw = item.raw || {};
     const ai = raw.ai_enrichment || {};
     const data = raw.data || {};
@@ -315,45 +348,62 @@ function openLogDetail(item) {
     const transcript = ai.transcript_text || analysis.transcript_summary || "";
 
     content.innerHTML = `
-        <div class="mb-4">
-            <h4 class="text-white font-bold mb-1">Riassunto</h4>
-            <p class="text-gray-300 bg-black/20 p-3 rounded">${escapeHtml(summary)}</p>
+        <div>
+            <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Riassunto</h4>
+            <div class="bg-neutral-50 p-4 rounded-lg border border-neutral-100 text-neutral-700 text-sm leading-relaxed">
+                ${escapeHtml(summary)}
+            </div>
         </div>
-        <div class="grid grid-cols-2 gap-4 mb-4">
-            <div>
-                <span class="text-gray-500 text-xs uppercase">Data</span>
-                <div class="text-white">${formatDate(item.timestamp)}</div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div class="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
+                <span class="text-xs text-neutral-400 block mb-1">Data & Ora</span>
+                <div class="text-sm font-medium text-neutral-900">${formatDate(item.timestamp)} ${formatTime(item.timestamp)}</div>
             </div>
-             <div>
-                <span class="text-gray-500 text-xs uppercase">Durata</span>
-                <div class="text-white">${item.duration_secs || 0}s</div>
+             <div class="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
+                <span class="text-xs text-neutral-400 block mb-1">Durata</span>
+                <div class="text-sm font-medium text-neutral-900">${item.duration_secs || 0}s</div>
             </div>
-             <div>
-                <span class="text-gray-500 text-xs uppercase">Categoria</span>
-                <div class="text-white">${escapeHtml(ai.category || "-")}</div>
+             <div class="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
+                <span class="text-xs text-neutral-400 block mb-1">Categoria</span>
+                <div class="text-sm font-medium text-neutral-900">${escapeHtml(ai.category || "-")}</div>
             </div>
-             <div>
-                <span class="text-gray-500 text-xs uppercase">Urgenza</span>
-                <div class="text-white">${escapeHtml(ai.urgency || "-")}</div>
+             <div class="bg-neutral-50 p-3 rounded-lg border border-neutral-100">
+                <span class="text-xs text-neutral-400 block mb-1">Urgenza</span>
+                <div class="text-sm font-medium text-neutral-900">${escapeHtml(ai.urgency || "-")}</div>
             </div>
         </div>
 
         ${transcript ? `
             <div>
-                <h4 class="text-white font-bold mb-1">Trascrizione</h4>
-                <div class="text-gray-300 text-xs whitespace-pre-wrap bg-black/20 p-3 rounded max-h-60 overflow-y-auto">${escapeHtml(transcript)}</div>
+                <h4 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Trascrizione</h4>
+                <div class="bg-white border border-neutral-200 p-4 rounded-lg text-xs text-neutral-600 whitespace-pre-wrap max-h-60 overflow-y-auto font-mono">
+                    ${escapeHtml(transcript)}
+                </div>
             </div>
         ` : ''}
     `;
 
     modal.classList.remove("hidden");
     modal.classList.add("flex");
+
+    // Animate in
+    const card = modal.querySelector("div[role='dialog']");
+    card.classList.remove("scale-95", "opacity-0");
+    card.classList.add("scale-100", "opacity-100");
 }
 
 function closeLogDetail() {
     const modal = document.getElementById("log-detail-modal");
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
+    const card = modal.querySelector("div[role='dialog']");
+
+    card.classList.remove("scale-100", "opacity-100");
+    card.classList.add("scale-95", "opacity-0");
+
+    setTimeout(() => {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+    }, 150);
 }
 
 // =========================
@@ -368,14 +418,24 @@ async function startStatusPolling() {
 
 async function updateStatus() {
     try {
-        // We can just rely on page reload if status changes significantly, or implement specific check
-        // For now, let's check /subscription/status
         const res = await fetch("/subscription/status");
         if (res.status === 401 || res.status === 403) {
             window.location.reload();
             return;
         }
-        // Update UI if needed (e.g. billing status badge)
-        // ... (Already handled by Jinja on load, but live update is nice)
     } catch(e) {}
+}
+
+// Mobile Menu
+const btn = document.getElementById('mobile-menu-btn');
+const sidebar = document.querySelector('.sidebar');
+
+if (btn && sidebar) {
+    btn.addEventListener('click', () => {
+        sidebar.classList.toggle('hidden');
+        sidebar.classList.toggle('absolute');
+        sidebar.classList.toggle('z-50');
+        sidebar.classList.toggle('h-full');
+        sidebar.classList.toggle('shadow-2xl');
+    });
 }

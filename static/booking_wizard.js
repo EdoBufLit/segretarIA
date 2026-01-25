@@ -10,71 +10,92 @@ const prevButton = document.getElementById("booking-wizard-prev");
 const nextButton = document.getElementById("booking-wizard-next");
 const form = document.getElementById("booking-wizard-form");
 const successState = document.getElementById("booking-wizard-success");
+const titleElement = document.getElementById("booking-wizard-title");
 
 const steps = [
     {
-        id: "full_name",
-        label: "Nome e Cognome",
-        type: "text",
-        required: true,
-        placeholder: "Mario Rossi",
+        title: "Dati di Contatto",
+        fields: [
+            {
+                id: "full_name",
+                label: "Nome e Cognome",
+                type: "text",
+                required: true,
+                placeholder: "Mario Rossi",
+            },
+            {
+                id: "email",
+                label: "Email",
+                type: "email",
+                required: true,
+                placeholder: "studio@esempio.it",
+            },
+            {
+                id: "phone",
+                label: "Telefono",
+                type: "tel",
+                required: true,
+                placeholder: "+39 333 000 0000",
+            },
+        ]
     },
     {
-        id: "email",
-        label: "Email",
-        type: "email",
-        required: true,
-        placeholder: "studio@esempio.it",
+        title: "La tua Attività",
+        fields: [
+            {
+                id: "company",
+                label: "Nome attività / azienda",
+                type: "text",
+                required: false,
+                placeholder: "Studio Legale Rossi",
+            },
+            {
+                id: "sector",
+                label: "Settore",
+                type: "select",
+                required: true,
+                options: [
+                    "Studio professionale",
+                    "Sanità",
+                    "Agenzia",
+                    "E-commerce",
+                    "Artigiano",
+                    "Servizi B2B",
+                    "Altro",
+                ],
+            },
+            {
+                id: "volume",
+                label: "Volume chiamate stimato",
+                type: "select",
+                required: true,
+                options: ["0–20/mese", "20–100", "100–300", "300+"],
+            },
+        ]
     },
     {
-        id: "phone",
-        label: "Telefono",
-        type: "tel",
-        required: true,
-        placeholder: "+39 333 000 0000",
+        title: "Esigenze Specifiche",
+        fields: [
+            {
+                id: "needs",
+                label: "Cosa ti serve?",
+                type: "textarea",
+                required: false,
+                placeholder: "Descrivi brevemente la tua esigenza.",
+            },
+        ]
     },
     {
-        id: "company",
-        label: "Nome attività / azienda",
-        type: "text",
-        required: false,
-        placeholder: "Studio Legale Rossi",
-    },
-    {
-        id: "sector",
-        label: "Settore",
-        type: "select",
-        required: true,
-        options: [
-            "Studio professionale",
-            "Sanità",
-            "Agenzia",
-            "E-commerce",
-            "Artigiano",
-            "Servizi B2B",
-            "Altro",
-        ],
-    },
-    {
-        id: "volume",
-        label: "Volume chiamate stimato",
-        type: "select",
-        required: true,
-        options: ["0–20/mese", "20–100", "100–300", "300+"],
-    },
-    {
-        id: "needs",
-        label: "Cosa ti serve?",
-        type: "textarea",
-        required: false,
-        placeholder: "Descrivi brevemente la tua esigenza.",
-    },
-    {
-        id: "privacy",
-        label: "Consenso privacy",
-        type: "checkbox",
-        required: true,
-        text: "Ho letto e accetto la Privacy Policy.",
+        title: "Privacy",
+        fields: [
+            {
+                id: "privacy",
+                label: "Consenso privacy",
+                type: "checkbox",
+                required: true,
+                text: "Ho letto e accetto la Privacy Policy.",
+            },
+        ]
     },
 ];
 
@@ -90,6 +111,93 @@ const updateProgress = () => {
     const stepIndex = state.currentStep + 1;
     progressText.textContent = `${stepIndex}/${steps.length}`;
     progressBar.style.width = `${(stepIndex / steps.length) * 100}%`;
+
+    // Update Title based on step
+    if (titleElement) {
+        titleElement.textContent = steps[state.currentStep].title;
+    }
+};
+
+const createField = (field) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "booking-wizard__field";
+
+    // Label logic
+    if (field.type !== "checkbox") {
+        const label = document.createElement("label");
+        label.className = "booking-wizard__label";
+        label.setAttribute("for", `booking-${field.id}`);
+        label.textContent = field.label;
+        if (field.required) {
+            const span = document.createElement("span");
+            span.textContent = " *";
+            span.style.color = "#dc2626";
+            label.appendChild(span);
+        }
+        wrapper.appendChild(label);
+    }
+
+    let inputElement;
+
+    if (field.type === "select") {
+        inputElement = document.createElement("select");
+        inputElement.className = "booking-wizard__select";
+        inputElement.id = `booking-${field.id}`;
+        inputElement.name = field.id;
+
+        const placeholderOption = document.createElement("option");
+        placeholderOption.value = "";
+        placeholderOption.textContent = "Seleziona...";
+        placeholderOption.disabled = true;
+        placeholderOption.selected = !state.values[field.id];
+        inputElement.appendChild(placeholderOption);
+
+        field.options.forEach((option) => {
+            const opt = document.createElement("option");
+            opt.value = option;
+            opt.textContent = option;
+            if (state.values[field.id] === option) {
+                opt.selected = true;
+            }
+            inputElement.appendChild(opt);
+        });
+    } else if (field.type === "textarea") {
+        inputElement = document.createElement("textarea");
+        inputElement.className = "booking-wizard__textarea";
+        inputElement.id = `booking-${field.id}`;
+        inputElement.name = field.id;
+        inputElement.placeholder = field.placeholder;
+        inputElement.value = state.values[field.id] || "";
+    } else if (field.type === "checkbox") {
+        // Special wrapper for checkbox
+        wrapper.className = "booking-wizard__checkbox";
+
+        inputElement = document.createElement("input");
+        inputElement.type = "checkbox";
+        inputElement.id = `booking-${field.id}`;
+        inputElement.name = field.id;
+        inputElement.checked = Boolean(state.values[field.id]);
+
+        const checkboxLabel = document.createElement("label");
+        checkboxLabel.setAttribute("for", inputElement.id);
+        checkboxLabel.innerHTML = `${field.text} <a href=\"/privacy\" target=\"_blank\" aria-label=\"Apri privacy policy\">Privacy</a>`;
+
+        wrapper.appendChild(inputElement);
+        wrapper.appendChild(checkboxLabel);
+        // We return wrapper directly as it is different structure
+        return wrapper;
+    } else {
+        inputElement = document.createElement("input");
+        inputElement.type = field.type;
+        inputElement.className = "booking-wizard__input";
+        inputElement.id = `booking-${field.id}`;
+        inputElement.name = field.id;
+        inputElement.placeholder = field.placeholder;
+        inputElement.value = state.values[field.id] || "";
+    }
+
+    wrapper.appendChild(inputElement);
+    return wrapper;
 };
 
 const renderStep = () => {
@@ -97,102 +205,72 @@ const renderStep = () => {
     errorMessage.textContent = "";
     stepContainer.innerHTML = "";
 
-    const label = document.createElement("label");
-    label.className = "booking-wizard__label";
-    label.setAttribute("for", `booking-${step.id}`);
-    label.textContent = step.label;
-    stepContainer.appendChild(label);
+    // Render all fields for this step
+    step.fields.forEach(field => {
+        const fieldEl = createField(field);
+        stepContainer.appendChild(fieldEl);
+    });
 
-    let inputElement;
-
-    if (step.type === "select") {
-        inputElement = document.createElement("select");
-        inputElement.className = "booking-wizard__select";
-        inputElement.id = `booking-${step.id}`;
-        inputElement.name = step.id;
-        const placeholderOption = document.createElement("option");
-        placeholderOption.value = "";
-        placeholderOption.textContent = "Seleziona";
-        placeholderOption.disabled = true;
-        placeholderOption.selected = !state.values[step.id];
-        inputElement.appendChild(placeholderOption);
-        step.options.forEach((option) => {
-            const opt = document.createElement("option");
-            opt.value = option;
-            opt.textContent = option;
-            if (state.values[step.id] === option) {
-                opt.selected = true;
-            }
-            inputElement.appendChild(opt);
-        });
-    } else if (step.type === "textarea") {
-        inputElement = document.createElement("textarea");
-        inputElement.className = "booking-wizard__textarea";
-        inputElement.id = `booking-${step.id}`;
-        inputElement.name = step.id;
-        inputElement.placeholder = step.placeholder;
-        inputElement.value = state.values[step.id] || "";
-    } else if (step.type === "checkbox") {
-        const wrapper = document.createElement("div");
-        wrapper.className = "booking-wizard__checkbox";
-        inputElement = document.createElement("input");
-        inputElement.type = "checkbox";
-        inputElement.id = `booking-${step.id}`;
-        inputElement.name = step.id;
-        inputElement.checked = Boolean(state.values[step.id]);
-
-        const checkboxLabel = document.createElement("label");
-        checkboxLabel.setAttribute("for", inputElement.id);
-        checkboxLabel.innerHTML = `${step.text} <a href=\"#\" aria-label=\"Apri privacy policy\">Privacy</a>`;
-
-        wrapper.appendChild(inputElement);
-        wrapper.appendChild(checkboxLabel);
-        stepContainer.appendChild(wrapper);
-        inputElement.focus();
-        return;
-    } else {
-        inputElement = document.createElement("input");
-        inputElement.type = step.type;
-        inputElement.className = "booking-wizard__input";
-        inputElement.id = `booking-${step.id}`;
-        inputElement.name = step.id;
-        inputElement.placeholder = step.placeholder;
-        inputElement.value = state.values[step.id] || "";
+    // Auto-focus first input
+    const firstInput = stepContainer.querySelector("input, select, textarea");
+    if (firstInput) {
+        // Small timeout to allow transition to start smoothly
+        setTimeout(() => firstInput.focus(), 50);
     }
-
-    stepContainer.appendChild(inputElement);
-    inputElement.focus();
 };
 
 const validateStep = () => {
     const step = steps[state.currentStep];
-    let value;
+    let isValid = true;
+    let firstErrorField = null;
 
-    if (step.type === "checkbox") {
-        const checkbox = document.getElementById(`booking-${step.id}`);
-        value = checkbox?.checked;
-    } else {
-        const field = document.getElementById(`booking-${step.id}`);
-        value = field?.value.trim();
+    for (const field of step.fields) {
+        let value;
+        const el = document.getElementById(`booking-${field.id}`);
+
+        if (field.type === "checkbox") {
+            value = el?.checked;
+        } else {
+            value = el?.value.trim();
+        }
+
+        // Store value
+        state.values[field.id] = value;
+
+        // Validation checks
+        if (field.required && !value) {
+            if (!firstErrorField) firstErrorField = el;
+            isValid = false;
+            // Visual feedback could be added here (red border)
+            el.style.borderColor = "#dc2626";
+        } else {
+            if (el) el.style.borderColor = "";
+        }
+
+        if (field.type === "email" && value && !emailPattern.test(value)) {
+            if (!firstErrorField) firstErrorField = el;
+            isValid = false;
+            errorMessage.textContent = "Email non valida.";
+            el.style.borderColor = "#dc2626";
+        }
     }
 
-    if (step.required && !value) {
-        errorMessage.textContent = "Compila il campo per continuare.";
+    if (!isValid) {
+        if (!errorMessage.textContent) errorMessage.textContent = "Compila tutti i campi obbligatori.";
+        firstErrorField?.focus();
         return false;
     }
 
-    if (step.type === "email" && value && !emailPattern.test(value)) {
-        errorMessage.textContent = "Inserisci un indirizzo email valido.";
-        return false;
-    }
-
-    state.values[step.id] = value;
     return true;
 };
 
 const showSuccess = () => {
     form.hidden = true;
     successState.hidden = false;
+    // Update header to hide steps or change title
+    if (titleElement) titleElement.textContent = "Richiesta Inviata";
+    progressText.parentElement.style.opacity = "0";
+    progressBar.parentElement.style.opacity = "0";
 };
 
 const resetWizard = () => {
@@ -202,6 +280,11 @@ const resetWizard = () => {
     successState.hidden = true;
     nextButton.disabled = false;
     nextButton.textContent = "Avanti";
+
+    // Restore header visibility
+    progressText.parentElement.style.opacity = "1";
+    progressBar.parentElement.style.opacity = "1";
+
     updateProgress();
     renderStep();
 };
@@ -212,7 +295,12 @@ const openWizard = () => {
     wizard.classList.add("is-open");
     wizard.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
+
+    // Reset if it was closed in success state or midway?
+    // Usually better to reset for fresh start unless we want to persist data.
+    // Let's reset for now to ensure clean state.
     resetWizard();
+
     trapFocus();
 };
 
@@ -228,10 +316,13 @@ const nextStep = async () => {
     if (!validateStep()) {
         return;
     }
+
+    // Submit if last step
     if (state.currentStep === steps.length - 1) {
         await submitWizard();
         return;
     }
+
     state.currentStep += 1;
     updateProgress();
     renderStep();
@@ -250,15 +341,12 @@ const submitWizard = async () => {
     nextButton.disabled = true;
     nextButton.textContent = "Invio...";
     errorMessage.textContent = "";
+
     const payload = {
-        full_name: state.values.full_name,
-        email: state.values.email,
-        phone: state.values.phone,
+        ...state.values,
+        // Ensure optional fields are strings
         company: state.values.company || "",
-        sector: state.values.sector,
-        volume: state.values.volume,
-        needs: state.values.needs || "",
-        privacy: state.values.privacy,
+        needs: state.values.needs || ""
     };
 
     try {
@@ -276,9 +364,8 @@ const submitWizard = async () => {
         showSuccess();
     } catch (error) {
         errorMessage.textContent = "Si è verificato un errore. Riprova.";
-    } finally {
         nextButton.disabled = false;
-        nextButton.textContent = "Avanti";
+        nextButton.textContent = "Conferma";
     }
 };
 
@@ -289,20 +376,15 @@ const handleKeydown = (event) => {
         closeWizard();
         return;
     }
-    if (event.key === "ArrowRight") {
-        event.preventDefault();
-        nextStep();
-        return;
-    }
-    if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        prevStep();
-        return;
-    }
     if (event.key === "Enter") {
         const target = event.target;
+        // Don't submit on Enter in Textarea
         if (target?.tagName === "TEXTAREA") return;
+        // Don't submit on Enter on buttons (handled by click)
+        if (target?.tagName === "BUTTON") return;
+        // Don't submit on Enter on Checkbox if it toggles
         if (target?.type === "checkbox") return;
+
         event.preventDefault();
         nextStep();
     }
@@ -317,6 +399,8 @@ const trapFocus = () => {
         const focusable = wizardCard.querySelectorAll(
             "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"
         );
+        if (focusable.length === 0) return;
+
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
 
@@ -340,7 +424,8 @@ const releaseFocus = () => {
 };
 
 openButtons.forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (e) => {
+        e.preventDefault(); // Prevent default link behavior if it's an anchor
         openWizard();
     });
 });
@@ -360,5 +445,7 @@ wizard?.addEventListener("click", (event) => {
     }
 });
 
+// Init
 updateProgress();
 renderStep();
+prevButton.disabled = true;
