@@ -56,6 +56,20 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+def normalize_identifier(identifier: str) -> str:
+    """
+    Normalizes identifiers (username/email) to avoid mismatch issues.
+    - Trims whitespace.
+    - Lowercases if it looks like an email.
+    """
+    if not identifier:
+        return ""
+    cleaned = identifier.strip()
+    if "@" in cleaned:
+        return cleaned.lower()
+    return cleaned
+
+
 def generate_random_password(length=12):
     """Generates a secure random password."""
     alphabet = string.ascii_letters + string.digits + string.punctuation

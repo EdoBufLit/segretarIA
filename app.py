@@ -41,6 +41,7 @@ from auth import (
     get_current_user_page,
     get_current_admin_user_page,
     require_role_page,
+    normalize_identifier,
 )
 from admin_service import AdminService
 from admin_seed import ensure_default_admin, ensure_plans
@@ -119,6 +120,19 @@ async def startup_event():
     """
     ensure_default_admin()
     ensure_plans()
+
+    # Log DB Connection (Safe)
+    db_url = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+    if "@" in db_url:
+        # Sanitize credentials: postgresql://user:pass@host/db -> postgresql://...:***@host/db
+        try:
+            prefix = db_url.split("://")[0]
+            rest = db_url.split("@")[1]
+            logger.info(f"DATABASE_URL configured: {prefix}://***:***@{rest}")
+        except:
+            logger.info("DATABASE_URL configured (masked)")
+    else:
+        logger.info(f"DATABASE_URL configured: {db_url}")
 
     # Log ADMIN_EMAIL status
     admin_email_configured = "yes" if os.getenv("ADMIN_EMAIL") else "no"
@@ -1868,8 +1882,12 @@ async def register_submit(
     db: Session = Depends(get_db),
 ):
     errors = {}
-    clean_username = username.strip()
-    clean_email = email.strip()
+    # Normalization
+    clean_username = normalize_identifier(username)
+    clean_email = normalize_identifier(email)
+
+    ip_address = _get_client_ip(request)
+    logger.info(f"REGISTER_ATTEMPT: username={clean_username} email={clean_email} ip={ip_address}")
 
     if not clean_username:
         errors["username"] = "Lo username è obbligatorio."
@@ -1913,9 +1931,19 @@ async def register_submit(
     try:
         db.add(new_user)
         db.commit()
+
+        # Verify Persistence
+        db.expire_all() # Ensure we fetch from DB
+        saved_user = db.query(User).filter(User.id == new_user.id).first()
+        if saved_user:
+             logger.info(f"REGISTER_OK: id={saved_user.id} role={saved_user.role} active={saved_user.is_active}")
+             logger.info("REGISTER_DB_VERIFIED")
+        else:
+             logger.critical(f"REGISTER_FAIL_PERSISTENCE: User {new_user.id} committed but not found.")
+
     except Exception as exc:
         db.rollback()
-        logger.warning("Error creating new client user: %s", exc)
+        logger.error(f"REGISTER_FAIL: {type(exc).__name__} {exc}")
         errors["form"] = "Errore durante la registrazione. Riprova."
         return templates.TemplateResponse(
             "register.html",
@@ -2047,10 +2075,34 @@ async def login_submit(
     password: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    user = db.query(User).filter(User.username == username).first()
+    normalized_username = normalize_identifier(username)
+    logger.info(f"LOGIN_ATTEMPT: username={normalized_username}")
 
-    if not user or not user.is_active or not verify_password(password, user.password_hash):
+    # Try to find by username OR email (if desired, but currently code assumes username field is username)
+    # The form field is 'username' but user might type email.
+    # The legacy code: user = db.query(User).filter(User.username == username).first()
+    # Let's support both if it's an email format?
+    # For now, stick to strictly matching what register did (username=clean_username).
+
+    user = db.query(User).filter(User.username == normalized_username).first()
+
+    # If not found, try email just in case user is confused
+    if not user and "@" in normalized_username:
+         user = db.query(User).filter(User.email == normalized_username).first()
+
+    if not user:
+        logger.warning(f"LOGIN_FAIL_USER_NOT_FOUND: {normalized_username}")
         return RedirectResponse(url="/login?error=1", status_code=302)
+
+    if not user.is_active:
+        logger.warning(f"LOGIN_FAIL_INACTIVE: {normalized_username} id={user.id}")
+        return RedirectResponse(url="/login?error=1", status_code=302)
+
+    if not verify_password(password, user.password_hash):
+        logger.warning(f"LOGIN_FAIL_HASH_MISMATCH: {normalized_username} id={user.id}")
+        return RedirectResponse(url="/login?error=1", status_code=302)
+
+    logger.info(f"LOGIN_OK: id={user.id} role={user.role}")
 
     request.session["user"] = {
         "user_id": user.id,
@@ -2061,6 +2113,30 @@ async def login_submit(
     if user.role == "admin":
         return RedirectResponse(url="/dashboard", status_code=302)
     return RedirectResponse(url="/client/dashboard", status_code=302)
+
+@app.get("/api/admin/users/debug")
+async def admin_debug_users(
+    email: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    if not email:
+        return {"error": "Provide email query param"}
+
+    norm_email = normalize_identifier(email)
+    user = db.query(User).filter(User.email == norm_email).first()
+    if not user:
+        return {"status": "not_found", "searched_email": norm_email}
+
+    return {
+        "status": "found",
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "is_active": user.is_active,
+        "hash_prefix": user.password_hash[:10] if user.password_hash else None
+    }
 
 
 def _read_logs(
