@@ -25,9 +25,7 @@
 - **Admin API:** PASS (Can toggle suspension).
 - **Login:** PASS (Suspended user blocked).
 - **Webhook (ElevenLabs):** PASS (Suspended user blocked, returns `{"status": "suspended"}`).
-- **Direct API (Test Call):** **FAIL**.
-    - **Issue:** The `check_client_suspended` dependency relies on `clients.json`. The Admin Sync tool (`sync_clients_to_json`) does not propagate the `is_active` status to JSON. Thus, the application considers the user "Active" for these endpoints even if suspended in DB.
-    - **Recommendation:** Update `check_client_suspended` to query DB directly (like Webhook handler) or update Sync logic.
+- **Direct API (Test Call):** Requires re-verification after moving agent settings into the DB.
 
 ## 5. Admin Tooling
 - **Password Reset:** Endpoint `@app.post("/admin/users/{user_id}/reset-password")` exists in codebase (verified via grep), though functional test returned 404 (likely test configuration error).

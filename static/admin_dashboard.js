@@ -115,81 +115,6 @@ function renderDashboardUI() {
 }
 
 // =========================
-// CRUD CLIENTI
-// =========================
-
-async function loadClients() {
-    const res = await fetch("/clients");
-    const data = await res.json();
-    clients = data.clients || {};
-
-    // Check if the table body exists (it was removed from Admin dashboard view)
-    const tbody = document.getElementById("clients-table-body");
-    if (!tbody) return;
-
-    tbody.innerHTML = "";
-
-    for (const id in clients) {
-        const c = clients[id];
-
-        tbody.innerHTML += `
-            <tr class="border-b">
-                <td class="py-2 px-4">${id}</td>
-                <td class="py-2 px-4">${c.studio_name}</td>
-                <td class="py-2 px-4">${c.email_to}</td>
-
-                <td class="py-2 px-4 text-right space-x-2">
-                    <button onclick="removeClient('${id}')"
-                        class="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700">
-                        Rimuovi
-                    </button>
-                </td>
-            </tr>`;
-    }
-}
-
-async function addClient() {
-    const agent_id = document.getElementById("agent_id").value;
-    const studio_name = document.getElementById("studio_name").value;
-    const email_to = document.getElementById("email_to").value;
-
-    if (!agent_id || !studio_name || !email_to) {
-        alert("Compila tutti i campi.");
-        return;
-    }
-
-    await fetch("/clients/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent_id, studio_name, email_to })
-    });
-
-    document.getElementById("agent_id").value = "";
-    document.getElementById("studio_name").value = "";
-    document.getElementById("email_to").value = "";
-
-    await loadClients();
-    await renderGlobalChart();
-}
-
-async function removeClient(agent_id) {
-    showConfirm(
-        'Rimuovi cliente',
-        `Sei sicuro di voler rimuovere il client ${agent_id}? Questa azione non può essere annullata.`,
-        async () => {
-            await fetch("/clients/remove", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ agent_id })
-            });
-
-            await loadClients();
-            await renderGlobalChart();
-        }
-    );
-}
-
-// =========================
 // MODAL LOGS + GRAFICO
 // =========================
 
@@ -251,17 +176,17 @@ async function initLogsSection() {
     }
 
     try {
-        const res = await fetch("/clients");
+        const res = await fetch("/api/admin/agent-users");
         if (!res.ok) throw new Error("Fetch failed");
 
         const data = await res.json();
-        const clientsObj = data.clients || {};
+        const clientsObj = data.mapping || {};
 
         for (const agentId in clientsObj) {
             const cfg = clientsObj[agentId];
             const op = document.createElement("option");
             op.value = agentId;
-            op.textContent = cfg.studio_name || agentId;
+            op.textContent = cfg.studio_name || cfg.username || agentId;
             select.appendChild(op);
         }
 
@@ -390,25 +315,19 @@ async function loadClientSettings() {
     }
 
     try {
-        const res = await fetch(`/clients/${agentId}`);
+        const res = await fetch(`/api/admin/agent-settings/${agentId}`);
         if (res.ok) {
             const data = await res.json();
-            const client = data.client || {};
-            greeting = client.greeting || "";
-            notes = client.notes || "";
-            agentPhoneId = client.agent_phone_number_id || "";
-            testPhone = client.test_phone_number || "";
-            if (!studioName) {
-                studioName = client.studio_name || "";
-            }
-            if (!emailTo) {
-                emailTo = client.email_to || "";
-            }
+            const settings = data.settings || {};
+            greeting = settings.greeting || "";
+            notes = settings.notes || "";
+            agentPhoneId = settings.agent_phone_number_id || "";
+            testPhone = settings.test_phone_number || "";
         } else {
-            console.warn("Unable to load client settings from /clients:", await res.text());
+            console.warn("Unable to load agent settings:", await res.text());
         }
     } catch (e) {
-        console.error("Error loading client settings:", e);
+        console.error("Error loading agent settings:", e);
     }
 
     document.getElementById("settings-studio-name").value = studioName;
@@ -447,9 +366,7 @@ async function saveClientSettings() {
         studio_name: document.getElementById("settings-studio-name").value,
         email: document.getElementById("settings-email-to").value
     };
-    const clientPayload = {
-        studio_name: document.getElementById("settings-studio-name").value,
-        email_to: document.getElementById("settings-email-to").value,
+    const settingsPayload = {
         greeting: document.getElementById("settings-greeting").value,
         notes: document.getElementById("settings-notes").value,
         agent_phone_number_id: document.getElementById("settings-agent-phone-id").value.trim(),
@@ -458,29 +375,29 @@ async function saveClientSettings() {
 
     try {
         const res = await fetch(`/admin/users/${userInfo.user_id}`, {
-            method: "PATCH",
+            method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
 
-        let clientUpdateOk = true;
-        let clientUpdateError = "";
+        let settingsUpdateOk = true;
+        let settingsUpdateError = "";
         try {
-            const clientRes = await fetch(`/clients/${agentId}/update`, {
-                method: "POST",
+            const settingsRes = await fetch(`/api/admin/agent-settings/${agentId}`, {
+                method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(clientPayload)
+                body: JSON.stringify(settingsPayload)
             });
-            if (!clientRes.ok) {
-                clientUpdateOk = false;
-                clientUpdateError = await clientRes.text();
+            if (!settingsRes.ok) {
+                settingsUpdateOk = false;
+                settingsUpdateError = await settingsRes.text();
             }
         } catch (e) {
-            clientUpdateOk = false;
-            clientUpdateError = e.toString();
+            settingsUpdateOk = false;
+            settingsUpdateError = e.toString();
         }
 
-        if (res.ok && clientUpdateOk) {
+        if (res.ok && settingsUpdateOk) {
             alert("Impostazioni salvate.");
             // Refresh mapping
             await initSettingsSection();
@@ -491,7 +408,7 @@ async function saveClientSettings() {
             const err = await res.json();
             alert("Errore: " + (err.detail || "Impossibile salvare"));
         } else {
-            alert("Email/Studio salvati nel DB, ma errore nel salvataggio settings cliente: " + clientUpdateError);
+            alert("Email/Studio salvati nel DB, ma errore nel salvataggio impostazioni agente: " + settingsUpdateError);
         }
     } catch(e) {
         console.error(e);
@@ -1033,7 +950,7 @@ async function triggerTestCall() {
         `Vuoi avviare una chiamata di test verso ${testNumber}?`,
         async () => {
             try {
-                const res = await fetch(`/clients/${agentId}/test-call`, {
+                const res = await fetch(`/api/admin/agents/${agentId}/test-call`, {
                     method: "POST"
                 });
 
@@ -1361,7 +1278,6 @@ async function initDashboard() {
     }
 
     // Existing Logic
-    await loadClients();
     await renderGlobalChart();
 
     // Admin Dashboard KPIs
