@@ -169,7 +169,6 @@ STUDIO_NAME = os.getenv("STUDIO_NAME", "Segreteria IA")
 
 # Email mittente (la tua)
 EMAIL_FROM = os.getenv("EMAIL_FROM")  # es: "Segreteria IA <edo.buffa9898@gmail.com>"
-EMAIL_TO_FALLBACK = os.getenv("EMAIL_TO")  # nel dubbio
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
