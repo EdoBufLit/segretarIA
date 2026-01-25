@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Segreteria IA – Dashboard</title>
 
-    <!-- Tailwind CSS CDN (Restored for layout stability) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -13,36 +12,22 @@
                 extend: {
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
-                    },
-                    colors: {
-                        neutral: {
-                            50: '#fafafa',
-                            100: '#f5f5f5',
-                            200: '#e5e5e5',
-                            300: '#d4d4d4',
-                            400: '#a3a3a3',
-                            500: '#737373',
-                            600: '#525252',
-                            700: '#404040',
-                            800: '#262626',
-                            900: '#171717',
-                        }
                     }
                 }
             }
         }
     </script>
 
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- HeroIcons -->
     <script src="https://unpkg.com/feather-icons"></script>
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-        body { background-color: #f5f5f5; color: #171717; }
+        body { font-family: 'Inter', sans-serif; background-color: #fafafa; }
 
-        /* Custom scrollbar to match Skills style */
+        /* Custom scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
@@ -54,13 +39,18 @@
         .dashboard-card:hover {
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
+        .nav-item-active {
+            background-color: #e5e5e5;
+            color: #171717;
+            font-weight: 600;
+        }
     </style>
 </head>
-<body class="h-screen flex overflow-hidden bg-neutral-100 font-sans text-neutral-900">
+<body class="h-screen flex overflow-hidden bg-neutral-50 text-neutral-900">
 
     <!-- SIDEBAR -->
-    <aside class="sidebar w-64 flex-shrink-0 flex flex-col hidden md:flex h-full bg-neutral-50 border-r border-neutral-200">
-        <div class="p-6 border-b border-neutral-200">
+    <aside class="sidebar w-64 flex-shrink-0 flex flex-col hidden md:flex h-full bg-white border-r border-neutral-200">
+        <div class="p-6 border-b border-neutral-100">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 bg-neutral-900 rounded-lg flex items-center justify-center text-white font-bold">S</div>
                 <h1 class="font-semibold text-lg tracking-tight text-neutral-900">Segreteria IA</h1>
@@ -68,27 +58,31 @@
         </div>
 
         <nav class="flex-1 overflow-y-auto p-4 space-y-1">
-            <a href="#" data-section="dashboard" onclick="openSection('dashboard')" class="nav-item nav-item-active flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-neutral-900 bg-neutral-200 transition-colors">
+            <a href="#" data-section="dashboard" onclick="openSection('dashboard')" class="nav-item nav-item-active flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
                 <i data-feather="grid" class="w-4 h-4"></i>
                 Panoramica
             </a>
-            <a href="#" data-section="logs" onclick="openSection('logs')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-colors">
+            <a href="#" data-section="logs" onclick="openSection('logs')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
                 <i data-feather="list" class="w-4 h-4"></i>
                 Storico Chiamate
             </a>
-            <a href="#" data-section="analytics" onclick="openSection('analytics')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-colors">
+            <a href="#" data-section="analytics" onclick="openSection('analytics')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
                 <i data-feather="bar-chart-2" class="w-4 h-4"></i>
                 Statistiche
             </a>
-            <div class="pt-4 mt-4 border-t border-neutral-200"></div>
-            <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-colors">
+            <a href="#" data-section="numbers" onclick="openSection('numbers')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
+                <i data-feather="phone" class="w-4 h-4"></i>
+                Numeri
+            </a>
+            <div class="pt-4 mt-4 border-t border-neutral-100"></div>
+            <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
                 <i data-feather="settings" class="w-4 h-4"></i>
                 Impostazioni
             </a>
         </nav>
 
-        <div class="p-4 border-t border-neutral-200">
-            <div class="flex items-center gap-3 px-3 py-2">
+        <div class="p-4 border-t border-neutral-100">
+            <div class="flex items-center gap-3 px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-100">
                 <div class="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-600 text-xs font-bold">
                     {{ user.username[:2].upper() }}
                 </div>
@@ -112,7 +106,7 @@
     </div>
 
     <!-- MAIN CONTENT -->
-    <main class="flex-1 overflow-auto bg-neutral-100 pt-16 md:pt-0 relative">
+    <main class="flex-1 overflow-auto bg-neutral-50 pt-16 md:pt-0 relative">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
             <!-- TOP HEADER -->
@@ -126,12 +120,12 @@
                 <div class="flex items-center gap-3">
                     {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
                     {% if service_active %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5"></span>
                             Servizio Attivo
                         </span>
                     {% else %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">
                             <span class="w-1.5 h-1.5 rounded-full bg-red-500 mr-1.5"></span>
                             Servizio Sospeso
                         </span>
@@ -253,6 +247,35 @@
                     <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
                         <h3 class="text-base font-semibold text-neutral-900 mb-4">Urgenza</h3>
                         <ul id="analytics-urgency-list" class="space-y-2 text-sm text-neutral-600"></ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- NUMBERS SECTION -->
+            <section id="section-numbers" class="section hidden space-y-6">
+                <div class="dashboard-card bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-white">
+                        <h3 class="text-base font-semibold text-neutral-900">Numeri Assegnati</h3>
+                        <button onclick="loadClientNumbers()" class="p-2 hover:bg-neutral-100 rounded-lg transition-colors text-neutral-500" title="Aggiorna">
+                            <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-neutral-50 border-b border-neutral-100">
+                                <tr>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Numero</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Agente</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Note</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato</th>
+                                    <th class="px-6 py-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="numbers-table-body" class="divide-y divide-neutral-100 bg-white">
+                                <!-- Populated by JS -->
+                                <tr><td colspan="5" class="text-center py-8 text-neutral-500 text-sm">Caricamento...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>

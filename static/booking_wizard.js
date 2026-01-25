@@ -1,5 +1,5 @@
 const wizard = document.getElementById("booking-wizard");
-const wizardCard = wizard?.querySelector(".booking-wizard__card");
+const wizardCard = wizard?.querySelector("[role='dialog']");
 const openButtons = document.querySelectorAll("[data-booking-open]");
 const closeButtons = document.querySelectorAll("[data-booking-close]");
 const stepContainer = document.getElementById("booking-wizard-step");
@@ -107,6 +107,10 @@ const state = {
 
 const emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
+// Utility classes for input fields
+const baseInputClasses = "w-full px-4 py-3 rounded-xl border border-neutral-200 bg-white text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900/10 focus:border-neutral-900 transition-all";
+const errorInputClasses = "border-red-500 focus:ring-red-200 focus:border-red-500";
+
 const updateProgress = () => {
     const stepIndex = state.currentStep + 1;
     progressText.textContent = `${stepIndex}/${steps.length}`;
@@ -120,28 +124,49 @@ const updateProgress = () => {
 
 const createField = (field) => {
     const wrapper = document.createElement("div");
-    wrapper.className = "booking-wizard__field";
 
-    // Label logic
-    if (field.type !== "checkbox") {
-        const label = document.createElement("label");
-        label.className = "booking-wizard__label";
-        label.setAttribute("for", `booking-${field.id}`);
-        label.textContent = field.label;
-        if (field.required) {
-            const span = document.createElement("span");
-            span.textContent = " *";
-            span.style.color = "#dc2626";
-            label.appendChild(span);
-        }
-        wrapper.appendChild(label);
+    // Checkbox has different wrapper style
+    if (field.type === "checkbox") {
+        wrapper.className = "flex items-start gap-3 p-4 rounded-xl border border-neutral-200 bg-neutral-50";
+
+        const inputElement = document.createElement("input");
+        inputElement.type = "checkbox";
+        inputElement.id = `booking-${field.id}`;
+        inputElement.name = field.id;
+        inputElement.checked = Boolean(state.values[field.id]);
+        inputElement.className = "mt-1 w-5 h-5 rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900 cursor-pointer";
+
+        const checkboxLabel = document.createElement("label");
+        checkboxLabel.setAttribute("for", inputElement.id);
+        checkboxLabel.className = "text-sm text-neutral-600 leading-relaxed cursor-pointer select-none";
+        checkboxLabel.innerHTML = `${field.text} <a href="/privacy" target="_blank" class="text-neutral-900 font-semibold hover:underline">Privacy</a>`;
+
+        wrapper.appendChild(inputElement);
+        wrapper.appendChild(checkboxLabel);
+        return wrapper;
     }
+
+    // Standard fields
+    wrapper.className = "flex flex-col gap-2";
+
+    const label = document.createElement("label");
+    label.className = "block text-sm font-semibold text-neutral-700";
+    label.setAttribute("for", `booking-${field.id}`);
+    label.textContent = field.label;
+    if (field.required) {
+        const span = document.createElement("span");
+        span.textContent = "*";
+        span.className = "text-red-500 ml-1";
+        label.appendChild(span);
+    }
+    wrapper.appendChild(label);
 
     let inputElement;
 
     if (field.type === "select") {
         inputElement = document.createElement("select");
-        inputElement.className = "booking-wizard__select";
+        inputElement.className = baseInputClasses + " appearance-none"; // appearance-none for custom arrow if needed, but standard is fine
+        // Adding a simple SVG arrow background or just relying on browser default for simplicity
         inputElement.id = `booking-${field.id}`;
         inputElement.name = field.id;
 
@@ -163,33 +188,15 @@ const createField = (field) => {
         });
     } else if (field.type === "textarea") {
         inputElement = document.createElement("textarea");
-        inputElement.className = "booking-wizard__textarea";
+        inputElement.className = baseInputClasses + " min-h-[120px] resize-y";
         inputElement.id = `booking-${field.id}`;
         inputElement.name = field.id;
         inputElement.placeholder = field.placeholder;
         inputElement.value = state.values[field.id] || "";
-    } else if (field.type === "checkbox") {
-        // Special wrapper for checkbox
-        wrapper.className = "booking-wizard__checkbox";
-
-        inputElement = document.createElement("input");
-        inputElement.type = "checkbox";
-        inputElement.id = `booking-${field.id}`;
-        inputElement.name = field.id;
-        inputElement.checked = Boolean(state.values[field.id]);
-
-        const checkboxLabel = document.createElement("label");
-        checkboxLabel.setAttribute("for", inputElement.id);
-        checkboxLabel.innerHTML = `${field.text} <a href=\"/privacy\" target=\"_blank\" aria-label=\"Apri privacy policy\">Privacy</a>`;
-
-        wrapper.appendChild(inputElement);
-        wrapper.appendChild(checkboxLabel);
-        // We return wrapper directly as it is different structure
-        return wrapper;
     } else {
         inputElement = document.createElement("input");
         inputElement.type = field.type;
-        inputElement.className = "booking-wizard__input";
+        inputElement.className = baseInputClasses;
         inputElement.id = `booking-${field.id}`;
         inputElement.name = field.id;
         inputElement.placeholder = field.placeholder;
@@ -204,6 +211,7 @@ const renderStep = () => {
     const step = steps[state.currentStep];
     errorMessage.textContent = "";
     stepContainer.innerHTML = "";
+    stepContainer.classList.add("animate-fade-in-up"); // Add simple animation if defined or just default
 
     // Render all fields for this step
     step.fields.forEach(field => {
@@ -214,8 +222,18 @@ const renderStep = () => {
     // Auto-focus first input
     const firstInput = stepContainer.querySelector("input, select, textarea");
     if (firstInput) {
-        // Small timeout to allow transition to start smoothly
         setTimeout(() => firstInput.focus(), 50);
+    }
+};
+
+const setFieldError = (el, hasError) => {
+    if (!el) return;
+    if (hasError) {
+        el.classList.add("border-red-500", "focus:ring-red-200", "focus:border-red-500");
+        el.classList.remove("border-neutral-200", "focus:ring-neutral-900/10", "focus:border-neutral-900");
+    } else {
+        el.classList.remove("border-red-500", "focus:ring-red-200", "focus:border-red-500");
+        el.classList.add("border-neutral-200", "focus:ring-neutral-900/10", "focus:border-neutral-900");
     }
 };
 
@@ -234,24 +252,34 @@ const validateStep = () => {
             value = el?.value.trim();
         }
 
-        // Store value
         state.values[field.id] = value;
 
-        // Validation checks
-        if (field.required && !value) {
-            if (!firstErrorField) firstErrorField = el;
-            isValid = false;
-            // Visual feedback could be added here (red border)
-            el.style.borderColor = "#dc2626";
+        // Reset style
+        if (field.type !== "checkbox") {
+            setFieldError(el, false);
         } else {
-            if (el) el.style.borderColor = "";
+            // Checkbox container error style could be added to parent
+            if (el.parentElement) el.parentElement.classList.remove("border-red-500", "bg-red-50");
         }
 
-        if (field.type === "email" && value && !emailPattern.test(value)) {
-            if (!firstErrorField) firstErrorField = el;
+        // Validation
+        let fieldError = false;
+        if (field.required && !value) {
+            fieldError = true;
+        } else if (field.type === "email" && value && !emailPattern.test(value)) {
+            fieldError = true;
+            if (!errorMessage.textContent) errorMessage.textContent = "Email non valida.";
+        }
+
+        if (fieldError) {
             isValid = false;
-            errorMessage.textContent = "Email non valida.";
-            el.style.borderColor = "#dc2626";
+            if (!firstErrorField) firstErrorField = el;
+
+            if (field.type !== "checkbox") {
+                setFieldError(el, true);
+            } else {
+                 if (el.parentElement) el.parentElement.classList.add("border-red-500", "bg-red-50");
+            }
         }
     }
 
@@ -265,25 +293,28 @@ const validateStep = () => {
 };
 
 const showSuccess = () => {
-    form.hidden = true;
-    successState.hidden = false;
-    // Update header to hide steps or change title
+    form.classList.add("hidden");
+    successState.classList.remove("hidden");
+
+    // Hide progress elements
+    if (progressText) progressText.parentElement.style.opacity = "0";
+    if (progressBar) progressBar.parentElement.style.opacity = "0";
+
     if (titleElement) titleElement.textContent = "Richiesta Inviata";
-    progressText.parentElement.style.opacity = "0";
-    progressBar.parentElement.style.opacity = "0";
 };
 
 const resetWizard = () => {
     state.currentStep = 0;
     state.values = {};
-    form.hidden = false;
-    successState.hidden = true;
+
+    form.classList.remove("hidden");
+    successState.classList.add("hidden");
+
     nextButton.disabled = false;
     nextButton.textContent = "Avanti";
 
-    // Restore header visibility
-    progressText.parentElement.style.opacity = "1";
-    progressBar.parentElement.style.opacity = "1";
+    if (progressText) progressText.parentElement.style.opacity = "1";
+    if (progressBar) progressBar.parentElement.style.opacity = "1";
 
     updateProgress();
     renderStep();
@@ -292,22 +323,24 @@ const resetWizard = () => {
 const openWizard = () => {
     if (!wizard) return;
     state.lastActive = document.activeElement;
-    wizard.classList.add("is-open");
+
+    wizard.classList.remove("hidden");
+    wizard.classList.add("flex");
     wizard.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
 
-    // Reset if it was closed in success state or midway?
-    // Usually better to reset for fresh start unless we want to persist data.
-    // Let's reset for now to ensure clean state.
     resetWizard();
-
     trapFocus();
 };
 
 const closeWizard = () => {
-    wizard.classList.remove("is-open");
+    if (!wizard) return;
+
+    wizard.classList.remove("flex");
+    wizard.classList.add("hidden");
     wizard.setAttribute("aria-hidden", "true");
     document.body.style.overflow = "";
+
     releaseFocus();
     state.lastActive?.focus?.();
 };
@@ -317,7 +350,6 @@ const nextStep = async () => {
         return;
     }
 
-    // Submit if last step
     if (state.currentStep === steps.length - 1) {
         await submitWizard();
         return;
@@ -344,7 +376,6 @@ const submitWizard = async () => {
 
     const payload = {
         ...state.values,
-        // Ensure optional fields are strings
         company: state.values.company || "",
         needs: state.values.needs || ""
     };
@@ -352,15 +383,11 @@ const submitWizard = async () => {
     try {
         const response = await fetch("/lead", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
         });
 
-        if (!response.ok) {
-            throw new Error("Errore durante l'invio.");
-        }
+        if (!response.ok) throw new Error("Errore durante l'invio.");
         showSuccess();
     } catch (error) {
         errorMessage.textContent = "Si è verificato un errore. Riprova.";
@@ -370,7 +397,7 @@ const submitWizard = async () => {
 };
 
 const handleKeydown = (event) => {
-    if (!wizard.classList.contains("is-open")) return;
+    if (wizard.classList.contains("hidden")) return;
     if (event.key === "Escape") {
         event.preventDefault();
         closeWizard();
@@ -378,11 +405,8 @@ const handleKeydown = (event) => {
     }
     if (event.key === "Enter") {
         const target = event.target;
-        // Don't submit on Enter in Textarea
         if (target?.tagName === "TEXTAREA") return;
-        // Don't submit on Enter on buttons (handled by click)
         if (target?.tagName === "BUTTON") return;
-        // Don't submit on Enter on Checkbox if it toggles
         if (target?.type === "checkbox") return;
 
         event.preventDefault();
@@ -425,7 +449,7 @@ const releaseFocus = () => {
 
 openButtons.forEach((button) => {
     button.addEventListener("click", (e) => {
-        e.preventDefault(); // Prevent default link behavior if it's an anchor
+        e.preventDefault();
         openWizard();
     });
 });
@@ -436,16 +460,11 @@ closeButtons.forEach((button) => {
     });
 });
 
-prevButton?.addEventListener("click", prevStep);
-nextButton?.addEventListener("click", nextStep);
+if (prevButton) prevButton.addEventListener("click", prevStep);
+if (nextButton) nextButton.addEventListener("click", nextStep);
 
 wizard?.addEventListener("click", (event) => {
-    if (event.target === wizard) {
+    if (event.target === wizard || event.target.hasAttribute('data-booking-close')) {
         closeWizard();
     }
 });
-
-// Init
-updateProgress();
-renderStep();
-prevButton.disabled = true;

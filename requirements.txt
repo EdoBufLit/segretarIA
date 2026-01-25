@@ -16,3 +16,5 @@ sentry-sdk
 structlog
 itsdangerous==2.2.0
 python-multipart==0.0.21
+httpx
+pytest

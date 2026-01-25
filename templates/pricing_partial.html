@@ -53,11 +53,11 @@
             </li>
         </ul>
         {% if user %}
-        <button onclick="buyPlan('{{ plans.pro.code }}')" class="btn-glow w-full py-3 rounded-lg font-bold shadow-lg">
+        <button onclick="buyPlan('{{ plans.pro.code }}')" class="w-full py-3 rounded-lg font-bold shadow-lg bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-blue-900/20">
             Acquista {{ plans.pro.name }}
         </button>
         {% else %}
-        <a href="/login" class="block text-center btn-glow w-full py-3 rounded-lg font-bold shadow-lg">
+        <a href="/login" class="block text-center w-full py-3 rounded-lg font-bold shadow-lg bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-blue-900/20">
             Inizia Ora
         </a>
         {% endif %}

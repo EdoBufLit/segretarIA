@@ -4,31 +4,29 @@ import uuid
 import secrets
 import sentry_sdk
 import re
-from datetime import datetime
-from typing import Any, Dict, Optional, List
-from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Request, Body, Query, Response
-from fastapi.responses import HTMLResponse, StreamingResponse
-from dotenv import load_dotenv
-from mailer import send_email
-from openai import OpenAI
 import logging
-import audit_logger
-from logging_config import configure_logging, correlation_id
-from pathlib import Path
 import time
-from fastapi.staticfiles import StaticFiles
-from datetime import datetime, date, timedelta
-from openai import OpenAI
-from starlette.middleware.sessions import SessionMiddleware
-from fastapi.responses import RedirectResponse
-from fastapi import Form, Depends
-from fastapi.templating import Jinja2Templates
 import httpx
+from datetime import datetime, date, timedelta
+from typing import Any, Dict, Optional, List
+from pathlib import Path
+
+from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Request, Body, Query, Response, Form, Depends
+from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
+
+# Local imports
 from db import get_db, SessionLocal
-from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken, AgentSettings, CallLog
+from models import (
+    User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting,
+    UnassignedEvent, PasswordResetToken, AgentSettings, CallLog, Agent
+)
 from auth import (
     hash_password,
     verify_password,
@@ -49,11 +47,15 @@ from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
 from stripe_service import StripeService
-from models import Agent, Subscription
 from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
+from logging_config import configure_logging, correlation_id
+from audit_logger import log_audit_event
+from mailer import send_email
+import audit_logger
+
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -76,6 +78,10 @@ if SENTRY_DSN:
 
 # Secrets Management
 SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    # Use SESSION_SECRET as fallback if present (legacy support)
+    SECRET_KEY = os.getenv("SESSION_SECRET")
+
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY is required")
 
@@ -169,11 +175,15 @@ STUDIO_NAME = os.getenv("STUDIO_NAME", "Segreteria IA")
 
 # Email mittente (la tua)
 EMAIL_FROM = os.getenv("EMAIL_FROM")  # es: "Segreteria IA <edo.buffa9898@gmail.com>"
+EMAIL_TO_FALLBACK = os.getenv("EMAIL_TO")  # nel dubbio, global fallback (legacy)
+
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 LOGS_DIR = Path("logs")
 LOGS_DIR.mkdir(exist_ok=True)
 LEADS_LOG_DIR = LOGS_DIR / "leads"
@@ -836,6 +846,76 @@ async def elevenlabs_webhook(request: Request):
     # 5) Return Immediate Success
     return {"status": "ok"}
 
+
+def _read_logs(
+    db: Session,
+    agent_ids: List[str],
+    limit: int = 50,
+    offset: int = 0,
+    status: str = "all",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    q: Optional[str] = None
+):
+    """
+    Helper to read, filter, sort and paginate logs from the database.
+    """
+    items = []
+
+    df = datetime.fromisoformat(date_from).date() if date_from else None
+    dt = datetime.fromisoformat(date_to).date() if date_to else None
+
+    query = db.query(CallLog)
+    if agent_ids:
+        query = query.filter(CallLog.agent_id.in_(agent_ids))
+    if df:
+        query = query.filter(CallLog.timestamp >= datetime.combine(df, datetime.min.time()))
+    if dt:
+        query = query.filter(CallLog.timestamp <= datetime.combine(dt, datetime.max.time()))
+    if status in {"success", "failure"}:
+        query = query.filter(CallLog.status == status)
+
+    logs = query.order_by(CallLog.timestamp.desc()).all()
+
+    for log in logs:
+        raw = log.raw_data or {}
+        ts = log.timestamp.isoformat() if log.timestamp else None
+        if not ts:
+            continue
+
+        data = raw.get("data", {}) or {}
+        analysis = data.get("analysis", {}) or {}
+        summary = (
+            analysis.get("transcript_summary")
+            or analysis.get("summary")
+            or data.get("summary")
+            or ""
+        )
+        duration = data.get("duration_secs") or data.get("metadata", {}).get("call_duration_secs")
+        caller = data.get("caller_number") or data.get("user_id") or "unknown"
+        status_value = log.status or data.get("status") or "success"
+
+        item = {
+            "timestamp": ts,
+            "caller": caller,
+            "status": status_value,
+            "summary": str(summary).strip(),
+            "duration_secs": duration,
+            "raw": raw
+        }
+
+        if q:
+            q_low = q.lower()
+            if q_low not in json.dumps(item, ensure_ascii=False).lower():
+                continue
+
+        items.append(item)
+
+    total = len(items)
+    paginated_items = items[offset:offset + limit]
+
+    return {"status": "ok", "total": total, "items": paginated_items}
+
 @app.get("/logs/{agent_id}/list")
 async def view_logs_list(
     agent_id: str,
@@ -1027,6 +1107,37 @@ async def analytics_user(
     return _calculate_analytics(db, agent_ids)
 
 
+@app.get("/api/client/phone-numbers")
+async def api_client_phone_numbers(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns phone numbers assigned to the current client.
+    Uses AgentRouting as the source of truth.
+    """
+    # Fetch active routing for this user
+    routings = db.query(AgentRouting).filter(
+        AgentRouting.user_id == current_user.id,
+        AgentRouting.is_active == True
+    ).all()
+
+    items = []
+    for r in routings:
+        # Get Phone Number details
+        phone = db.query(PhoneNumber).filter(PhoneNumber.id == r.phone_number_id).first()
+        # Get Agent details (optional, for display name)
+        agent = db.query(Agent).filter(Agent.agent_id == r.agent_id).first()
+
+        items.append({
+            "agent_id": r.agent_id,
+            "display_name": agent.display_name if agent else "Agente",
+            "phone_number": phone.e164 if phone else "N/D",
+            "notes": phone.notes if phone else None,
+            "status": r.status
+        })
+
+    return {"status": "ok", "items": items}
 
 
 class AdminUpdateUserRequest(BaseModel):
@@ -2047,78 +2158,6 @@ async def admin_debug_users(
     }
 
 
-def _read_logs(
-    db: Session,
-    agent_ids: List[str],
-    limit: int = 50,
-    offset: int = 0,
-    status: str = "all",
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    q: Optional[str] = None
-):
-    """
-    Helper to read, filter, sort and paginate logs from the database.
-    """
-    items = []
-
-    df = datetime.fromisoformat(date_from).date() if date_from else None
-    dt = datetime.fromisoformat(date_to).date() if date_to else None
-
-    query = db.query(CallLog)
-    if agent_ids:
-        query = query.filter(CallLog.agent_id.in_(agent_ids))
-    if df:
-        query = query.filter(CallLog.timestamp >= datetime.combine(df, datetime.min.time()))
-    if dt:
-        query = query.filter(CallLog.timestamp <= datetime.combine(dt, datetime.max.time()))
-    if status in {"success", "failure"}:
-        query = query.filter(CallLog.status == status)
-
-    logs = query.order_by(CallLog.timestamp.desc()).all()
-
-    for log in logs:
-        raw = log.raw_data or {}
-        ts = log.timestamp.isoformat() if log.timestamp else None
-        if not ts:
-            continue
-
-        data = raw.get("data", {}) or {}
-        analysis = data.get("analysis", {}) or {}
-        summary = (
-            analysis.get("transcript_summary")
-            or analysis.get("summary")
-            or data.get("summary")
-            or ""
-        )
-        duration = data.get("duration_secs") or data.get("metadata", {}).get("call_duration_secs")
-        caller = data.get("caller_number") or data.get("user_id") or "unknown"
-        status_value = log.status or data.get("status") or "success"
-
-        item = {
-            "timestamp": ts,
-            "caller": caller,
-            "status": status_value,
-            "summary": str(summary).strip(),
-            "duration_secs": duration,
-            "raw": raw
-        }
-
-        if q:
-            q_low = q.lower()
-            if q_low not in json.dumps(item, ensure_ascii=False).lower():
-                continue
-
-        items.append(item)
-
-    total = len(items)
-    paginated_items = items[offset:offset + limit]
-
-    return {"status": "ok", "total": total, "items": paginated_items}
-
-
-
-
 @app.get("/api/logs")
 async def get_my_logs(
     limit: int = Query(50, ge=1, le=500),
@@ -2151,12 +2190,6 @@ async def get_my_logs(
 
     return _read_logs(db, agent_ids, limit, offset, status, date_from, date_to, q)
 
-
-
-
-
-    # …qui il tuo log_call(entry, agent_id) o simile…
-    # …e la parte di email che già hai…
 @app.post("/api/admin/agents/{agent_id}/test-call")
 async def test_call(agent_id: str, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     """

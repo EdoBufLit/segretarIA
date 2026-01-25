@@ -5,15 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Segreteria IA - Segreteria Telefonica AI per Professionisti e Imprese</title>
 
-    <!-- RESTORED: Tailwind CSS CDN for immediate fix of layout issues -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
 
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/booking_wizard.css">
-    <link rel="stylesheet" href="/static/css/effects.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Removed effects.css to ensure clean Light Theme -->
+
     <style>
-        body { font-family: 'Outfit', sans-serif; background-color: #ffffff; color: #171717; }
-        .nav-scrolled {            background: rgba(255, 255, 255, 0.8);
+        body { font-family: 'Inter', sans-serif; background-color: #fafafa; color: #171717; }
+        .nav-scrolled {
+            background: rgba(255, 255, 255, 0.9);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid #e5e5e5;
         }
@@ -27,25 +39,9 @@
             opacity: 1;
             transform: translateY(0);
         }
-        /* Gradient Text */
-        .text-gradient {
-            background: linear-gradient(to right, #171717, #525252);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .fade-in-section {
-            opacity: 0;
-            transform: translateY(20px);
-            transition: opacity 0.8s ease-out, transform 0.8s ease-out;
-            will-change: opacity, transform;
-        }
-        .fade-in-section.is-visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
     </style>
 </head>
-<body class="antialiased selection:bg-neutral-200 selection:text-black">
+<body class="antialiased selection:bg-neutral-900 selection:text-white">
 
     <!-- Fixed Navbar -->
     <nav class="fixed top-0 left-0 w-full z-50 transition-all duration-300 border-b border-transparent bg-white/50 backdrop-blur-sm">
@@ -63,7 +59,7 @@
                 <a href="/login" class="text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors hidden sm:block">Accedi</a>
                 {% endif %}
 
-                <button type="button" data-booking-open class="px-5 py-2 rounded-xl bg-neutral-900 text-white font-medium text-sm hover:bg-neutral-800 transition-transform duration-150 hover:scale-105 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-neutral-900">
+                <button type="button" data-booking-open class="px-5 py-2 rounded-xl bg-neutral-900 text-white font-medium text-sm hover:bg-neutral-800 transition-transform duration-150 hover:scale-105 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-neutral-900 shadow-lg shadow-neutral-900/20">
                     Contattaci
                 </button>
             </div>
@@ -87,10 +83,11 @@
     <section class="relative pt-40 pb-32 lg:pt-56 lg:pb-40 overflow-hidden">
         <!-- Subtle Gradient Blob -->
         <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-blue-100/40 blur-[120px] rounded-full pointer-events-none -z-10"></div>
+        <div class="absolute bottom-0 right-0 w-[600px] h-[400px] bg-purple-100/30 blur-[100px] rounded-full pointer-events-none -z-10"></div>
 
         <div class="max-w-5xl mx-auto px-6 relative z-10 text-center">
             <div class="fade-in-section is-visible">
-                <div class="inline-flex items-center px-3 py-1 rounded-full bg-neutral-100 border border-neutral-200 text-xs font-medium text-neutral-600 mb-8">
+                <div class="inline-flex items-center px-3 py-1 rounded-full bg-white border border-neutral-200 text-xs font-medium text-neutral-600 mb-8 shadow-sm">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2"></span>
                     AI Voice Assistant Enterprise
                 </div>
@@ -106,17 +103,17 @@
 
                 <div class="flex flex-col sm:flex-row justify-center gap-4">
                     {% if user %}
-                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-200/50">
+                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
                         Prenota Demo
                     </button>
-                    <a href="/dashboard" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105">
+                    <a href="/dashboard" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105 shadow-sm">
                         Dashboard
                     </a>
                     {% else %}
-                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-200/50">
+                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
                         Inizia Ora
                     </button>
-                    <a href="/login" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105">
+                    <a href="/login" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105 shadow-sm">
                         Accedi
                     </a>
                     {% endif %}
@@ -126,31 +123,31 @@
     </section>
 
     <!-- Stats / Trust Section -->
-    <section class="border-y border-neutral-100 bg-neutral-50">
+    <section class="border-y border-neutral-200 bg-white">
         <div class="max-w-7xl mx-auto px-6 py-12">
             <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
                 <div class="flex flex-col gap-1">
                     <span class="text-3xl font-bold text-neutral-900">24/7</span>
-                    <span class="text-sm text-neutral-500 font-medium tracking-wide">OPERATIVITÀ</span>
+                    <span class="text-sm text-neutral-500 font-medium tracking-wide uppercase">Operatività</span>
                 </div>
                 <div class="flex flex-col gap-1">
                     <span class="text-3xl font-bold text-neutral-900">&lt;1s</span>
-                    <span class="text-sm text-neutral-500 font-medium tracking-wide">LATENZA</span>
+                    <span class="text-sm text-neutral-500 font-medium tracking-wide uppercase">Latenza</span>
                 </div>
                 <div class="flex flex-col gap-1">
                     <span class="text-3xl font-bold text-neutral-900">100%</span>
-                    <span class="text-sm text-neutral-500 font-medium tracking-wide">ACCURATEZZA</span>
+                    <span class="text-sm text-neutral-500 font-medium tracking-wide uppercase">Accuratezza</span>
                 </div>
                 <div class="flex flex-col gap-1">
                     <span class="text-3xl font-bold text-neutral-900">GDPR</span>
-                    <span class="text-sm text-neutral-500 font-medium tracking-wide">COMPLIANT</span>
+                    <span class="text-sm text-neutral-500 font-medium tracking-wide uppercase">Compliant</span>
                 </div>
             </div>
         </div>
     </section>
 
     <!-- Features Section -->
-    <section id="funzioni" class="py-32 relative bg-white">
+    <section id="funzioni" class="py-32 relative bg-neutral-50">
         <div class="max-w-7xl mx-auto px-6">
             <div class="text-center mb-24 fade-in-section">
                 <h2 class="text-4xl md:text-5xl font-bold mb-6 tracking-tight text-neutral-900">Funzionalità Core</h2>
@@ -159,8 +156,8 @@
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <!-- Card 1 -->
-                <div class="group p-8 rounded-3xl bg-neutral-50 border border-neutral-100 hover:border-neutral-200 transition-all duration-300 fade-in-section">
-                    <div class="w-12 h-12 rounded-xl bg-white border border-neutral-200 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
+                <div class="group p-8 rounded-3xl bg-white border border-neutral-200 hover:border-neutral-300 hover:shadow-xl transition-all duration-300 fade-in-section">
+                    <div class="w-12 h-12 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     </div>
                     <h3 class="text-xl font-bold mb-3 text-neutral-900">Disponibilità Totale</h3>
@@ -168,8 +165,8 @@
                 </div>
 
                 <!-- Card 2 -->
-                <div class="group p-8 rounded-3xl bg-neutral-50 border border-neutral-100 hover:border-neutral-200 transition-all duration-300 fade-in-section" style="transition-delay: 100ms;">
-                    <div class="w-12 h-12 rounded-xl bg-white border border-neutral-200 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
+                <div class="group p-8 rounded-3xl bg-white border border-neutral-200 hover:border-neutral-300 hover:shadow-xl transition-all duration-300 fade-in-section" style="transition-delay: 100ms;">
+                    <div class="w-12 h-12 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                     </div>
                     <h3 class="text-xl font-bold mb-3 text-neutral-900">Sintesi Intelligente</h3>
@@ -177,8 +174,8 @@
                 </div>
 
                 <!-- Card 3 -->
-                <div class="group p-8 rounded-3xl bg-neutral-50 border border-neutral-100 hover:border-neutral-200 transition-all duration-300 fade-in-section" style="transition-delay: 200ms;">
-                    <div class="w-12 h-12 rounded-xl bg-white border border-neutral-200 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
+                <div class="group p-8 rounded-3xl bg-white border border-neutral-200 hover:border-neutral-300 hover:shadow-xl transition-all duration-300 fade-in-section" style="transition-delay: 200ms;">
+                    <div class="w-12 h-12 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
                     </div>
                     <h3 class="text-xl font-bold mb-3 text-neutral-900">Metriche in Tempo Reale</h3>
@@ -189,28 +186,28 @@
     </section>
 
     <!-- How It Works -->
-    <section class="py-32 border-t border-neutral-100 bg-neutral-50/50">
+    <section class="py-32 border-t border-neutral-200 bg-white">
         <div class="max-w-7xl mx-auto px-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
                 <div class="fade-in-section">
                     <h2 class="text-4xl font-bold mb-8 tracking-tight text-neutral-900">Integrazione fluida nel tuo workflow</h2>
                     <div class="space-y-10">
                         <div class="flex gap-6">
-                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-900 font-semibold bg-white">1</span>
+                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-900 font-semibold bg-neutral-50 shadow-sm">1</span>
                             <div>
                                 <h3 class="text-xl font-semibold text-neutral-900 mb-2">Setup Immediato</h3>
                                 <p class="text-neutral-500">Configura il tuo assistente in pochi minuti o richiedi il nostro supporto white-glove.</p>
                             </div>
                         </div>
                         <div class="flex gap-6">
-                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-900 font-semibold bg-white">2</span>
+                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-900 font-semibold bg-neutral-50 shadow-sm">2</span>
                             <div>
                                 <h3 class="text-xl font-semibold text-neutral-900 mb-2">Personalizzazione</h3>
                                 <p class="text-neutral-500">Definisci tono, script e regole di ingaggio. L'IA si adatta alla tua identità aziendale.</p>
                             </div>
                         </div>
                         <div class="flex gap-6">
-                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-900 font-semibold bg-white">3</span>
+                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-900 font-semibold bg-neutral-50 shadow-sm">3</span>
                             <div>
                                 <h3 class="text-xl font-semibold text-neutral-900 mb-2">Deploy</h3>
                                 <p class="text-neutral-500">Attiva l'inoltro e lascia che l'IA gestisca il flusso, notificandoti solo ciò che conta.</p>
@@ -219,7 +216,7 @@
                     </div>
                 </div>
                 <div class="relative fade-in-section">
-                    <div class="absolute inset-0 bg-gradient-to-r from-blue-100/50 to-purple-100/50 blur-3xl -z-10"></div>
+                    <div class="absolute inset-0 bg-gradient-to-r from-blue-50 to-purple-50 blur-3xl -z-10"></div>
                     <div class="p-8 rounded-3xl bg-white border border-neutral-200 shadow-2xl">
                         <div class="flex items-center justify-between mb-8 pb-6 border-b border-neutral-100">
                             <div class="flex gap-2">
@@ -249,7 +246,7 @@
     </section>
 
     <!-- Pricing -->
-    <section id="prezzi" class="py-32 relative bg-white">
+    <section id="prezzi" class="py-32 relative bg-neutral-50">
         <div class="max-w-7xl mx-auto px-6">
             <div class="text-center mb-20 fade-in-section">
                 <h2 class="text-4xl font-bold mb-6 tracking-tight text-neutral-900">Piani & Tariffe</h2>
@@ -260,13 +257,13 @@
     </section>
 
     <!-- CTA Footer -->
-    <section class="py-32 border-t border-neutral-100 bg-neutral-50">
+    <section class="py-32 border-t border-neutral-200 bg-white">
         <div class="max-w-4xl mx-auto px-6 text-center fade-in-section">
             <h2 class="text-4xl md:text-5xl font-bold mb-8 text-neutral-900 tracking-tight">Pronto a trasformare la tua segreteria?</h2>
             <p class="text-xl text-neutral-500 mb-12 font-light">Unisciti alle aziende che hanno scelto l'efficienza senza compromessi.</p>
 
             <div class="flex flex-col sm:flex-row justify-center gap-4">
-                <button type="button" data-booking-open class="px-8 py-4 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-300/50">
+                <button type="button" data-booking-open class="px-8 py-4 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
                     Inizia il Test Gratuito
                 </button>
             </div>
@@ -274,7 +271,7 @@
     </section>
 
     <!-- Footer -->
-    <footer class="py-12 border-t border-neutral-200 bg-white">
+    <footer class="py-12 border-t border-neutral-200 bg-neutral-50">
         <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
             <div class="text-neutral-500 text-sm">
                 &copy; 2026 Automa AI. All rights reserved.
@@ -287,34 +284,52 @@
         </div>
     </footer>
 
-    <div id="booking-wizard" class="booking-wizard" aria-hidden="true">
-        <div class="booking-wizard__backdrop" data-booking-close></div>
-        <div class="booking-wizard__card" role="dialog" aria-modal="true" aria-labelledby="booking-wizard-title">
-            <!-- Existing Wizard Content (Managed by JS) -->
-            <button type="button" class="booking-wizard__close" data-booking-close aria-label="Chiudi wizard">
+    <div id="booking-wizard" class="fixed inset-0 z-50 hidden items-center justify-center p-4 sm:p-6" aria-hidden="true">
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-neutral-900/60 backdrop-blur-sm transition-opacity" data-booking-close></div>
+
+        <!-- Card -->
+        <div class="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden transform transition-all p-8 md:p-10" role="dialog" aria-modal="true" aria-labelledby="booking-wizard-title">
+
+            <!-- Close Button -->
+            <button type="button" class="absolute top-6 right-6 text-neutral-400 hover:text-neutral-900 transition-colors p-2 rounded-xl hover:bg-neutral-50" data-booking-close aria-label="Chiudi wizard">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <div class="booking-wizard__header">
-                <div>
-                    <p class="booking-wizard__progress-text" id="booking-wizard-progress">1/4</p>
-                    <h3 id="booking-wizard-title" class="booking-wizard__title">Richiesta Contatto</h3>
-                </div>
+
+            <!-- Header -->
+            <div class="flex flex-col gap-1 mb-8">
+                <p class="text-sm font-semibold text-neutral-500 tracking-wide uppercase" id="booking-wizard-progress">1/4</p>
+                <h3 id="booking-wizard-title" class="text-3xl font-bold text-neutral-900 tracking-tight">Richiesta Contatto</h3>
             </div>
-            <div class="booking-wizard__progress">
-                <div class="booking-wizard__progress-bar" id="booking-wizard-progress-bar"></div>
+
+            <!-- Progress Bar -->
+            <div class="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden mb-8">
+                <div class="h-full bg-neutral-900 transition-all duration-500 ease-out" id="booking-wizard-progress-bar" style="width: 0%"></div>
             </div>
-            <form id="booking-wizard-form" class="booking-wizard__form" novalidate>
-                <div id="booking-wizard-step" class="booking-wizard__step"></div>
-                <p id="booking-wizard-error" class="booking-wizard__error" role="alert" aria-live="polite"></p>
-                <div class="booking-wizard__actions">
-                    <button type="button" class="booking-wizard__secondary" id="booking-wizard-prev">Indietro</button>
-                    <button type="button" class="booking-wizard__primary" id="booking-wizard-next">Avanti</button>
+
+            <!-- Form -->
+            <form id="booking-wizard-form" class="flex flex-col flex-1 overflow-y-auto" novalidate>
+                <div id="booking-wizard-step" class="space-y-6 flex-1 min-h-[200px]"></div>
+
+                <div class="mt-8 pt-6 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <p id="booking-wizard-error" class="text-sm text-red-500 font-medium" role="alert" aria-live="polite"></p>
+                    <div class="flex gap-3 w-full sm:w-auto">
+                        <button type="button" class="flex-1 sm:flex-none px-6 py-3 rounded-xl text-neutral-600 font-medium hover:bg-neutral-50 hover:text-neutral-900 transition-colors" id="booking-wizard-prev">Indietro</button>
+                        <button type="button" class="flex-1 sm:flex-none px-8 py-3 rounded-xl bg-neutral-900 text-white font-semibold shadow-lg shadow-neutral-900/20 hover:bg-neutral-800 hover:scale-105 transition-all active:scale-95" id="booking-wizard-next">Avanti</button>
+                    </div>
                 </div>
             </form>
-            <div id="booking-wizard-success" class="booking-wizard__success" hidden>
-                <div class="booking-wizard__success-icon">✅</div>
-                <p class="booking-wizard__success-text">Richiesta inviata con successo.</p>
-                <button type="button" class="booking-wizard__primary" data-booking-close>Chiudi</button>
+
+            <!-- Success State -->
+            <div id="booking-wizard-success" class="flex flex-col items-center justify-center text-center py-12 space-y-6 hidden">
+                <div class="w-20 h-20 rounded-full bg-green-100 text-green-600 flex items-center justify-center mb-2">
+                    <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+                <div>
+                    <h4 class="text-2xl font-bold text-neutral-900 mb-2">Richiesta Inviata!</h4>
+                    <p class="text-neutral-500">Un nostro consulente ti contatterà a breve.</p>
+                </div>
+                <button type="button" class="px-8 py-3 rounded-xl bg-neutral-900 text-white font-semibold hover:bg-neutral-800 transition-all" data-booking-close>Chiudi</button>
             </div>
         </div>
     </div>

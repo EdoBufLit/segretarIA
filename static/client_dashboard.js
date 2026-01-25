@@ -14,6 +14,7 @@ function openSection(name) {
         'dashboard': 'Panoramica',
         'logs': 'Storico Chiamate',
         'analytics': 'Statistiche',
+        'numbers': 'Numeri Assegnati',
         'settings': 'Impostazioni'
     };
     const el = document.getElementById('page-title');
@@ -42,6 +43,9 @@ function openSection(name) {
     }
     if (name === "logs") {
         loadLogsTable(0);
+    }
+    if (name === "numbers") {
+        loadClientNumbers();
     }
 }
 
@@ -219,6 +223,81 @@ async function renderHeatmap() {
         console.warn("Could not render heatmap", e);
         container.innerHTML = "<p class='text-red-500 text-sm'>Errore caricamento dati.</p>";
     }
+}
+
+// =========================
+// NUMBERS SECTION
+// =========================
+
+async function loadClientNumbers() {
+    const tbody = document.getElementById("numbers-table-body");
+    if (!tbody) return;
+
+    try {
+        const res = await fetch("/api/client/phone-numbers");
+        if (!res.ok) throw new Error("Fetch failed");
+        const data = await res.json();
+
+        tbody.innerHTML = "";
+
+        if (!data.items || data.items.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-neutral-500 text-sm">Nessun numero assegnato.</td></tr>`;
+            return;
+        }
+
+        data.items.forEach(item => {
+            const tr = document.createElement("tr");
+            tr.className = "hover:bg-neutral-50 transition-colors";
+
+            const statusBadge = item.status === 'active'
+                ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Attivo</span>`
+                : `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-100 text-neutral-800">${item.status}</span>`;
+
+            tr.innerHTML = `
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-neutral-900 font-mono">${item.phone_number}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-neutral-900">${escapeHtml(item.display_name)}</div>
+                    <div class="text-xs text-neutral-500 font-mono">${escapeHtml(item.agent_id)}</div>
+                </td>
+                <td class="px-6 py-4">
+                    <div class="text-sm text-neutral-500 max-w-xs truncate" title="${escapeHtml(item.notes)}">${escapeHtml(item.notes || "-")}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    ${statusBadge}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button onclick="copyToClipboard('${item.phone_number}')" class="text-neutral-400 hover:text-neutral-900 transition-colors p-1" title="Copia numero">
+                        <i data-feather="copy" class="w-4 h-4"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+        feather.replace();
+
+    } catch (e) {
+        console.error("Error loading numbers", e);
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-red-500 text-sm">Errore caricamento dati.</td></tr>`;
+    }
+}
+
+function copyToClipboard(text) {
+    if (!text || text === "N/D") return;
+    navigator.clipboard.writeText(text).then(() => {
+        // Optional: show toast
+        const btn = document.activeElement;
+        if(btn) {
+            const original = btn.innerHTML;
+            btn.innerHTML = `<i data-feather="check" class="w-4 h-4 text-green-600"></i>`;
+            feather.replace();
+            setTimeout(() => {
+                btn.innerHTML = original;
+                feather.replace();
+            }, 2000);
+        }
+    });
 }
 
 // =========================

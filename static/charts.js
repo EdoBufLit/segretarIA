@@ -58,14 +58,33 @@ async function renderGlobalChart() {
                 datasets: [{
                     label: "Chiamate totali",
                     data: counts,
-                    backgroundColor: "rgba(37, 99, 235, 0.6)"
+                    backgroundColor: "#171717", // Neutral 900
+                    hoverBackgroundColor: "#404040", // Neutral 700
+                    borderRadius: 4
                 }]
             },
             options: {
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: {
                         beginAtZero: true,
-                        ticks: { precision: 0 }
+                        ticks: { precision: 0, font: { family: 'Inter' } },
+                        grid: { color: '#f5f5f5', drawBorder: false }
+                    },
+                    x: {
+                        ticks: { font: { family: 'Inter' } },
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#171717',
+                        titleFont: { family: 'Inter' },
+                        bodyFont: { family: 'Inter' },
+                        cornerRadius: 8,
+                        padding: 10
                     }
                 }
             }
@@ -80,35 +99,51 @@ async function renderClientChart(agent_id) {
     const canvas = document.getElementById("clientChart");
     if (!canvas) return;
 
-    const res = await fetch(`/analytics/${agent_id}`);
-    const data = await res.json();
+    try {
+        const res = await fetch(`/analytics/${agent_id}`);
+        if (!res.ok) return;
+        const data = await res.json();
 
-    const points = data.points || [];
+        const points = data.points || [];
 
-    if (clientChartObj) {
-        clientChartObj.destroy();
-    }
+        if (clientChartObj) {
+            clientChartObj.destroy();
+        }
 
-    clientChartObj = new Chart(canvas, {
-        type: "line",
-        data: {
-            labels: points,
-            datasets: [{
-                label: "Chiamate",
-                data: points.map(() => 1),
-                borderColor: "rgb(37, 99, 235)",
-                tension: 0.3
-            }]
-        },
-        options: {
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { precision: 0 }
+        clientChartObj = new Chart(canvas, {
+            type: "line",
+            data: {
+                labels: points.map(p => new Date(p).toLocaleDateString()),
+                datasets: [{
+                    label: "Chiamate",
+                    data: points.map(() => 1), // Dummy Y axis
+                    borderColor: "#171717",
+                    backgroundColor: "rgba(23, 23, 23, 0.1)",
+                    tension: 0.3,
+                    pointRadius: 4,
+                    pointBackgroundColor: "#171717"
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        display: false,
+                        beginAtZero: true
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { family: 'Inter' } }
+                    }
+                },
+                plugins: {
+                    legend: { display: false }
                 }
             }
-        }
-    });
+        });
+    } catch(e) {
+        console.warn("Error rendering client chart", e);
+    }
 }
 
 // HEATMAP ORARIA (24 x 7)
@@ -134,7 +169,8 @@ async function renderHeatmap() {
             catList.innerHTML = "";
             Object.entries(data.by_category).forEach(([cat, count]) => {
                 const li = document.createElement("li");
-                li.textContent = `${cat}: ${count}`;
+                li.className = "flex justify-between text-sm py-1 border-b border-neutral-100 last:border-0";
+                li.innerHTML = `<span class="capitalize text-neutral-600">${cat}</span> <span class="font-bold text-neutral-900">${count}</span>`;
                 catList.appendChild(li);
             });
         }
@@ -143,7 +179,8 @@ async function renderHeatmap() {
             urgList.innerHTML = "";
             Object.entries(data.by_urgency).forEach(([urg, count]) => {
                 const li = document.createElement("li");
-                li.textContent = `${urg}: ${count}`;
+                li.className = "flex justify-between text-sm py-1 border-b border-neutral-100 last:border-0";
+                li.innerHTML = `<span class="capitalize text-neutral-600">${urg}</span> <span class="font-bold text-neutral-900">${count}</span>`;
                 urgList.appendChild(li);
             });
         }
@@ -152,65 +189,50 @@ async function renderHeatmap() {
         const heatmap = data.heatmap; // 24 rows (hours), 7 cols (days)
         const days = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
-        // Main grid container
+        // Simple Grid implementation
         let html = `
-            <div class="heatmap-grid w-full min-h-[600px] overflow-y-auto" style="width: 100%;">
-                <div class="heatmap-header-row contents">
-                    <div class="heatmap-corner p-2 text-xs font-bold text-gray-400"></div>
+            <div class="overflow-x-auto">
+                <div class="min-w-[600px] border border-neutral-200 rounded-lg overflow-hidden bg-white">
+                    <div class="grid grid-cols-[50px_repeat(7,1fr)] bg-neutral-50 border-b border-neutral-200">
+                        <div class="p-2"></div>
+                        ${days.map(d => `<div class="p-2 text-center text-xs font-semibold text-neutral-500">${d}</div>`).join('')}
+                    </div>
         `;
 
-        days.forEach(d => {
-            html += `<div class="heatmap-col-header p-2 text-center text-xs font-bold text-gray-300 border-b border-white/10 sticky top-0 bg-gray-900 z-10">${d}</div>`;
-        });
-
-        html += `</div>`;
-
-        // Rows
         for (let hour = 0; hour < 24; hour++) {
-            // Time label
             const hourLabel = `${hour.toString().padStart(2, '0')}:00`;
-            html += `<div class="heatmap-row-label p-2 text-xs text-gray-400 border-r border-white/10 text-right font-mono">${hourLabel}</div>`;
+            html += `<div class="grid grid-cols-[50px_repeat(7,1fr)] border-b border-neutral-100 last:border-0">
+                        <div class="p-2 text-xs text-neutral-400 text-right font-mono bg-neutral-50/50">${hourLabel}</div>`;
 
             for (let day = 0; day < 7; day++) {
                 const val = heatmap[hour][day];
-
-                // Color scale
-                let bgClass = "bg-white/5";
+                let bgClass = "bg-white";
                 let textClass = "text-transparent";
-                let tooltip = `${days[day]} ${hour}:00 - ${val} chiamate`;
+                let tooltip = `${days[day]} ${hourLabel} - ${val} chiamate`;
 
                 if (val > 0) {
-                    textClass = "text-white/80 font-bold";
-                    if (val < 2) bgClass = "bg-blue-900/40";
-                    else if (val < 5) bgClass = "bg-blue-700/60";
-                    else if (val < 10) bgClass = "bg-blue-600/80";
-                    else bgClass = "bg-blue-500";
-                } else {
-                    textClass = "text-white/10";
+                    textClass = "text-white font-bold";
+                    // Using neutral scale for light theme
+                    if (val < 2) bgClass = "bg-neutral-300";
+                    else if (val < 5) bgClass = "bg-neutral-500";
+                    else if (val < 10) bgClass = "bg-neutral-700";
+                    else bgClass = "bg-neutral-900";
                 }
 
                 html += `
-                    <div class="heatmap-cell relative group p-1 flex items-center justify-center border-b border-r border-white/5 hover:border-white/20 transition-all cursor-default ${bgClass}" title="${tooltip}">
-                        <span class="text-xs ${textClass}">${val > 0 ? val : '-'}</span>
+                    <div class="relative group h-8 flex items-center justify-center border-r border-neutral-50 last:border-r-0 ${bgClass} transition-colors" title="${tooltip}">
+                        <span class="text-[10px] ${textClass}">${val > 0 ? val : ''}</span>
                     </div>
                 `;
             }
+            html += `</div>`;
         }
 
-        html += `</div>`;
-
+        html += `</div></div>`;
         container.innerHTML = html;
-
-        // Force full width
-        const grid = container.querySelector('.heatmap-grid');
-        if (grid) {
-            const containerWidth = container.offsetWidth || container.clientWidth;
-            if (containerWidth > 0) {
-                grid.style.width = containerWidth + 'px';
-            }
-        }
 
     } catch (e) {
         console.warn("Could not render heatmap", e);
+        container.innerHTML = "<p class='text-red-500 text-sm p-4'>Errore caricamento grafico.</p>";
     }
 }
