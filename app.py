@@ -74,10 +74,18 @@ if SENTRY_DSN:
         traces_sample_rate=1.0,
     )
 
+# Secrets Management
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY is required")
+
+if len(SECRET_KEY) < 32:
+    logger.warning("SECRET_KEY is too short (less than 32 chars). Please use a stronger key in production.")
+
 app = FastAPI()
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET", "super-secret-change-me"),
+    secret_key=SECRET_KEY,
 )
 
 @app.middleware("http")
