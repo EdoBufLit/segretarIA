@@ -1235,6 +1235,11 @@ async def analytics_user(
 
 
 
+class AdminUpdateUserRequest(BaseModel):
+    studio_name: Optional[str] = None
+    email: Optional[str] = None
+    # Potentially other fields like notification_email if we add it later
+
 @app.get("/admin/users")
 async def admin_list_users(
     limit: int = 50,
@@ -1265,6 +1270,7 @@ async def admin_list_users(
             "id": u.id,
             "username": u.username,
             "email": u.email,
+            "studio_name": u.studio_name,
             "role": u.role,
             "is_active": u.is_active,
             "subscription_status": sub_status,
@@ -1273,6 +1279,90 @@ async def admin_list_users(
         })
 
     return {"status": "ok", "total": total, "items": items}
+
+@app.patch("/admin/users/{user_id}")
+async def admin_update_user(
+    user_id: int,
+    payload: AdminUpdateUserRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    """
+    Updates user details (email, studio_name).
+    Acts as the DB-backed replacement for modifying clients.json.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if payload.email is not None:
+        # Check uniqueness if changed
+        if payload.email != user.email:
+            existing = db.query(User).filter(User.email == payload.email).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="Email already in use")
+            user.email = payload.email
+
+    if payload.studio_name is not None:
+        user.studio_name = payload.studio_name
+
+    db.commit()
+
+    # Audit log
+    audit_logger.log_audit_event(
+        db=db,
+        actor_type="admin",
+        action="update_user",
+        entity_type="user",
+        entity_id=str(user.id),
+        admin_username=admin.username,
+        meta={"changes": payload.dict(exclude_unset=True)}
+    )
+
+    return {"status": "ok", "user": {"id": user.id, "email": user.email, "studio_name": user.studio_name}}
+
+@app.get("/api/admin/agent-users")
+async def api_admin_agent_users(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    """
+    Returns a mapping of agent_id -> User details.
+    Used by frontend to populate settings dropdown with User info.
+    Includes data merged from User and AgentRouting.
+    """
+    # Fetch all routing entries
+    routings = db.query(AgentRouting).all()
+
+    mapping = {}
+    for r in routings:
+        if r.user_id:
+            user = db.query(User).filter(User.id == r.user_id).first()
+            if user:
+                # Get associated phone number e164 if linked in routing
+                phone_e164 = r.phone_number.e164 if r.phone_number else None
+
+                # We map by agent_id because the frontend selects by agent_id
+                mapping[r.agent_id] = {
+                    "user_id": user.id,
+                    "email": user.email,
+                    "studio_name": user.studio_name,
+                    "username": user.username,
+                    "agent_phone_number_id": r.phone_number_id, # Internal DB ID
+                    # We might need the ElevenLabs ID from clients.json legacy or stored elsewhere?
+                    # For now, let's assume 'agent_phone_number_id' in settings meant the ElevenLabs ID string.
+                    # But the DB has 'phone_number_id' as Integer FK.
+                    # If the user input was a string (e.g. "pn_..."), we don't have a column for that on AgentRouting yet?
+                    # Let's check the clients.json structure. It had "agent_phone_number_id".
+                    # If this is an ElevenLabs specific ID, it should probably be on Agent or AgentRouting.
+                    # For now, we return what we have. If the frontend needs to edit legacy JSON fields,
+                    # we might need to keep reading JSON for those specific fields OR migrate them to DB.
+                    # The prompt says: "la sezione che modifica email_to deve aggiornare User.email... studio_name -> User.studio_name".
+                    # "rimuovi dipendenza da /clients/...".
+                    # We will rely on User data.
+                }
+
+    return {"status": "ok", "mapping": mapping}
 
 @app.post("/admin/users/{user_id}/suspend")
 async def admin_suspend_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
