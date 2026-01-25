@@ -517,9 +517,13 @@ async function loadUsersTable(offsetOverride = null) {
             const tr = document.createElement("tr");
             tr.className = "hover:bg-neutral-50 transition-colors border-b border-neutral-100 text-sm text-neutral-600";
 
-            const activeBadge = u.is_active
-                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">ATTIVO</span>`
-                : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">SOSPESO</span>`;
+            const toggleSwitch = `
+                <label class="inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer" ${u.is_active ? 'checked' : ''} onchange="toggleUserActive(${u.id}, '${u.username.replace(/'/g, "\\'")}', this)">
+                  <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-neutral-900 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                  <span class="ms-3 text-xs font-medium ${u.is_active ? 'text-green-700' : 'text-neutral-500'} toggle-label-${u.id}">${u.is_active ? 'Attivo' : 'Disattivato'}</span>
+                </label>
+            `;
 
             let subBadgeClass = "bg-neutral-100 text-neutral-500 border border-neutral-200";
             if (u.subscription_status === 'active') subBadgeClass = "bg-green-100 text-green-700 border border-green-200";
@@ -529,22 +533,17 @@ async function loadUsersTable(offsetOverride = null) {
             const subBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${subBadgeClass}">${u.subscription_status.toUpperCase()}</span>`;
 
             const safeUsername = u.username.replace(/'/g, "\\'");
-            const actionBtn = u.is_active
-                ? `<button onclick="suspendUser(${u.id}, '${safeUsername}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors">SOSPENDI</button>`
-                : `<div class="flex gap-2 justify-end">
-                     <button onclick="unsuspendUser(${u.id}, '${safeUsername}')" class="text-green-600 hover:text-green-800 text-xs font-semibold border border-green-200 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition-colors">RIATTIVA</button>
-                     <button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-white text-xs font-semibold bg-red-600 hover:bg-red-700 px-2 py-1 rounded shadow transition-colors">ELIMINA</button>
-                   </div>`;
+            const deleteBtn = `<button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors ml-2">ELIMINA</button>`;
 
             tr.innerHTML = `
                 <td class="px-6 py-3 font-mono text-xs text-neutral-500">${u.id}</td>
                 <td class="px-6 py-3 font-medium text-neutral-900">${u.email}</td>
                 <td class="px-6 py-3 text-neutral-500">${u.role}</td>
-                <td class="px-6 py-3">${activeBadge}</td>
+                <td class="px-6 py-3">${u.role === 'client' ? toggleSwitch : '-'}</td>
                 <td class="px-6 py-3 text-neutral-500 uppercase text-xs">${u.plan_code}</td>
                 <td class="px-6 py-3">${subBadge}</td>
                 <td class="px-6 py-3 text-right">
-                    ${u.role === 'client' ? actionBtn : ''}
+                    ${u.role === 'client' ? deleteBtn : ''}
                 </td>
             `;
             tbody.appendChild(tr);
@@ -571,16 +570,36 @@ function usersNext() {
     }
 }
 
-function suspendUser(id, username) {
-    showConfirm("Sospendi Utente", `Vuoi davvero sospendere ${username}? Non potrà più accedere.`, async () => {
-        const res = await fetch(`/admin/users/${id}/suspend`, { method: "POST" });
+async function toggleUserActive(id, username, checkbox) {
+    const isActive = checkbox.checked;
+    const action = isActive ? "unsuspend" : "suspend";
+    const label = document.querySelector(`.toggle-label-${id}`);
+
+    // Optimistic UI update
+    if (label) {
+        label.textContent = isActive ? "Attivo" : "Disattivato";
+        label.className = `ms-3 text-xs font-medium ${isActive ? 'text-green-700' : 'text-neutral-500'} toggle-label-${id}`;
+    }
+
+    try {
+        const res = await fetch(`/admin/users/${id}/${action}`, { method: "POST" });
         if (res.ok) {
-            showToast("Utente sospeso", "success");
-            loadUsersTable();
+            showToast(isActive ? "Utente riattivato" : "Utente sospeso", "success");
         } else {
-            showToast("Errore", "error");
+            // Revert on failure
+            checkbox.checked = !isActive;
+            if (label) {
+                label.textContent = !isActive ? "Attivo" : "Disattivato";
+                label.className = `ms-3 text-xs font-medium ${!isActive ? 'text-green-700' : 'text-neutral-500'} toggle-label-${id}`;
+            }
+            showToast("Errore durante l'aggiornamento stato", "error");
         }
-    });
+    } catch (e) {
+        console.error(e);
+        // Revert on error
+        checkbox.checked = !isActive;
+        showToast("Errore di rete", "error");
+    }
 }
 
 function deleteUser(id, username) {
@@ -606,17 +625,6 @@ function deleteUser(id, username) {
     );
 }
 
-function unsuspendUser(id, username) {
-    showConfirm("Riattiva Utente", `Vuoi riattivare ${username}?`, async () => {
-        const res = await fetch(`/admin/users/${id}/unsuspend`, { method: "POST" });
-        if (res.ok) {
-            showToast("Utente riattivato", "success");
-            loadUsersTable();
-        } else {
-            showToast("Errore", "error");
-        }
-    });
-}
 
 // =========================
 // PHONE NUMBERS (NUMERI)

@@ -109,6 +109,15 @@
     <main class="flex-1 overflow-auto bg-neutral-50 pt-16 md:pt-0 relative">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
+            {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
+
+            {% if not service_active %}
+            <div class="relative bg-yellow-100 text-yellow-900 font-inter py-3 px-4 rounded mb-8 flex items-center gap-3 border border-yellow-200 shadow-sm">
+                <span class="text-xl">⚠️</span>
+                <span class="font-medium text-sm md:text-base">Il tuo piano è scaduto o il servizio è disattivato. Rinnova per continuare a ricevere le chiamate dalla tua segreteria AI.</span>
+            </div>
+            {% endif %}
+
             <!-- TOP HEADER -->
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div>
@@ -118,7 +127,6 @@
 
                 <!-- Status Badges -->
                 <div class="flex items-center gap-3">
-                    {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
                     {% if service_active %}
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5"></span>
@@ -141,6 +149,18 @@
 
             <!-- DASHBOARD SECTION -->
             <section id="section-dashboard" class="section space-y-6">
+                {% if not service_active %}
+                <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm text-center">
+                    <div class="mx-auto w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                        <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
+                    </div>
+                    <h3 class="text-lg font-medium text-neutral-900">Dashboard Limitata</h3>
+                    <p class="text-neutral-500 mt-2 mb-6">Riattiva il tuo piano per accedere alle statistiche e ai grafici.</p>
+                    <a href="/billing/plans" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none">
+                        Gestisci Abbonamento
+                    </a>
+                </div>
+                {% else %}
                 <!-- KPI Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <!-- Minuti -->
@@ -193,10 +213,20 @@
                         <canvas id="chart_all_clients"></canvas>
                     </div>
                 </div>
+                {% endif %}
             </section>
 
             <!-- LOGS SECTION -->
             <section id="section-logs" class="section hidden space-y-6">
+                {% if not service_active %}
+                <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm text-center">
+                    <div class="mx-auto w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                        <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
+                    </div>
+                    <h3 class="text-lg font-medium text-neutral-900">Registro Bloccato</h3>
+                    <p class="text-neutral-500 mt-2">Riattiva il servizio per consultare lo storico chiamate.</p>
+                </div>
+                {% else %}
                 <div class="dashboard-card bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
                     <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-white">
                         <h3 class="text-base font-semibold text-neutral-900">Registro Chiamate</h3>
@@ -227,10 +257,20 @@
                         <button id="logs-next" onclick="logsNext()" class="text-sm font-medium text-neutral-600 hover:text-neutral-900 disabled:opacity-50">Avanti</button>
                     </div>
                 </div>
+                {% endif %}
             </section>
 
             <!-- ANALYTICS SECTION -->
             <section id="section-analytics" class="section hidden space-y-6">
+                {% if not service_active %}
+                <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm text-center">
+                    <div class="mx-auto w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                        <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
+                    </div>
+                    <h3 class="text-lg font-medium text-neutral-900">Analytics Bloccati</h3>
+                    <p class="text-neutral-500 mt-2">Le statistiche non sono disponibili senza un piano attivo.</p>
+                </div>
+                {% else %}
                 <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
                     <h3 class="text-base font-semibold text-neutral-900 mb-6">Distribuzione Oraria</h3>
                     <div id="heatmap-container" class="w-full overflow-x-auto pb-2">
@@ -249,10 +289,20 @@
                         <ul id="analytics-urgency-list" class="space-y-2 text-sm text-neutral-600"></ul>
                     </div>
                 </div>
+                {% endif %}
             </section>
 
             <!-- NUMBERS SECTION -->
             <section id="section-numbers" class="section hidden space-y-6">
+                {% if not service_active %}
+                <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm text-center">
+                    <div class="mx-auto w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                        <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
+                    </div>
+                    <h3 class="text-lg font-medium text-neutral-900">Gestione Numeri Bloccata</h3>
+                    <p class="text-neutral-500 mt-2">Non puoi gestire i numeri finché il servizio è sospeso.</p>
+                </div>
+                {% else %}
                 <div class="dashboard-card bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
                     <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-white">
                         <h3 class="text-base font-semibold text-neutral-900">Numeri Assegnati</h3>
@@ -278,6 +328,7 @@
                         </table>
                     </div>
                 </div>
+                {% endif %}
             </section>
 
             <!-- SETTINGS SECTION -->
