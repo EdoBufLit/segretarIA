@@ -54,6 +54,12 @@ from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
+from alerting import (
+    log_critical_error,
+    track_webhook_success,
+    get_monitoring_stats,
+)
+
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -155,6 +161,10 @@ async def startup_event():
     # Log ADMIN_EMAIL status
     admin_email_configured = "yes" if os.getenv("ADMIN_EMAIL") else "no"
     logger.info(f"ADMIN_EMAIL configured: {admin_email_configured}")
+
+    # Log TELEGRAM status
+    telegram_configured = "yes" if os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_ADMIN_CHAT_ID") else "no"
+    logger.info(f"TELEGRAM ALERT configured: {telegram_configured}")
 
     try:
         logger.info("Starting database backup...")
@@ -260,33 +270,72 @@ class AgentSettingsUpdate(BaseModel):
 # ================== HEALTH ENDPOINTS ==================
 
 @app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+async def health_check(db: Session = Depends(get_db)):
+    """
+    Extended Health Check for monitoring and diagnostics.
+    Returns:
+    {
+      "status": "ok"|"degraded"|"error",
+      "db": true|false,
+      "redis": true|false,
+      "pending_jobs": int,
+      "last_webhook": "ISO8601",
+      "last_email_sent": "ISO8601"
+    }
+    """
+    response_data = {
+        "status": "ok",
+        "db": False,
+        "redis": False,
+        "pending_jobs": 0,
+        "last_webhook": None,
+        "last_email_sent": None
+    }
 
-@app.get("/ready")
-async def readiness_check(db: Session = Depends(get_db)):
-    # Check Database
+    # 1. DB Check
     try:
         db.execute(text("SELECT 1"))
-        db_status = "ok"
+        response_data["db"] = True
     except Exception as e:
-        logger.error(f"Readiness check failed (DB): {e}")
-        db_status = "failed"
-        return Response(status_code=503, content=json.dumps({"status": "failed", "db": db_status}), media_type="application/json")
+        logger.error(f"Health check DB failed: {e}")
+        response_data["db"] = False
 
-    # Check Redis
-    redis_status = "ok"
+    # 2. Redis & Queue Check
     try:
-        redis = get_redis_connection()
-        redis.ping()
-    except Exception as e:
-        logger.error(f"Readiness check failed (Redis): {e}")
-        redis_status = "failed"
-        # Redis might be optional depending on config, but if configured, we should check.
-        # Assuming Redis is critical for async jobs.
-        return Response(status_code=503, content=json.dumps({"status": "failed", "db": db_status, "redis": redis_status}), media_type="application/json")
+        redis_conn = get_redis_connection()
+        redis_conn.ping()
+        response_data["redis"] = True
 
-    return {"status": "ok", "db": db_status, "redis": redis_status}
+        # Pending Jobs
+        try:
+            queue = get_queue()
+            response_data["pending_jobs"] = queue.count
+        except Exception as q_e:
+            logger.warning(f"Health check Queue count failed: {q_e}")
+            # If redis is up but queue fails, we keep redis=True but job count might be off
+            response_data["pending_jobs"] = 0
+
+    except Exception as e:
+        logger.error(f"Health check Redis failed: {e}")
+        response_data["redis"] = False
+
+    # 3. Retrieve Stats (Last Webhook / Email)
+    try:
+        stats = get_monitoring_stats()
+        response_data["last_webhook"] = stats.get("last_webhook_time")
+        response_data["last_email_sent"] = stats.get("last_email_time")
+    except Exception as e:
+        logger.warning(f"Health check stats retrieval failed: {e}")
+
+    # 4. Determine Overall Status
+    if not response_data["db"]:
+        response_data["status"] = "error" # Critical
+    elif not response_data["redis"]:
+        response_data["status"] = "degraded" # Semi-critical
+    else:
+        response_data["status"] = "ok"
+
+    return response_data
 
 
 # ================== ENDPOINT DI TEST ==================
@@ -624,6 +673,62 @@ async def admin_reset_password(user_id: int, db: Session = Depends(get_db), admi
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/admin/diagnostics", response_class=HTMLResponse)
+async def admin_diagnostics(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    # 1. Fetch Monitoring Stats (Redis)
+    stats = get_monitoring_stats()
+
+    # 2. Fetch DB Stats (Counts)
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    events_today = db.query(UsageEvent).filter(UsageEvent.created_at >= today_start).count()
+
+    # 3. Active Agents
+    active_routing = db.query(AgentRouting).filter(AgentRouting.status == 'active').all()
+    # Enrich with user info and phone number
+    agents_list = []
+    for r in active_routing:
+        username = r.user.username if r.user else "Unassigned"
+        phone = r.phone_number.e164 if r.phone_number else "N/D"
+        agents_list.append({
+            "agent_id": r.agent_id,
+            "username": username,
+            "phone": phone
+        })
+
+    # 4. Status Checks (Live)
+    db_status = True
+    try:
+        db.execute(text("SELECT 1"))
+    except:
+        db_status = False
+
+    redis_status = True
+    queue_count = 0
+    try:
+        r = get_redis_connection()
+        r.ping()
+        q = get_queue()
+        queue_count = q.count
+    except:
+        redis_status = False
+
+    context = {
+        "request": request,
+        "user": admin,
+        "stats": stats,
+        "events_today": events_today,
+        "agents": agents_list,
+        "db_status": db_status,
+        "redis_status": redis_status,
+        "queue_count": queue_count
+    }
+
+    return templates.TemplateResponse("admin_diagnostics.html", context)
+
 @app.get("/admin/export/minutes")
 async def admin_export_minutes(
     from_date: str = Query(..., alias="from"),
@@ -791,9 +896,10 @@ async def elevenlabs_webhook(request: Request):
     """
     Webhook ElevenLabs.
     - Single body read
-    - Signature verification
+    - Signature verification (alert if fail)
     - Type validation
     - Async processing
+    - Monitoring tracking
     """
     # 0) Auth & Body Read
     secret = os.getenv("ELEVENLABS_WEBHOOK_SECRET")
@@ -801,6 +907,8 @@ async def elevenlabs_webhook(request: Request):
 
     if secret:
         if not verify_elevenlabs_signature(raw_body, request.headers, secret):
+            # ALERTING: Invalid Signature
+            log_critical_error("Webhook ElevenLabs - firma non valida!", context={"action": "webhook_signature_check"})
             logger.warning("[WEBHOOK] Invalid signature")
             return Response(status_code=401)
 
@@ -828,7 +936,14 @@ async def elevenlabs_webhook(request: Request):
     try:
         queue = get_queue()
         queue.enqueue(process_elevenlabs_event_job, payload)
+
+        # ALERTING: Track Success
+        if agent_id and call_id:
+            track_webhook_success(agent_id, call_id)
+
     except Exception as e:
+        # ALERTING: Enqueue failure
+        log_critical_error(f"Webhook enqueue failed: {e}", context={"agent_id": agent_id, "call_id": call_id})
         logger.error(f"[WEBHOOK] Failed to enqueue: {e}")
         # Return 500 so ElevenLabs retries if our infrastructure is down
         raise HTTPException(status_code=500, detail="Queue unavailable")

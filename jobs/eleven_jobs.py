@@ -9,6 +9,7 @@ from billing_service import BillingService
 from jobs.email_jobs import send_email_job
 from call_utils import log_call, summarize_call, build_email_body_html, extract_transcript_text
 from queue_utils import get_queue
+from alerting import log_critical_error
 import os
 
 logger = logging.getLogger("eleven_jobs")
@@ -24,6 +25,16 @@ def process_elevenlabs_event_job(payload: dict):
     - Meter usage
     - Enqueue email
     """
+    try:
+        _process_elevenlabs_event_logic(payload)
+    except Exception as e:
+        data = payload.get("data", {})
+        agent_id = data.get("agent_id", "unknown")
+        call_id = data.get("metadata", {}).get("phone_call", {}).get("call_sid", "unknown")
+        log_critical_error(f"Job fallito per agent_id {agent_id}: {e}", context={"agent_id": agent_id, "call_id": call_id})
+        raise
+
+def _process_elevenlabs_event_logic(payload: dict):
     logger.info("Processing ElevenLabs event...")
 
     data = payload.get("data", {})
