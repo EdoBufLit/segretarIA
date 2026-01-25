@@ -26,7 +26,7 @@ from fastapi import Form, Depends
 from fastapi.templating import Jinja2Templates
 import httpx
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, func
 from db import get_db, SessionLocal
 from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken
 from auth import (
@@ -1657,10 +1657,35 @@ async def dashboard(
 
     logger.info(f"Rendering dashboard for user {user.username} (role: {user.role})")
 
-    return templates.TemplateResponse("dashboard.html", {
+    if user.role == 'admin':
+        return templates.TemplateResponse("admin_dashboard.html", {
+            "request": request,
+            "user": user_dict,
+            "subscription": subscription_data
+        })
+
+    # Client Logic
+    minutes_limit = 0
+    minutes_used = 0
+    minutes_remaining = 0
+
+    if sub and sub.plan:
+        minutes_limit = sub.plan.minutes_per_cycle
+
+        # Calculate usage for this subscription
+        usage_seconds = db.query(func.sum(UsageEvent.billed_seconds)) \
+                            .filter(UsageEvent.subscription_id == sub.id).scalar() or 0
+
+        minutes_used = usage_seconds / 60
+        minutes_remaining = max(0, minutes_limit - minutes_used)
+
+    return templates.TemplateResponse("client_dashboard.html", {
         "request": request,
         "user": user_dict,
-        "subscription": subscription_data
+        "subscription": subscription_data,
+        "minutes_limit": minutes_limit,
+        "minutes_used": minutes_used,
+        "minutes_remaining": minutes_remaining
     })
 
 

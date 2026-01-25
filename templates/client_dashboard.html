@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Segreteria IA – Dashboard Cliente</title>
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <!-- HeroIcons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Custom Dark Theme -->
+    <link rel="stylesheet" href="/static/styles.css?v=6">
+    <link rel="stylesheet" href="/static/css/effects.css">
+
+    <style>
+        body { font-family: 'Outfit', sans-serif; background-color: #0a0a0a; }
+        .sidebar { background-color: #09090b !important; border-right: 1px solid rgba(255,255,255,0.05); }
+        .glass-card { background: rgba(255, 255, 255, 0.02) !important; border: 1px solid rgba(255, 255, 255, 0.05) !important; }
+
+        .nav-item-active {
+            background: rgba(255, 255, 255, 0.05) !important;
+            color: #fff !important;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.1);
+        }
+        .nav-item:hover { background: rgba(255, 255, 255, 0.05) !important; }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.1); }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+        table { border-collapse: separate !important; border-spacing: 0 10px !important; }
+        thead th { color: var(--muted) !important; font-weight: 600 !important; text-transform: uppercase; font-size: 0.75rem; border: none !important; }
+        tbody tr { background: var(--panel) !important; border: 1px solid var(--border) !important; }
+        td { border: none !important; border-bottom: 1px solid var(--border) !important; }
+        tbody tr td:first-child { border-top-left-radius: 12px; border-bottom-left-radius: 12px; border-left: 1px solid var(--border) !important; }
+        tbody tr td:last-child { border-top-right-radius: 12px; border-bottom-right-radius: 12px; border-right: 1px solid var(--border) !important; }
+        tbody tr td { border-top: 1px solid var(--border) !important; border-bottom: 1px solid var(--border) !important; }
+
+        .text-green-600 { color: #34d399 !important; }
+        .text-red-600 { color: #f87171 !important; }
+    </style>
+</head>
+<body>
+    <!-- Background Effects -->
+    <div class="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+        <div class="noise-bg"></div>
+        <div class="hero-blob hero-blob--one opacity-20"></div>
+        <div class="hero-blob hero-blob--two opacity-20"></div>
+    </div>
+
+    <!-- LOG DETAIL MODAL -->
+    <div id="log-detail-modal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="glass-card w-11/12 md:w-3/4 lg:w-1/2 p-0 flex flex-col max-h-[80vh] overflow-hidden">
+            <div class="p-4 border-b border-[var(--border)] flex justify-between items-center bg-[var(--panel2)]">
+                <h3 class="text-xl font-bold text-white">Dettaglio chiamata</h3>
+                <button onclick="closeLogDetail()" class="text-white hover:text-gray-300">
+                    <i data-feather="x"></i>
+                </button>
+            </div>
+            <div class="p-6 flex-1 overflow-auto">
+                <div id="log-detail-content" class="space-y-4 text-sm text-[var(--text)]"></div>
+            </div>
+            <div class="p-4 border-t border-[var(--border)] bg-[var(--panel2)] text-right">
+                <button onclick="closeLogDetail()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded shadow-lg transition-colors">Chiudi</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="app relative z-10">
+        <!-- SIDEBAR -->
+        <aside class="sidebar flex flex-col">
+            <div class="flex items-center gap-3 px-2 mb-8">
+                <img src="/static/img/logo.png" alt="Segreteria IA" class="w-10 h-10 rounded-xl shadow-lg object-cover">
+                <h1 class="font-bold text-xl tracking-tight text-white">Segreteria <span class="text-blue-400">IA</span></h1>
+            </div>
+
+            <nav class="flex-1 space-y-2">
+                <a href="#" data-section="dashboard" onclick="openSection('dashboard')" class="nav-item nav-item-active flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="home" class="w-5 h-5"></i>
+                    <span class="font-medium">Dashboard</span>
+                </a>
+                <a href="#" data-section="logs" onclick="openSection('logs')" class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="list" class="w-5 h-5"></i>
+                    <span class="font-medium">Logs</span>
+                </a>
+                <a href="#" data-section="analytics" onclick="openSection('analytics')" class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="bar-chart-2" class="w-5 h-5"></i>
+                    <span class="font-medium">Analytics</span>
+                </a>
+
+                <div class="my-4 border-t border-[var(--border)]"></div>
+
+                <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="settings" class="w-5 h-5"></i>
+                    <span class="font-medium">Impostazioni</span>
+                </a>
+            </nav>
+
+            <div class="mt-auto pt-4 border-t border-[var(--border)]">
+                <a href="/logout" class="flex items-center gap-3 p-3 rounded-lg text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all">
+                    <i data-feather="log-out" class="w-5 h-5"></i>
+                    <span class="font-medium">Logout</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- MAIN AREA -->
+        <main class="main">
+            <!-- TOPBAR -->
+            <div class="topbar border-b border-white/5 bg-black/20 backdrop-blur-md">
+                <div class="flex items-center gap-4">
+                    <h2 id="page-title" class="text-xl font-bold text-white tracking-tight">Panoramica</h2>
+                </div>
+
+                <!-- Status Bar -->
+                <div id="status-bar" class="hidden md:flex items-center gap-6 px-6 py-1 mx-4 bg-[var(--panel2)] rounded-full border border-[var(--border)] text-xs font-medium ml-auto mr-4">
+                     <!-- Service Status -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-[var(--muted)]">Servizio:</span>
+                        {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
+                        {% set service_suspended = not user.is_active %}
+
+                        {% if service_active %}
+                            <span id="status-service" class="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">ATTIVO</span>
+                        {% elif service_suspended %}
+                             <span id="status-service" class="px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">SOSPESO</span>
+                        {% else %}
+                             <span id="status-service" class="px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30">NON ATTIVO</span>
+                        {% endif %}
+                    </div>
+                     <!-- Separator -->
+                    <div class="w-px h-4 bg-[var(--border)]"></div>
+                     <!-- Billing Status -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-[var(--muted)]">Billing:</span>
+                        {% if subscription %}
+                            {% set state = subscription.state|upper %}
+                            {% set bill_class = "text-green-400 font-bold" if state == 'ACTIVE' else "text-red-400 font-bold" %}
+                            <span id="status-billing" class="{{ bill_class }}">{{ state }}</span>
+                        {% else %}
+                            <span id="status-billing" class="text-[var(--muted)]">NESSUNO</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                     <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500"></div>
+                </div>
+            </div>
+
+            <!-- DASHBOARD SECTION -->
+            <section id="section-dashboard" class="section">
+                <!-- KPI CARDS -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <!-- Minuti Rimanenti -->
+                    <div class="glass-card kpi">
+                        <div>
+                            <div class="card-title">MINUTI RIMANENTI</div>
+                            <div class="value text-white">
+                                {{ minutes_remaining | round(0) | int }}
+                                <span class="text-sm text-[var(--muted)] font-normal">/ {{ minutes_limit }}</span>
+                            </div>
+                        </div>
+                        <i data-feather="clock" class="ml-auto text-[var(--muted)] opacity-50"></i>
+                    </div>
+
+                    <!-- Chiamate Oggi -->
+                    <div class="glass-card kpi">
+                        <div>
+                            <div class="card-title">CHIAMATE OGGI</div>
+                            <div id="kpi-today" class="value text-blue-400">—</div>
+                        </div>
+                        <i data-feather="phone-incoming" class="ml-auto text-[var(--muted)] opacity-50"></i>
+                    </div>
+
+                    <!-- Chiamate 7 GG -->
+                    <div class="glass-card kpi">
+                        <div>
+                            <div class="card-title">ULTIMI 7 GIORNI</div>
+                            <div id="kpi-week" class="value text-purple-400">—</div>
+                        </div>
+                        <i data-feather="calendar" class="ml-auto text-[var(--muted)] opacity-50"></i>
+                    </div>
+
+                    <!-- Errori -->
+                    <div class="glass-card kpi">
+                        <div>
+                            <div class="card-title">ERRORI/FALLITE</div>
+                            <div id="kpi-errors" class="value text-red-400">—</div>
+                        </div>
+                        <i data-feather="alert-circle" class="ml-auto text-[var(--muted)] opacity-50"></i>
+                    </div>
+                </div>
+
+                <!-- Main Chart -->
+                 <div class="glass-card mb-10">
+                    <h2 class="text-2xl font-semibold mb-4 text-white">📈 Attività giornaliera</h2>
+                    <canvas id="chart_all_clients" height="100"></canvas>
+                </div>
+
+            </section>
+
+             <!-- LOGS SECTION -->
+            <section id="section-logs" class="section hidden">
+                <div class="glass-card p-0 overflow-hidden flex flex-col h-[calc(100vh-140px)]">
+                     <div class="p-4 border-b border-[var(--border)] bg-[var(--panel2)] flex flex-wrap gap-4 items-end">
+                        <button onclick="loadLogsTable(null)" class="ml-auto bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded text-sm font-medium shadow flex items-center gap-2">
+                            <i data-feather="refresh-cw" class="w-3 h-3"></i> Aggiorna
+                        </button>
+                    </div>
+                    <div class="flex-1 overflow-auto p-4">
+                        <table class="w-full text-left border-separate border-spacing-y-2">
+                            <thead>
+                                <tr>
+                                    <th class="px-4 py-2">Data</th>
+                                    <th class="px-4 py-2">Numero</th>
+                                    <th class="px-4 py-2">Stato</th>
+                                    <th class="px-4 py-2">Durata</th>
+                                    <th class="px-4 py-2">Riassunto</th>
+                                    <th class="px-4 py-2 text-center">Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-table" class="space-y-4"></tbody>
+                        </table>
+                    </div>
+                     <div class="p-4 border-t border-[var(--border)] bg-[var(--panel2)] flex justify-between items-center text-sm">
+                        <button id="logs-prev" onclick="logsPrev()" class="px-3 py-1 rounded bg-[var(--panel)] border border-[var(--border)] text-white">&larr; Precedente</button>
+                        <span id="logs-info" class="text-[var(--muted)]"></span>
+                        <button id="logs-next" onclick="logsNext()" class="px-3 py-1 rounded bg-[var(--panel)] border border-[var(--border)] text-white">Successiva &rarr;</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ANALYTICS SECTION -->
+            <section id="section-analytics" class="section hidden">
+                <div class="glass-card p-6 mb-6">
+                    <h2 class="text-2xl font-semibold mb-6 text-white">Heatmap Oraria</h2>
+                    <div id="heatmap-container" class="w-full">
+                        <!-- Heatmap injected by JS -->
+                        <div class="text-gray-500 animate-pulse">Caricamento heatmap...</div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+                         <div>
+                            <h4 class="font-bold text-white mb-2">Per Categoria</h4>
+                            <ul id="analytics-category-list" class="list-disc list-inside text-gray-300 text-sm space-y-1"></ul>
+                         </div>
+                         <div>
+                            <h4 class="font-bold text-white mb-2">Per Urgenza</h4>
+                            <ul id="analytics-urgency-list" class="list-disc list-inside text-gray-300 text-sm space-y-1"></ul>
+                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SETTINGS SECTION (Placeholder for minimal settings if needed, or remove) -->
+            <section id="section-settings" class="section hidden">
+                 <div class="glass-card p-6 mb-6">
+                     <h2 class="text-xl text-white">Impostazioni</h2>
+                     <p class="text-gray-400">Contatta l'amministratore per modificare le impostazioni del tuo agente.</p>
+
+                     <div class="mt-8 border-t border-[var(--border)] pt-4">
+                        <h3 class="text-white font-bold mb-2">Il tuo piano</h3>
+                        <p class="text-gray-300">Piano attuale: <span class="text-blue-400 font-bold uppercase">{{ subscription.plan_code if subscription else 'NESSUNO' }}</span></p>
+                        <div class="mt-4">
+                            <a href="/billing/plans" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded shadow transition-colors">Gestisci Abbonamento</a>
+                        </div>
+                     </div>
+                 </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        window.user = {{ user | tojson }};
+    </script>
+    <script src="/static/client_dashboard.js"></script>
+    <script>
+        feather.replace();
+    </script>
+</body>
+</html>
