@@ -9,6 +9,7 @@ from sqlalchemy import (
     Table,
     func,
     JSON,
+    Text,
 )
 from sqlalchemy.orm import relationship
 from db import Base
@@ -41,6 +42,7 @@ class User(Base):
         "Agent", secondary=UserAgentAccess, back_populates="users"
     )
     phone_numbers = relationship("PhoneNumber", back_populates="user")
+    chat_messages = relationship("ChatMessage", back_populates="user")
 
 class Agent(Base):
     __tablename__ = "agents"
@@ -192,3 +194,15 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     user = relationship("User")
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sender_type = Column(String, nullable=False) # 'client' or 'admin'
+    message = Column(Text, nullable=False)
+    read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="chat_messages")

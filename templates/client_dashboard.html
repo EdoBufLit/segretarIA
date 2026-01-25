@@ -74,6 +74,11 @@
                 <i data-feather="phone" class="w-4 h-4"></i>
                 Numeri
             </a>
+            <a href="#" data-section="chat" onclick="openSection('chat')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors relative">
+                <i data-feather="message-square" class="w-4 h-4"></i>
+                Chat supporto
+                <span id="nav-chat-badge" class="hidden absolute right-2 top-2 w-2 h-2 bg-red-500 rounded-full"></span>
+            </a>
             <div class="pt-4 mt-4 border-t border-neutral-100"></div>
             <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
                 <i data-feather="settings" class="w-4 h-4"></i>
@@ -329,6 +334,36 @@
                     </div>
                 </div>
                 {% endif %}
+            </section>
+
+            <!-- CHAT SECTION -->
+            <section id="section-chat" class="section hidden h-[calc(100vh-12rem)] flex flex-col">
+                <div class="bg-white rounded-xl border border-neutral-200 shadow-sm flex flex-col h-full overflow-hidden">
+                    <!-- Chat Header -->
+                    <div class="px-6 py-4 border-b border-neutral-100 bg-neutral-50 flex justify-between items-center">
+                        <h3 class="text-base font-semibold text-neutral-900 flex items-center gap-2">
+                            <i data-feather="message-circle" class="w-4 h-4 text-neutral-500"></i>
+                            Supporto Diretto
+                        </h3>
+                        <div class="text-xs text-neutral-400">Rispondiamo il prima possibile</div>
+                    </div>
+
+                    <!-- Chat Messages -->
+                    <div id="chat-messages-container" class="flex-1 overflow-y-auto p-6 space-y-4 bg-white flex flex-col">
+                        <!-- Messages injected here -->
+                        <div class="text-center text-neutral-400 text-sm my-auto">Caricamento messaggi...</div>
+                    </div>
+
+                    <!-- Chat Input -->
+                    <div class="p-4 border-t border-neutral-100 bg-neutral-50">
+                        <form onsubmit="handleSendChat(event)" class="flex gap-2">
+                            <textarea id="chat-input" required placeholder="Scrivi un messaggio..." class="flex-1 p-3 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-neutral-900 focus:border-transparent outline-none resize-none text-sm h-12 min-h-[3rem] max-h-32 transition-all"></textarea>
+                            <button type="submit" class="bg-neutral-900 hover:bg-neutral-800 text-white p-3 rounded-lg shadow-sm transition-colors flex items-center justify-center h-12 w-12 flex-shrink-0">
+                                <i data-feather="send" class="w-4 h-4"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
             </section>
 
             <!-- SETTINGS SECTION -->

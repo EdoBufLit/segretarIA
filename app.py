@@ -28,7 +28,7 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from db import get_db, SessionLocal
-from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken, AgentSettings, CallLog
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken, AgentSettings, CallLog, ChatMessage, Agent
 from auth import (
     hash_password,
     verify_password,
@@ -49,7 +49,6 @@ from client_service import ClientService
 from billing_service import BillingService
 from backup_db import perform_backup, enforce_retention
 from stripe_service import StripeService
-from models import Agent, Subscription
 from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
@@ -58,6 +57,7 @@ from alerting import (
     log_critical_error,
     track_webhook_success,
     get_monitoring_stats,
+    notify_chat_message,
 )
 
 # ================== CONFIG BASE ==================
@@ -2341,6 +2341,182 @@ async def get_my_logs(
         return {"status": "ok", "total": 0, "items": []}
 
     return _read_logs(db, agent_ids, limit, offset, status, date_from, date_to, q)
+
+
+# ================== CHAT SUPPORT ==================
+
+class ChatMessageCreate(BaseModel):
+    message: str
+    user_id: Optional[int] = None # Required for Admin sender
+
+@app.get("/api/chat/messages")
+async def get_chat_messages(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    user_id: Optional[int] = None, # Admin can specify which user thread
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_page) # Can be client or admin
+):
+    target_user_id = current_user.id
+
+    # If Admin, allow viewing other users' chats
+    if current_user.role == 'admin':
+        if user_id:
+            target_user_id = user_id
+    elif user_id and user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot view other users' chats")
+
+    total = db.query(ChatMessage).filter(ChatMessage.user_id == target_user_id).count()
+
+    messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.user_id == target_user_id)
+        .order_by(ChatMessage.created_at.asc()) # History order
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "status": "ok",
+        "total": total,
+        "items": [
+            {
+                "id": m.id,
+                "sender": m.sender_type, # 'client' | 'admin'
+                "message": m.message,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "read": m.read
+            } for m in messages
+        ]
+    }
+
+@app.post("/api/chat/messages")
+async def send_chat_message(
+    payload: ChatMessageCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    sender_type = "client"
+    target_user_id = current_user.id
+
+    # Admin logic
+    if current_user.role == 'admin':
+        sender_type = "admin"
+        if not payload.user_id:
+            raise HTTPException(status_code=400, detail="Admin must specify user_id")
+        target_user_id = payload.user_id
+
+    # Create Message
+    msg = ChatMessage(
+        user_id=target_user_id,
+        sender_type=sender_type,
+        message=payload.message,
+        read=False
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+
+    # Notifications
+    if sender_type == "client":
+        # Notify Admin via Telegram
+        user = db.query(User).filter(User.id == target_user_id).first()
+        notify_chat_message(user, payload.message)
+
+    return {"status": "ok", "id": msg.id}
+
+@app.post("/api/chat/read")
+async def mark_chat_read(
+    payload: Dict[str, Any] = Body(...), # {user_id: ...} optional
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    target_user_id = current_user.id
+    target_sender_type = "admin" # Client reads admin messages
+
+    if current_user.role == 'admin':
+        if not payload.get("user_id"):
+             raise HTTPException(status_code=400, detail="Admin must specify user_id")
+        target_user_id = payload["user_id"]
+        target_sender_type = "client" # Admin reads client messages
+
+    # Update
+    db.query(ChatMessage).filter(
+        ChatMessage.user_id == target_user_id,
+        ChatMessage.sender_type == target_sender_type,
+        ChatMessage.read == False
+    ).update({"read": True})
+
+    db.commit()
+    return {"status": "ok"}
+
+@app.get("/api/admin/chat/conversations")
+async def get_admin_conversations(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    # List distinct user_ids from ChatMessages
+    # And count unread messages (sender_type='client', read=False)
+
+    # Simplified logic using python aggregation
+    # Fetch all users who have at least one message
+
+    chat_users_ids = db.query(ChatMessage.user_id).distinct().all()
+    ids = [r[0] for r in chat_users_ids]
+
+    if not ids:
+        return {"status": "ok", "conversations": []}
+
+    users = db.query(User).filter(User.id.in_(ids)).all()
+
+    conversations = []
+    for u in users:
+        # Get unread count
+        unread = db.query(ChatMessage).filter(
+            ChatMessage.user_id == u.id,
+            ChatMessage.sender_type == 'client',
+            ChatMessage.read == False
+        ).count()
+
+        # Get last message
+        last_msg = db.query(ChatMessage).filter(ChatMessage.user_id == u.id).order_by(ChatMessage.created_at.desc()).first()
+
+        conversations.append({
+            "user_id": u.id,
+            "username": u.username,
+            "studio_name": u.studio_name,
+            "email": u.email,
+            "unread_count": unread,
+            "last_message": last_msg.message[:50] if last_msg else "",
+            "last_active": last_msg.created_at.isoformat() if last_msg else None
+        })
+
+    # Sort by last_active desc
+    conversations.sort(key=lambda x: x['last_active'] or "", reverse=True)
+
+    return {"status": "ok", "conversations": conversations}
+
+@app.get("/api/chat/unread-count")
+async def get_unread_count(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role == 'admin':
+        # Total unread messages from clients
+        count = db.query(ChatMessage).filter(
+            ChatMessage.sender_type == 'client',
+            ChatMessage.read == False
+        ).count()
+    else:
+        # Unread messages from admin for this client
+        count = db.query(ChatMessage).filter(
+            ChatMessage.user_id == current_user.id,
+            ChatMessage.sender_type == 'admin',
+            ChatMessage.read == False
+        ).count()
+
+    return {"status": "ok", "count": count}
 
 
 

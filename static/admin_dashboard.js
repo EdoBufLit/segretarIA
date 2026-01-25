@@ -627,6 +627,184 @@ function deleteUser(id, username) {
 
 
 // =========================
+// CHAT ADMIN
+// =========================
+
+let adminChatPollInterval = null;
+let currentChatUserId = null;
+
+function startAdminChatPolling() {
+    if (adminChatPollInterval) clearInterval(adminChatPollInterval);
+    checkAdminUnreadBadge();
+    adminChatPollInterval = setInterval(() => {
+        loadConversations();
+        if (currentChatUserId) {
+            loadChatDetail(currentChatUserId);
+        }
+        checkAdminUnreadBadge();
+    }, 5000);
+}
+
+function stopAdminChatPolling() {
+    if (adminChatPollInterval) {
+        clearInterval(adminChatPollInterval);
+        adminChatPollInterval = null;
+    }
+}
+
+async function checkAdminUnreadBadge() {
+    try {
+        const res = await fetch("/api/chat/unread-count");
+        if (res.ok) {
+            const data = await res.json();
+            const count = data.count || 0;
+            const badge = document.getElementById("admin-chat-badge");
+            if (badge) {
+                if (count > 0) {
+                    badge.classList.remove("hidden");
+                } else {
+                    badge.classList.add("hidden");
+                }
+            }
+        }
+    } catch(e) {}
+}
+
+async function loadConversations() {
+    const list = document.getElementById("admin-conversations-list");
+    if (!list) return;
+
+    try {
+        const res = await fetch("/api/admin/chat/conversations");
+        const data = await res.json();
+        const convs = data.conversations || [];
+
+        if (convs.length === 0) {
+            list.innerHTML = `<div class="text-center py-8 text-neutral-400 text-sm">Nessuna conversazione attiva.</div>`;
+            return;
+        }
+
+        list.innerHTML = convs.map(c => {
+            const isActive = currentChatUserId === c.user_id;
+            const unreadBadge = c.unread_count > 0
+                ? `<span class="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">${c.unread_count}</span>`
+                : '';
+
+            return `
+                <div onclick="selectChatUser(${c.user_id}, '${c.username.replace(/'/g, "\\'")}')"
+                     class="p-4 cursor-pointer hover:bg-neutral-50 transition-colors border-l-4 ${isActive ? 'bg-neutral-50 border-neutral-900' : 'border-transparent'}">
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="font-medium text-sm text-neutral-900 truncate">${c.studio_name || c.username}</span>
+                        ${unreadBadge}
+                    </div>
+                    <div class="text-xs text-neutral-500 truncate">${c.last_message || "Nessun messaggio"}</div>
+                    <div class="text-[10px] text-neutral-400 mt-1 text-right">${c.last_active ? formatDate(c.last_active) : ''}</div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (e) {
+        console.warn("Conversations load error", e);
+    }
+}
+
+function selectChatUser(userId, username) {
+    currentChatUserId = userId;
+
+    // UI Update
+    document.getElementById("admin-chat-placeholder").classList.add("hidden");
+    document.getElementById("admin-chat-title").textContent = username;
+    document.getElementById("admin-chat-subtitle").textContent = "ID: " + userId;
+
+    loadChatDetail(userId);
+    loadConversations(); // Update selection style
+}
+
+async function loadChatDetail(userId) {
+    const container = document.getElementById("admin-chat-messages");
+    if (!container) return;
+
+    try {
+        // Mark read
+        fetch("/api/chat/read", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: userId })
+        });
+
+        const res = await fetch(`/api/chat/messages?limit=100&user_id=${userId}`);
+        const data = await res.json();
+        const items = data.items || [];
+
+        if (items.length === 0) {
+            container.innerHTML = `<div class="text-center text-neutral-400 text-sm my-auto">Nessun messaggio in questa conversazione.</div>`;
+            return;
+        }
+
+        // Render
+        const isScrolledToBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+
+        container.innerHTML = items.map(msg => {
+            const isMe = msg.sender === 'admin';
+            return `
+                <div class="flex ${isMe ? 'justify-end' : 'justify-start'}">
+                    <div class="max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${isMe ? 'bg-neutral-900 text-white rounded-br-none' : 'bg-neutral-100 text-neutral-800 rounded-bl-none'}">
+                        ${escapeHtml(msg.message)}
+                        <div class="text-[10px] opacity-50 mt-1 text-right">${formatTime(msg.created_at)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        if (isScrolledToBottom) {
+            container.scrollTop = container.scrollHeight;
+        }
+
+    } catch (e) {
+        console.warn("Chat detail error", e);
+    }
+}
+
+async function handleSendAdminChat(event) {
+    event.preventDefault();
+    if (!currentChatUserId) return;
+
+    const input = document.getElementById("admin-chat-input");
+    const message = input.value.trim();
+    if (!message) return;
+
+    try {
+        input.value = "";
+        const res = await fetch("/api/chat/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: message, user_id: currentChatUserId })
+        });
+
+        if (res.ok) {
+            loadChatDetail(currentChatUserId);
+        } else {
+            showToast("Errore invio messaggio", "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Errore di rete", "error");
+    }
+}
+
+function formatDate(isoStr) {
+    if (!isoStr) return "-";
+    const d = new Date(isoStr);
+    return d.toLocaleDateString("it-IT", { month: 'short', day: 'numeric' });
+}
+
+function formatTime(isoStr) {
+    if (!isoStr) return "";
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString("it-IT", { hour: '2-digit', minute: '2-digit' });
+}
+
+// =========================
 // PHONE NUMBERS (NUMERI)
 // =========================
 

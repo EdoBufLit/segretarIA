@@ -14,7 +14,7 @@ KEY_LAST_EMAIL_TIME = "last_email_time"
 KEY_LAST_EMAIL_TO = "last_email_to"
 KEY_CRITICAL_ERRORS = "critical_errors"
 
-def send_telegram_alert(message: str):
+def send_telegram_alert(message: str, parse_mode: str = None):
     """
     Sends a message to the configured Telegram chat.
     Uses sync HTTP client to be safe in exception handlers.
@@ -29,9 +29,13 @@ def send_telegram_alert(message: str):
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
+    payload = {"chat_id": chat_id, "text": message}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+
     try:
         with httpx.Client(timeout=5.0) as client:
-            resp = client.post(url, data={"chat_id": chat_id, "text": message})
+            resp = client.post(url, data=payload)
             if resp.status_code != 200:
                 logger.error(f"[Telegram] Failed to send alert: {resp.text}")
     except Exception as e:
@@ -67,6 +71,33 @@ def log_critical_error(message: str, context: dict = None):
         redis.ltrim(KEY_CRITICAL_ERRORS, 0, 49)
     except Exception as e:
         logger.error(f"Failed to log critical error to Redis: {e}")
+
+def notify_chat_message(user, message_content: str):
+    """
+    Sends a Telegram alert for a new client chat message.
+    """
+    try:
+        # Truncate message
+        preview = message_content[:250] + ("..." if len(message_content) > 250 else "")
+
+        # Build public URL for admin (heuristic)
+        base_url = os.getenv("DOMAIN_NAME", "http://localhost:8000")
+        if not base_url.startswith("http"):
+            base_url = f"https://{base_url}"
+
+        chat_url = f"{base_url.rstrip('/')}/dashboard#section-chat" # Admin dashboard anchor
+
+        identifier = user.studio_name or user.username or user.email
+
+        msg = (
+            f"💬 <b>Nuovo messaggio dal cliente {identifier}</b>\n\n"
+            f"<i>{preview}</i>\n\n"
+            f"<a href='{chat_url}'>Apri Chat Admin</a>"
+        )
+
+        send_telegram_alert(msg, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Failed to send chat notification: {e}")
 
 def track_webhook_success(agent_id: str, call_id: str):
     """
