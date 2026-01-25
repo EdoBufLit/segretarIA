@@ -17,7 +17,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def get_token_serializer() -> URLSafeTimedSerializer:
-    secret = os.getenv("SESSION_SECRET", "super-secret-change-me")
+    secret = os.getenv("SECRET_KEY")
+    if not secret:
+        raise RuntimeError("SECRET_KEY is required for token generation")
     return URLSafeTimedSerializer(secret)
 
 

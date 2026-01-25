@@ -280,6 +280,9 @@ async function initLogsSection() {
 // IMPOSTAZIONI CLIENTE (Fase 6)
 // =========================
 
+// Store for agent->user mapping
+let agentUserMapping = {};
+
 async function initSettingsSection() {
     const select = document.getElementById("settings-client-select");
     if (!select) return;
@@ -309,18 +312,29 @@ async function initSettingsSection() {
         return;
     }
 
-    // Admin Logic
-    const res = await fetch("/clients");
-    const data = await res.json();
+    // Admin Logic: Fetch Agent-User mapping from DB
+    try {
+        const res = await fetch("/api/admin/agent-users");
+        if (!res.ok) throw new Error("Failed to fetch agent mappings");
+        const data = await res.json();
 
-    const clientsObj = data.clients || {};
+        agentUserMapping = data.mapping || {};
 
-    for (const agentId in clientsObj) {
-        const cfg = clientsObj[agentId];
-        const opt = document.createElement("option");
-        opt.value = agentId;
-        opt.textContent = `${cfg.studio_name || agentId}`;
-        select.appendChild(opt);
+        if (Object.keys(agentUserMapping).length === 0) {
+             select.innerHTML = "<option disabled>Nessun agente configurato (DB)</option>";
+             return;
+        }
+
+        for (const agentId in agentUserMapping) {
+            const info = agentUserMapping[agentId];
+            const opt = document.createElement("option");
+            opt.value = agentId;
+            opt.textContent = `${info.studio_name || info.username} (${agentId})`;
+            select.appendChild(opt);
+        }
+    } catch (e) {
+        console.error("Error loading settings dropdown:", e);
+        select.innerHTML = "<option disabled>Errore caricamento</option>";
     }
 }
 
@@ -329,23 +343,57 @@ async function loadClientSettings() {
     const agentId = select.value;
     if (!agentId) return;
 
-    const res = await fetch(`/clients/${agentId}`);
-    const data = await res.json();
-    const client = data.client || {};
+    window.currentSettingsAgentId = agentId;
 
-    document.getElementById("settings-studio-name").value = client.studio_name || "";
-    document.getElementById("settings-email-to").value = client.email_to || "";
-    document.getElementById("settings-greeting").value = client.greeting || "";
-    document.getElementById("settings-notes").value = client.notes || "";
+    // 1. Fetch DB Info (Source of Truth for Studio/Email)
+    let studioName = "";
+    let emailTo = "";
 
-    // 🔥 nuovi campi
-    document.getElementById("settings-agent-phone-id").value = client.agent_phone_number_id || "";
-    document.getElementById("settings-test-phone").value = client.test_phone_number || "";
+    if (agentUserMapping[agentId]) {
+        const info = agentUserMapping[agentId];
+        studioName = info.studio_name || "";
+        emailTo = info.email || "";
+    } else {
+        console.warn("Agent not found in mapping, trying refresh...");
+        await initSettingsSection();
+        if (agentUserMapping[agentId]) {
+             const info = agentUserMapping[agentId];
+             studioName = info.studio_name || "";
+             emailTo = info.email || "";
+        }
+    }
+
+    // 2. Fetch Legacy JSON Info (Source of Truth for Test Config/Notes/Greeting)
+    let agentPhoneId = "";
+    let testPhone = "";
+    let greeting = "";
+    let notes = "";
+
+    try {
+        const res = await fetch(`/clients/${agentId}`);
+        if (res.ok) {
+            const data = await res.json();
+            const client = data.client || {};
+            agentPhoneId = client.agent_phone_number_id || "";
+            testPhone = client.test_phone_number || "";
+            greeting = client.greeting || "";
+            notes = client.notes || "";
+        }
+    } catch (e) {
+        console.warn("Could not fetch legacy settings:", e);
+    }
+
+    // 3. Populate Form
+    document.getElementById("settings-studio-name").value = studioName;
+    document.getElementById("settings-email-to").value = emailTo;
+
+    document.getElementById("settings-greeting").value = greeting;
+    document.getElementById("settings-notes").value = notes;
+    document.getElementById("settings-agent-phone-id").value = agentPhoneId;
+    document.getElementById("settings-test-phone").value = testPhone;
 
     const form = document.getElementById("settings-form");
     form.classList.remove("hidden");
-
-    window.currentSettingsAgentId = agentId;
 }
 
 
@@ -356,30 +404,62 @@ async function saveClientSettings() {
         return;
     }
 
-    const payload = {
+    // Identify User ID from mapping
+    const userInfo = agentUserMapping[agentId];
+    if (!userInfo || !userInfo.user_id) {
+        alert("Impossibile trovare l'utente associato a questo agente (DB Sync mancante?).");
+        return;
+    }
+
+    // 1. Save DB Fields (Studio, Email)
+    const dbPayload = {
         studio_name: document.getElementById("settings-studio-name").value,
-        email_to: document.getElementById("settings-email-to").value,
+        email: document.getElementById("settings-email-to").value
+    };
+
+    // 2. Save Legacy Fields (Test Config, Notes)
+    const jsonPayload = {
         greeting: document.getElementById("settings-greeting").value,
         notes: document.getElementById("settings-notes").value,
         agent_phone_number_id: document.getElementById("settings-agent-phone-id").value,
         test_phone_number: document.getElementById("settings-test-phone").value
     };
 
-    const res = await fetch(`/clients/${agentId}/update`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-    });
+    try {
+        // Parallel requests
+        const [dbRes, jsonRes] = await Promise.all([
+            fetch(`/admin/users/${userInfo.user_id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(dbPayload)
+            }),
+            fetch(`/clients/${agentId}/update`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(jsonPayload)
+            })
+        ]);
 
-    const data = await res.json();
-    if (data.status === "ok") {
-        alert("Impostazioni salvate.");
-    } else {
-        alert("Errore nel salvataggio impostazioni.");
+        if (dbRes.ok && jsonRes.ok) {
+            alert("Impostazioni salvate (DB + Legacy Config).");
+            // Refresh mapping
+            await initSettingsSection();
+            // Reselect
+            const select = document.getElementById("settings-client-select");
+            select.value = agentId;
+        } else {
+            let msg = "Errore nel salvataggio.";
+            if (!dbRes.ok) msg += " Errore DB.";
+            if (!jsonRes.ok) msg += " Errore Legacy Config.";
+            alert(msg);
+        }
+    } catch(e) {
+        console.error(e);
+        alert("Errore di rete.");
     }
 
-    await loadClients();
-    await renderGlobalChart();
+    // Refresh other views
+    await loadUsersTable(); // Since we modified User
 }
 
 // =========================
