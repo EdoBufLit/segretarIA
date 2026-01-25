@@ -69,6 +69,10 @@ def process_elevenlabs_event_job(payload: dict):
     start_dt_obj = datetime.fromisoformat(started_at) if started_at else datetime.utcnow()
     end_dt_obj = datetime.fromisoformat(ended_at) if ended_at else datetime.utcnow()
 
+    # Variables for email sending (resolved via DB)
+    db_email_to = None
+    db_studio_name = None
+
     # === DB OPERATIONS (SYNC & VALIDATION & LOCKING) ===
     with SessionLocal() as db:
         try:
@@ -114,6 +118,10 @@ def process_elevenlabs_event_job(payload: dict):
             if agent_obj:
                 user = db.query(User).filter(User.agents.contains(agent_obj)).first()
 
+            # Fallback to AgentRouting user if standard UserAgentAccess fails or is missing
+            if not user and routing and routing.user_id:
+                user = db.query(User).filter(User.id == routing.user_id).first()
+
             if not agent_obj or not user:
                 logger.warning(f"[JOB] Unassigned agent/user for agent_id {agent_id}. Storing UnassignedEvent.")
                 unassigned = UnassignedEvent(
@@ -124,6 +132,10 @@ def process_elevenlabs_event_job(payload: dict):
                 db.add(unassigned)
                 db.commit()
                 return # Stop processing
+
+            # Capture Email/Studio info from User (Source of Truth)
+            db_email_to = user.email
+            db_studio_name = user.studio_name
 
             # 4. Check Suspension
             if not user.is_active:
@@ -207,23 +219,14 @@ def process_elevenlabs_event_job(payload: dict):
     })
 
     # ENQUEUE EMAIL
-    clients_file = os.getenv("CLIENTS_FILE", "clients.json")
-    studio_name = STUDIO_NAME
-    email_to = os.getenv("EMAIL_TO")
 
-    if os.path.exists(clients_file):
-        try:
-            with open(clients_file, "r") as f:
-                clients_data = json.load(f)
-                if agent_id in clients_data:
-                    cfg = clients_data[agent_id]
-                    studio_name = cfg.get("studio_name", studio_name)
-                    email_to = cfg.get("email_to", email_to)
-        except Exception as e:
-            logger.error(f"Error loading clients.json: {e}")
+    # 1. Use DB resolved values
+    studio_name = db_studio_name or STUDIO_NAME
+    email_to = db_email_to
 
+    # 2. Strict Check: If no user/email found in DB, log unrouted and skip.
     if not email_to:
-        logger.error("No email_to configured, skipping email.")
+        logger.warning(f"[JOB] Unrouted event for agent_id={agent_id}. No user/email found in DB. Skipping email.")
         return
 
     try:
