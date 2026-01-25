@@ -27,12 +27,11 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import get_db, SessionLocal
-from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken
 from auth import (
     hash_password,
     verify_password,
-    generate_reset_token,
-    verify_reset_token,
+    generate_random_password,
     get_current_user,
     get_current_admin_user,
     require_role,
@@ -193,6 +192,25 @@ ALLOWED_LEAD_SECTORS = {
     "Altro",
 }
 ALLOWED_LEAD_VOLUMES = {"0–20/mese", "20–100", "100–300", "300+"}
+
+def get_public_base_url(request: Optional[Request] = None) -> str:
+    """
+    Returns the public base URL of the application.
+    Prioritizes DOMAIN_NAME env var (e.g. 'https://myapp.com').
+    Falls back to request.base_url if available.
+    Defaults to localhost.
+    """
+    domain = os.getenv("DOMAIN_NAME")
+    if domain:
+        # Ensure scheme
+        if not domain.startswith("http"):
+            domain = f"https://{domain}"
+        return domain.rstrip("/")
+
+    if request:
+        return str(request.base_url).rstrip("/")
+
+    return os.getenv("PUBLIC_BASE_URL") or "http://127.0.0.1:8000"
 
 # Display configuration for plans (prices are not in DB yet)
 PLANS_DISPLAY = {
@@ -845,7 +863,7 @@ async def create_checkout_session(
     service = StripeService(db)
     try:
         # Assuming we have a configured base URL or use request headers
-        base_url = os.getenv("PUBLIC_BASE_URL") or os.getenv("BASE_URL") or "http://127.0.0.1:8000"
+        base_url = get_public_base_url()
         base_url = base_url.rstrip("/")
 
         success_url = f"{base_url}/dashboard?billing=success"
@@ -1746,84 +1764,134 @@ async def forgot_password_form(request: Request):
 
 @app.post("/forgot-password", response_class=HTMLResponse)
 async def forgot_password_submit(request: Request, email: str = Form(...), db: Session = Depends(get_db)):
-    clean_email = email.strip()
+    clean_email = normalize_identifier(email)
     user = db.query(User).filter(User.email == clean_email).first()
 
     # Always return success message to prevent enumeration
     msg = "Se l'email esiste, riceverai un link per il reset della password."
 
     if user:
-        token = generate_reset_token(clean_email)
-        public_url = os.getenv("PUBLIC_BASE_URL") or os.getenv("BASE_URL") or "http://localhost:8000"
-        reset_link = f"{public_url}/reset-password?token={token}"
+        # Generate token
+        token_raw = generate_random_password(32)
+        token_hashed = hash_password(token_raw)
 
-        subject = "Reset Password - Segreteria IA"
+        # Store in DB
+        db_token = PasswordResetToken(
+            user_id=user.id,
+            token_hash=token_hashed,
+            expires_at=datetime.utcnow() + timedelta(minutes=30)
+        )
+        db.add(db_token)
+        db.commit()
+
+        # Build Link
+        public_url = get_public_base_url(request)
+        reset_link = f"{public_url}/reset-password?token={token_raw}&uid={user.id}"
+
+        subject = "Reimposta la tua password"
         body = f"""
         <p>Ciao {user.username},</p>
         <p>Hai richiesto il reset della password.</p>
         <p><a href="{reset_link}">Clicca qui per reimpostare la tua password</a></p>
-        <p>Il link scadrà tra 1 ora.</p>
+        <p>Il link scadrà tra 30 minuti ed è utilizzabile una sola volta.</p>
         <p>Se non sei stato tu, ignora questa email.</p>
         """
         try:
-            # Using send_email utility
-            # mailer.send_email(to, subject, body, html_body) - FROM is handled via env var
             send_email(user.email, subject, "Please view in HTML", html_body=body)
+            logger.info(f"Password reset email sent to {clean_email}")
         except Exception as e:
-            logger.error(f"Error sending reset email: {e}")
+            logger.error(f"Error sending reset email to {clean_email}: {e}")
             msg = "Errore durante l'invio dell'email. Riprova più tardi."
 
     return templates.TemplateResponse("forgot_password.html", {"request": request, "message": msg})
 
 
 @app.get("/reset-password", response_class=HTMLResponse)
-async def reset_password_form(request: Request, token: str = Query(...)):
-    email = verify_reset_token(token)
-    if not email:
+async def reset_password_form(request: Request, token: str = Query(...), uid: int = Query(...), db: Session = Depends(get_db)):
+    # Validate token existence roughly (detailed check on submit or here if strictly needed)
+    # We check if active token exists for user
+    # Note: We can't verify hash without the raw token, which we have.
+    # But for GET, we might just show the form.
+    # Security: If we verify here, we prevent spamming.
+
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+         return templates.TemplateResponse("forgot_password.html", {"request": request, "error": "Link non valido."})
+
+    # Find valid tokens for user
+    tokens = db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == uid,
+        PasswordResetToken.used_at == None,
+        PasswordResetToken.expires_at > datetime.utcnow()
+    ).all()
+
+    valid_found = False
+    for t in tokens:
+        if verify_password(token, t.token_hash):
+            valid_found = True
+            break
+
+    if not valid_found:
         return templates.TemplateResponse(
             "forgot_password.html",
             {"request": request, "error": "Link scaduto o non valido. Richiedi un nuovo reset."}
         )
-    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "email": email})
+
+    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "uid": uid, "email": user.email})
 
 
 @app.post("/reset-password", response_class=HTMLResponse)
 async def reset_password_submit(
     request: Request,
     token: str = Form(...),
+    uid: int = Form(...),
     password: str = Form(...),
     password_confirm: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    email = verify_reset_token(token)
-    if not email:
-        return templates.TemplateResponse(
-            "forgot_password.html",
-            {"request": request, "error": "Link scaduto o non valido. Richiedi un nuovo reset."}
-        )
-
     if len(password) < 8:
          return templates.TemplateResponse(
             "reset_password.html",
-            {"request": request, "token": token, "email": email, "error": "La password deve essere di almeno 8 caratteri."}
+            {"request": request, "token": token, "uid": uid, "error": "La password deve essere di almeno 8 caratteri."}
         )
 
     if password != password_confirm:
         return templates.TemplateResponse(
             "reset_password.html",
-            {"request": request, "token": token, "email": email, "error": "Le password non coincidono."}
+            {"request": request, "token": token, "uid": uid, "error": "Le password non coincidono."}
         )
 
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(User.id == uid).first()
     if not user:
-         # Should rarely happen if token is valid but user deleted in meantime
-         return templates.TemplateResponse(
+         return templates.TemplateResponse("forgot_password.html", {"request": request, "error": "Utente non trovato."})
+
+    # Verify Token
+    tokens = db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == uid,
+        PasswordResetToken.used_at == None,
+        PasswordResetToken.expires_at > datetime.utcnow()
+    ).all()
+
+    valid_token_record = None
+    for t in tokens:
+        if verify_password(token, t.token_hash):
+            valid_token_record = t
+            break
+
+    if not valid_token_record:
+        return templates.TemplateResponse(
             "forgot_password.html",
-            {"request": request, "error": "Utente non trovato."}
+            {"request": request, "error": "Link scaduto o già utilizzato."}
         )
 
+    # Reset
     user.password_hash = hash_password(password)
+    valid_token_record.used_at = datetime.utcnow()
     db.commit()
+
+    # Invalidate sessions?
+    # Current session is cookie based. We can't invalidate client cookies from here easily without a session table.
+    # But since password changed, they can login with new one.
 
     return RedirectResponse(url="/login?reset=1", status_code=302)
 
