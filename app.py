@@ -1877,21 +1877,22 @@ async def reset_password_submit(
     password_confirm: str = Form(...),
     db: Session = Depends(get_db)
 ):
+    # Retrieve user first to have context for re-rendering form on validation error
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+         return templates.TemplateResponse("forgot_password.html", {"request": request, "error": "Utente non trovato."})
+
     if len(password) < 8:
          return templates.TemplateResponse(
             "reset_password.html",
-            {"request": request, "token": token, "uid": uid, "error": "La password deve essere di almeno 8 caratteri."}
+            {"request": request, "token": token, "uid": uid, "email": user.email, "error": "La password deve essere di almeno 8 caratteri."}
         )
 
     if password != password_confirm:
         return templates.TemplateResponse(
             "reset_password.html",
-            {"request": request, "token": token, "uid": uid, "error": "Le password non coincidono."}
+            {"request": request, "token": token, "uid": uid, "email": user.email, "error": "Le password non coincidono."}
         )
-
-    user = db.query(User).filter(User.id == uid).first()
-    if not user:
-         return templates.TemplateResponse("forgot_password.html", {"request": request, "error": "Utente non trovato."})
 
     # Verify Token
     tokens = db.query(PasswordResetToken).filter(
