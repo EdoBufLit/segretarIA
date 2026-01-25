@@ -1,56 +1,61 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - Clients</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 2em; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-    </style>
-</head>
-<body>
-    <h1>Client Management</h1>
+{% extends "base.html" %}
 
-    <h2>Clients</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Username</th>
-                <th>Email</th>
-                <th>Studio Name</th>
-                <th>Subscription</th>
-                <th>Assigned Agents</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for client in clients %}
-            <tr>
-                <td>{{ client.id }}</td>
-                <td>{{ client.username }}</td>
-                <td>{{ client.email }}</td>
-                <td>{{ client.studio_name }}</td>
-                <td>
-                    {% if client.subscriptions %}
-                        {{ client.subscriptions[0].plan.code }} ({{ client.subscriptions[0].state }})
-                    {% else %}
-                        No Subscription
-                    {% endif %}
-                </td>
-                <td>
-                    {% if client.agents %}
-                        {{ client.agents|map(attribute='display_name')|join(', ') }}
-                    {% else %}
-                        None
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+{% block title %}Lista Clienti - Segreteria IA{% endblock %}
 
-</body>
-</html>
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-neutral-900 tracking-tight">Gestione Clienti</h1>
+        <p class="text-neutral-500 mt-2">Lista completa di tutti i clienti registrati.</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead class="bg-neutral-50 border-b border-neutral-200">
+                    <tr>
+                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">ID</th>
+                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Username</th>
+                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Email</th>
+                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Nome Studio</th>
+                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Abbonamento</th>
+                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Agenti Assegnati</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-100">
+                    {% for client in clients %}
+                    <tr class="hover:bg-neutral-50 transition-colors">
+                        <td class="px-6 py-4 text-sm text-neutral-500 font-mono">{{ client.id }}</td>
+                        <td class="px-6 py-4 text-sm text-neutral-900 font-medium">{{ client.username }}</td>
+                        <td class="px-6 py-4 text-sm text-neutral-600">{{ client.email }}</td>
+                        <td class="px-6 py-4 text-sm text-neutral-600">{{ client.studio_name or '-' }}</td>
+                        <td class="px-6 py-4 text-sm">
+                            {% if client.subscriptions %}
+                                {% set sub = client.subscriptions[0] %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ 'bg-green-100 text-green-800' if sub.state == 'active' else 'bg-yellow-100 text-yellow-800' }}">
+                                    {{ sub.plan.code|upper }} ({{ sub.state }})
+                                </span>
+                            {% else %}
+                                <span class="text-neutral-400 italic">Nessuno</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-neutral-600">
+                            {% if client.agents %}
+                                {{ client.agents|map(attribute='display_name')|join(', ') }}
+                            {% else %}
+                                <span class="text-neutral-400">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if not clients %}
+        <div class="p-8 text-center text-neutral-500">
+            Nessun cliente trovato.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
