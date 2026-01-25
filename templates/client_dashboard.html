@@ -5,8 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Segreteria IA – Dashboard</title>
 
-    <!-- Precompiled Tailwind subset -->
-    <link rel="stylesheet" href="/static/css/tailwind_custom.css">
+    <!-- Tailwind CSS CDN (Restored for layout stability) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        neutral: {
+                            50: '#fafafa',
+                            100: '#f5f5f5',
+                            200: '#e5e5e5',
+                            300: '#d4d4d4',
+                            400: '#a3a3a3',
+                            500: '#737373',
+                            600: '#525252',
+                            700: '#404040',
+                            800: '#262626',
+                            900: '#171717',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <!-- HeroIcons -->
     <script src="https://unpkg.com/feather-icons"></script>
@@ -14,78 +40,26 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f5f5f5; color: #171717; }
+        body { background-color: #f5f5f5; color: #171717; }
 
-        /* Sidebar Styling */
-        .sidebar {
-            background-color: #fafafa;
-            border-right: 1px solid #e5e5e5;
-        }
-
-        .nav-item {
-            color: #525252;
-            transition: all 0.15s ease;
-        }
-
-        .nav-item:hover {
-            background-color: #f3f4f6;
-            color: #171717;
-        }
-
-        .nav-item-active {
-            background-color: #e5e5e5 !important;
-            color: #171717 !important;
-            font-weight: 500;
-        }
-
-        /* Card Styling */
-        .dashboard-card {
-            background-color: #ffffff;
-            border: 1px solid #f3f4f6;
-            border-radius: 0.75rem; /* rounded-xl */
-            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            transition: box-shadow 0.2s ease;
-        }
-
-        .dashboard-card:hover {
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-
-        /* Table Styling */
-        table { border-collapse: separate; border-spacing: 0; width: 100%; }
-        th {
-            text-align: left;
-            padding: 0.75rem 1rem;
-            color: #737373;
-            font-weight: 500;
-            font-size: 0.875rem;
-            border-bottom: 1px solid #e5e5e5;
-        }
-        td {
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid #f3f4f6;
-            color: #171717;
-            font-size: 0.875rem;
-        }
-        tr:last-child td { border-bottom: none; }
-
-        /* Scrollbar */
+        /* Custom scrollbar to match Skills style */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
 
-        /* Modal Backdrop */
-        #log-detail-modal {
-            backdrop-filter: none; /* Removed for performance/clean look preference */
-            background-color: rgba(0,0,0,0.5);
+        .dashboard-card {
+            transition: box-shadow 0.2s ease;
+        }
+        .dashboard-card:hover {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
     </style>
 </head>
-<body class="h-screen flex overflow-hidden">
+<body class="h-screen flex overflow-hidden bg-neutral-100 font-sans text-neutral-900">
 
     <!-- SIDEBAR -->
-    <aside class="sidebar w-64 flex-shrink-0 flex flex-col hidden md:flex h-full">
+    <aside class="sidebar w-64 flex-shrink-0 flex flex-col hidden md:flex h-full bg-neutral-50 border-r border-neutral-200">
         <div class="p-6 border-b border-neutral-200">
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 bg-neutral-900 rounded-lg flex items-center justify-center text-white font-bold">S</div>
@@ -94,20 +68,20 @@
         </div>
 
         <nav class="flex-1 overflow-y-auto p-4 space-y-1">
-            <a href="#" data-section="dashboard" onclick="openSection('dashboard')" class="nav-item nav-item-active flex items-center gap-3 px-3 py-2 rounded-lg text-sm">
+            <a href="#" data-section="dashboard" onclick="openSection('dashboard')" class="nav-item nav-item-active flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-neutral-900 bg-neutral-200 transition-colors">
                 <i data-feather="grid" class="w-4 h-4"></i>
                 Panoramica
             </a>
-            <a href="#" data-section="logs" onclick="openSection('logs')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm">
+            <a href="#" data-section="logs" onclick="openSection('logs')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-colors">
                 <i data-feather="list" class="w-4 h-4"></i>
                 Storico Chiamate
             </a>
-            <a href="#" data-section="analytics" onclick="openSection('analytics')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm">
+            <a href="#" data-section="analytics" onclick="openSection('analytics')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-colors">
                 <i data-feather="bar-chart-2" class="w-4 h-4"></i>
                 Statistiche
             </a>
             <div class="pt-4 mt-4 border-t border-neutral-200"></div>
-            <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm">
+            <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-colors">
                 <i data-feather="settings" class="w-4 h-4"></i>
                 Impostazioni
             </a>
@@ -131,14 +105,14 @@
 
     <!-- MOBILE HEADER -->
     <div class="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-neutral-200 z-40 flex items-center justify-between px-4">
-        <span class="font-bold text-lg">Segreteria IA</span>
+        <span class="font-bold text-lg text-neutral-900">Segreteria IA</span>
         <button id="mobile-menu-btn" class="p-2 text-neutral-600">
             <i data-feather="menu"></i>
         </button>
     </div>
 
     <!-- MAIN CONTENT -->
-    <main class="flex-1 overflow-auto bg-[#f5f5f5] pt-16 md:pt-0 relative">
+    <main class="flex-1 overflow-auto bg-neutral-100 pt-16 md:pt-0 relative">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
             <!-- TOP HEADER -->
@@ -164,7 +138,7 @@
                     {% endif %}
 
                     {% if subscription %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600 border border-neutral-200 uppercase">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white text-neutral-600 border border-neutral-200 uppercase shadow-sm">
                             {{ subscription.plan_code }}
                         </span>
                     {% endif %}
@@ -176,42 +150,42 @@
                 <!-- KPI Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <!-- Minuti -->
-                    <div class="dashboard-card p-6">
+                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
                         <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-sm font-medium text-neutral-500 uppercase tracking-wider">Minuti</h3>
+                            <h3 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Minuti</h3>
                             <i data-feather="clock" class="w-4 h-4 text-neutral-400"></i>
                         </div>
                         <div class="flex items-baseline gap-2">
                             <span class="text-3xl font-bold text-neutral-900">{{ minutes_remaining | round(0) | int }}</span>
                             <span class="text-sm text-neutral-500">/ {{ minutes_limit }}</span>
                         </div>
-                        <div class="w-full bg-neutral-100 rounded-full h-1.5 mt-3">
+                        <div class="w-full bg-neutral-100 rounded-full h-1.5 mt-3 overflow-hidden">
                             <div class="bg-neutral-900 h-1.5 rounded-full" style="width: {{ (minutes_used / minutes_limit * 100) if minutes_limit > 0 else 0 }}%"></div>
                         </div>
                     </div>
 
                     <!-- Chiamate Oggi -->
-                    <div class="dashboard-card p-6">
+                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
                         <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-sm font-medium text-neutral-500 uppercase tracking-wider">Oggi</h3>
+                            <h3 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Oggi</h3>
                             <i data-feather="phone-incoming" class="w-4 h-4 text-neutral-400"></i>
                         </div>
                         <span id="kpi-today" class="text-3xl font-bold text-neutral-900">—</span>
                     </div>
 
                     <!-- Chiamate Settimana -->
-                    <div class="dashboard-card p-6">
+                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
                         <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-sm font-medium text-neutral-500 uppercase tracking-wider">7 Giorni</h3>
+                            <h3 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider">7 Giorni</h3>
                             <i data-feather="calendar" class="w-4 h-4 text-neutral-400"></i>
                         </div>
                         <span id="kpi-week" class="text-3xl font-bold text-neutral-900">—</span>
                     </div>
 
                     <!-- Errori -->
-                    <div class="dashboard-card p-6">
+                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
                         <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-sm font-medium text-neutral-500 uppercase tracking-wider">Errori</h3>
+                            <h3 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Errori</h3>
                             <i data-feather="alert-circle" class="w-4 h-4 text-neutral-400"></i>
                         </div>
                         <span id="kpi-errors" class="text-3xl font-bold text-red-600">—</span>
@@ -219,8 +193,8 @@
                 </div>
 
                 <!-- Main Chart -->
-                <div class="dashboard-card p-6">
-                    <h3 class="text-lg font-semibold text-neutral-900 mb-6">Attività Recente</h3>
+                <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
+                    <h3 class="text-base font-semibold text-neutral-900 mb-6">Attività Recente</h3>
                     <div class="relative h-64 w-full">
                         <canvas id="chart_all_clients"></canvas>
                     </div>
@@ -229,26 +203,26 @@
 
             <!-- LOGS SECTION -->
             <section id="section-logs" class="section hidden space-y-6">
-                <div class="dashboard-card overflow-hidden">
+                <div class="dashboard-card bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
                     <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-white">
-                        <h3 class="text-lg font-semibold text-neutral-900">Registro Chiamate</h3>
+                        <h3 class="text-base font-semibold text-neutral-900">Registro Chiamate</h3>
                         <button onclick="loadLogsTable(null)" class="p-2 hover:bg-neutral-100 rounded-lg transition-colors text-neutral-500">
                             <i data-feather="refresh-cw" class="w-4 h-4"></i>
                         </button>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full">
-                            <thead class="bg-neutral-50">
+                        <table class="w-full text-left">
+                            <thead class="bg-neutral-50 border-b border-neutral-100">
                                 <tr>
-                                    <th>Data</th>
-                                    <th>Numero</th>
-                                    <th>Stato</th>
-                                    <th>Durata</th>
-                                    <th>Riassunto</th>
-                                    <th></th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Data</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Numero</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Durata</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Riassunto</th>
+                                    <th class="px-6 py-3"></th>
                                 </tr>
                             </thead>
-                            <tbody id="logs-table" class="divide-y divide-neutral-100">
+                            <tbody id="logs-table" class="divide-y divide-neutral-100 bg-white">
                                 <!-- Populated by JS -->
                             </tbody>
                         </table>
@@ -263,8 +237,8 @@
 
             <!-- ANALYTICS SECTION -->
             <section id="section-analytics" class="section hidden space-y-6">
-                <div class="dashboard-card p-6">
-                    <h3 class="text-lg font-semibold text-neutral-900 mb-6">Distribuzione Oraria</h3>
+                <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
+                    <h3 class="text-base font-semibold text-neutral-900 mb-6">Distribuzione Oraria</h3>
                     <div id="heatmap-container" class="w-full overflow-x-auto pb-2">
                         <!-- JS Injection -->
                         <div class="text-neutral-400 text-sm animate-pulse">Caricamento dati...</div>
@@ -272,11 +246,11 @@
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="dashboard-card p-6">
+                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
                         <h3 class="text-base font-semibold text-neutral-900 mb-4">Categorie</h3>
                         <ul id="analytics-category-list" class="space-y-2 text-sm text-neutral-600"></ul>
                     </div>
-                    <div class="dashboard-card p-6">
+                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
                         <h3 class="text-base font-semibold text-neutral-900 mb-4">Urgenza</h3>
                         <ul id="analytics-urgency-list" class="space-y-2 text-sm text-neutral-600"></ul>
                     </div>
@@ -285,7 +259,7 @@
 
             <!-- SETTINGS SECTION -->
             <section id="section-settings" class="section hidden">
-                <div class="dashboard-card p-8 max-w-2xl">
+                <div class="dashboard-card bg-white p-8 rounded-xl border border-neutral-200 shadow-sm max-w-2xl">
                     <h3 class="text-xl font-bold text-neutral-900 mb-2">Impostazioni Account</h3>
                     <p class="text-neutral-500 mb-8">Gestisci le preferenze del tuo servizio.</p>
 
@@ -313,8 +287,8 @@
     </main>
 
     <!-- LOG DETAIL MODAL -->
-    <div id="log-detail-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden transform transition-all scale-100 opacity-100" role="dialog" aria-modal="true">
+    <div id="log-detail-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden transform transition-all scale-100 opacity-100 border border-neutral-200" role="dialog" aria-modal="true">
             <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
                 <h3 class="text-lg font-bold text-neutral-900">Dettaglio Chiamata</h3>
                 <button onclick="closeLogDetail()" class="text-neutral-400 hover:text-neutral-600 transition-colors">
@@ -326,8 +300,8 @@
                     <!-- Content injected by JS -->
                 </div>
             </div>
-            <div class="px-6 py-4 bg-neutral-50 text-right">
-                <button onclick="closeLogDetail()" class="px-4 py-2 bg-neutral-900 text-white text-sm font-medium rounded-lg hover:bg-neutral-800 transition-colors">Chiudi</button>
+            <div class="px-6 py-4 bg-neutral-50 text-right border-t border-neutral-100">
+                <button onclick="closeLogDetail()" class="px-4 py-2 bg-neutral-900 text-white text-sm font-medium rounded-lg hover:bg-neutral-800 transition-colors shadow-sm">Chiudi</button>
             </div>
         </div>
     </div>

@@ -4,17 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Segreteria IA - Segreteria Telefonica AI per Professionisti e Imprese</title>
-    <!-- Optimized CSS Loading: Precompiled Tailwind subset -->
-    <link rel="stylesheet" href="/static/css/tailwind_custom.css">
+
+    <!-- RESTORED: Tailwind CSS CDN for immediate fix of layout issues -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/booking_wizard.css">
     <link rel="stylesheet" href="/static/css/effects.css">
     <style>
-        body { font-family: 'Outfit', sans-serif; background-color: #0a0a0a; color: white; }
-        .nav-scrolled {
-            background: rgba(10, 10, 10, 0.7);
+        body { font-family: 'Outfit', sans-serif; background-color: #ffffff; color: #171717; }
+        .nav-scrolled {            background: rgba(255, 255, 255, 0.8);
             backdrop-filter: blur(12px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid #e5e5e5;
+        }
+        .fade-in-section {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+            will-change: opacity, transform;
+        }
+        .fade-in-section.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        /* Gradient Text */
+        .text-gradient {
+            background: linear-gradient(to right, #171717, #525252);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
         .fade-in-section {
             opacity: 0;
@@ -28,34 +45,25 @@
         }
     </style>
 </head>
-<body class="antialiased selection:bg-neutral-800 selection:text-white">
-
-    <!-- Premium Intro Overlay -->
-    <div id="premium-intro" class="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none opacity-0" aria-hidden="true">
-        <div class="intro-glow"></div>
-        <div class="intro-wordmark">Automa AI</div>
-        <div class="noise-bg absolute inset-0 opacity-10"></div>
-    </div>
-
-    <div class="noise-bg"></div>
+<body class="antialiased selection:bg-neutral-200 selection:text-black">
 
     <!-- Fixed Navbar -->
-    <nav class="fixed top-0 left-0 w-full z-50 transition-all duration-300 border-b border-transparent">
+    <nav class="fixed top-0 left-0 w-full z-50 transition-all duration-300 border-b border-transparent bg-white/50 backdrop-blur-sm">
         <div class="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
             <!-- Left: Logo -->
-            <a href="#" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;" class="text-xl font-bold tracking-tight text-white hover:text-neutral-300 transition-colors">
+            <a href="#" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;" class="text-xl font-bold tracking-tight text-neutral-900 hover:text-neutral-600 transition-colors">
                 Automa AI
             </a>
 
             <!-- Right: CTA -->
             <div class="flex items-center gap-6">
                 {% if user %}
-                <a href="/dashboard" class="text-sm font-medium text-neutral-400 hover:text-white transition-colors hidden sm:block">Dashboard</a>
+                <a href="/dashboard" class="text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors hidden sm:block">Dashboard</a>
                 {% else %}
-                <a href="/login" class="text-sm font-medium text-neutral-400 hover:text-white transition-colors hidden sm:block">Accedi</a>
+                <a href="/login" class="text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors hidden sm:block">Accedi</a>
                 {% endif %}
 
-                <button type="button" data-booking-open class="px-5 py-2 rounded-xl bg-white text-black font-medium text-sm hover:bg-neutral-200 transition-transform duration-150 hover:scale-105 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white">
+                <button type="button" data-booking-open class="px-5 py-2 rounded-xl bg-neutral-900 text-white font-medium text-sm hover:bg-neutral-800 transition-transform duration-150 hover:scale-105 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-neutral-900">
                     Contattaci
                 </button>
             </div>
@@ -67,8 +75,10 @@
         window.addEventListener('scroll', () => {
             if (window.scrollY > 20) {
                 nav.classList.add('nav-scrolled');
+                nav.classList.remove('bg-white/50');
             } else {
                 nav.classList.remove('nav-scrolled');
+                nav.classList.add('bg-white/50');
             }
         });
     </script>
@@ -76,37 +86,37 @@
     <!-- Hero Section -->
     <section class="relative pt-40 pb-32 lg:pt-56 lg:pb-40 overflow-hidden">
         <!-- Subtle Gradient Blob -->
-        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-neutral-800/20 blur-[120px] rounded-full pointer-events-none -z-10"></div>
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-blue-100/40 blur-[120px] rounded-full pointer-events-none -z-10"></div>
 
         <div class="max-w-5xl mx-auto px-6 relative z-10 text-center">
             <div class="fade-in-section is-visible">
-                <div class="inline-flex items-center px-3 py-1 rounded-full bg-neutral-900/50 border border-neutral-800 text-xs font-medium text-neutral-400 mb-8 backdrop-blur-md">
+                <div class="inline-flex items-center px-3 py-1 rounded-full bg-neutral-100 border border-neutral-200 text-xs font-medium text-neutral-600 mb-8">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2"></span>
                     AI Voice Assistant Enterprise
                 </div>
 
-                <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-[1.1] text-white">
+                <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-[1.1] text-neutral-900">
                     L'intelligenza che <br class="hidden md:block" />
-                    <span class="text-neutral-400">risponde per te.</span>
+                    <span class="text-neutral-500">risponde per te.</span>
                 </h1>
 
-                <p class="text-xl text-neutral-400 leading-relaxed mb-12 max-w-2xl mx-auto font-light">
+                <p class="text-xl text-neutral-600 leading-relaxed mb-12 max-w-2xl mx-auto font-light">
                     Gestisci le chiamate 24/7 con una voce naturale. Trascrive, analizza e organizza le tue comunicazioni in tempo reale.
                 </p>
 
                 <div class="flex flex-col sm:flex-row justify-center gap-4">
                     {% if user %}
-                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-white text-black font-semibold text-lg hover:bg-neutral-200 transition-all duration-200 hover:scale-105 shadow-lg shadow-white/5">
+                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-200/50">
                         Prenota Demo
                     </button>
-                    <a href="/dashboard" class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-medium text-lg border border-neutral-800 hover:bg-neutral-800 transition-all duration-200 hover:scale-105">
+                    <a href="/dashboard" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105">
                         Dashboard
                     </a>
                     {% else %}
-                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-white text-black font-semibold text-lg hover:bg-neutral-200 transition-all duration-200 hover:scale-105 shadow-lg shadow-white/5">
+                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-200/50">
                         Inizia Ora
                     </button>
-                    <a href="/login" class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-medium text-lg border border-neutral-800 hover:bg-neutral-800 transition-all duration-200 hover:scale-105">
+                    <a href="/login" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105">
                         Accedi
                     </a>
                     {% endif %}
@@ -116,23 +126,23 @@
     </section>
 
     <!-- Stats / Trust Section -->
-    <section class="border-y border-neutral-900 bg-neutral-900/20">
+    <section class="border-y border-neutral-100 bg-neutral-50">
         <div class="max-w-7xl mx-auto px-6 py-12">
             <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
                 <div class="flex flex-col gap-1">
-                    <span class="text-3xl font-bold text-white">24/7</span>
+                    <span class="text-3xl font-bold text-neutral-900">24/7</span>
                     <span class="text-sm text-neutral-500 font-medium tracking-wide">OPERATIVITÀ</span>
                 </div>
                 <div class="flex flex-col gap-1">
-                    <span class="text-3xl font-bold text-white">&lt;1s</span>
+                    <span class="text-3xl font-bold text-neutral-900">&lt;1s</span>
                     <span class="text-sm text-neutral-500 font-medium tracking-wide">LATENZA</span>
                 </div>
                 <div class="flex flex-col gap-1">
-                    <span class="text-3xl font-bold text-white">100%</span>
+                    <span class="text-3xl font-bold text-neutral-900">100%</span>
                     <span class="text-sm text-neutral-500 font-medium tracking-wide">ACCURATEZZA</span>
                 </div>
                 <div class="flex flex-col gap-1">
-                    <span class="text-3xl font-bold text-white">GDPR</span>
+                    <span class="text-3xl font-bold text-neutral-900">GDPR</span>
                     <span class="text-sm text-neutral-500 font-medium tracking-wide">COMPLIANT</span>
                 </div>
             </div>
@@ -140,94 +150,94 @@
     </section>
 
     <!-- Features Section -->
-    <section id="funzioni" class="py-32 relative">
+    <section id="funzioni" class="py-32 relative bg-white">
         <div class="max-w-7xl mx-auto px-6">
             <div class="text-center mb-24 fade-in-section">
-                <h2 class="text-4xl md:text-5xl font-bold mb-6 tracking-tight text-white">Funzionalità Core</h2>
-                <p class="text-neutral-400 max-w-xl mx-auto text-lg leading-relaxed">Strumenti essenziali progettati per la massima efficienza e chiarezza.</p>
+                <h2 class="text-4xl md:text-5xl font-bold mb-6 tracking-tight text-neutral-900">Funzionalità Core</h2>
+                <p class="text-neutral-500 max-w-xl mx-auto text-lg leading-relaxed">Strumenti essenziali progettati per la massima efficienza e chiarezza.</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <!-- Card 1 -->
-                <div class="group p-8 rounded-3xl bg-neutral-900/40 border border-neutral-800 hover:border-neutral-700 transition-all duration-300 fade-in-section">
-                    <div class="w-12 h-12 rounded-xl bg-neutral-800 flex items-center justify-center mb-6 text-white group-hover:scale-110 transition-transform duration-300">
+                <div class="group p-8 rounded-3xl bg-neutral-50 border border-neutral-100 hover:border-neutral-200 transition-all duration-300 fade-in-section">
+                    <div class="w-12 h-12 rounded-xl bg-white border border-neutral-200 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     </div>
-                    <h3 class="text-xl font-bold mb-3 text-white">Disponibilità Totale</h3>
-                    <p class="text-neutral-400 leading-relaxed">Nessuna attesa, nessuna chiamata persa. Gestione simultanea di volumi elevati senza compromessi sulla qualità.</p>
+                    <h3 class="text-xl font-bold mb-3 text-neutral-900">Disponibilità Totale</h3>
+                    <p class="text-neutral-500 leading-relaxed">Nessuna attesa, nessuna chiamata persa. Gestione simultanea di volumi elevati senza compromessi sulla qualità.</p>
                 </div>
 
                 <!-- Card 2 -->
-                <div class="group p-8 rounded-3xl bg-neutral-900/40 border border-neutral-800 hover:border-neutral-700 transition-all duration-300 fade-in-section" style="transition-delay: 100ms;">
-                    <div class="w-12 h-12 rounded-xl bg-neutral-800 flex items-center justify-center mb-6 text-white group-hover:scale-110 transition-transform duration-300">
+                <div class="group p-8 rounded-3xl bg-neutral-50 border border-neutral-100 hover:border-neutral-200 transition-all duration-300 fade-in-section" style="transition-delay: 100ms;">
+                    <div class="w-12 h-12 rounded-xl bg-white border border-neutral-200 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                     </div>
-                    <h3 class="text-xl font-bold mb-3 text-white">Sintesi Intelligente</h3>
-                    <p class="text-neutral-400 leading-relaxed">L'IA estrae i punti chiave di ogni conversazione, fornendoti report strutturati e azionabili immediatamente.</p>
+                    <h3 class="text-xl font-bold mb-3 text-neutral-900">Sintesi Intelligente</h3>
+                    <p class="text-neutral-500 leading-relaxed">L'IA estrae i punti chiave di ogni conversazione, fornendoti report strutturati e azionabili immediatamente.</p>
                 </div>
 
                 <!-- Card 3 -->
-                <div class="group p-8 rounded-3xl bg-neutral-900/40 border border-neutral-800 hover:border-neutral-700 transition-all duration-300 fade-in-section" style="transition-delay: 200ms;">
-                    <div class="w-12 h-12 rounded-xl bg-neutral-800 flex items-center justify-center mb-6 text-white group-hover:scale-110 transition-transform duration-300">
+                <div class="group p-8 rounded-3xl bg-neutral-50 border border-neutral-100 hover:border-neutral-200 transition-all duration-300 fade-in-section" style="transition-delay: 200ms;">
+                    <div class="w-12 h-12 rounded-xl bg-white border border-neutral-200 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
                     </div>
-                    <h3 class="text-xl font-bold mb-3 text-white">Metriche in Tempo Reale</h3>
-                    <p class="text-neutral-400 leading-relaxed">Dashboard analitica per monitorare trend, volumi e tipologie di richieste con precisione chirurgica.</p>
+                    <h3 class="text-xl font-bold mb-3 text-neutral-900">Metriche in Tempo Reale</h3>
+                    <p class="text-neutral-500 leading-relaxed">Dashboard analitica per monitorare trend, volumi e tipologie di richieste con precisione chirurgica.</p>
                 </div>
             </div>
         </div>
     </section>
 
     <!-- How It Works -->
-    <section class="py-32 border-t border-neutral-900">
+    <section class="py-32 border-t border-neutral-100 bg-neutral-50/50">
         <div class="max-w-7xl mx-auto px-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
                 <div class="fade-in-section">
-                    <h2 class="text-4xl font-bold mb-8 tracking-tight text-white">Integrazione fluida nel tuo workflow</h2>
+                    <h2 class="text-4xl font-bold mb-8 tracking-tight text-neutral-900">Integrazione fluida nel tuo workflow</h2>
                     <div class="space-y-10">
                         <div class="flex gap-6">
-                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-700 flex items-center justify-center text-white font-semibold">1</span>
+                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-900 font-semibold bg-white">1</span>
                             <div>
-                                <h3 class="text-xl font-semibold text-white mb-2">Setup Immediato</h3>
-                                <p class="text-neutral-400">Configura il tuo assistente in pochi minuti o richiedi il nostro supporto white-glove.</p>
+                                <h3 class="text-xl font-semibold text-neutral-900 mb-2">Setup Immediato</h3>
+                                <p class="text-neutral-500">Configura il tuo assistente in pochi minuti o richiedi il nostro supporto white-glove.</p>
                             </div>
                         </div>
                         <div class="flex gap-6">
-                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-700 flex items-center justify-center text-white font-semibold">2</span>
+                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-900 font-semibold bg-white">2</span>
                             <div>
-                                <h3 class="text-xl font-semibold text-white mb-2">Personalizzazione</h3>
-                                <p class="text-neutral-400">Definisci tono, script e regole di ingaggio. L'IA si adatta alla tua identità aziendale.</p>
+                                <h3 class="text-xl font-semibold text-neutral-900 mb-2">Personalizzazione</h3>
+                                <p class="text-neutral-500">Definisci tono, script e regole di ingaggio. L'IA si adatta alla tua identità aziendale.</p>
                             </div>
                         </div>
                         <div class="flex gap-6">
-                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-700 flex items-center justify-center text-white font-semibold">3</span>
+                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-300 flex items-center justify-center text-neutral-900 font-semibold bg-white">3</span>
                             <div>
-                                <h3 class="text-xl font-semibold text-white mb-2">Deploy</h3>
-                                <p class="text-neutral-400">Attiva l'inoltro e lascia che l'IA gestisca il flusso, notificandoti solo ciò che conta.</p>
+                                <h3 class="text-xl font-semibold text-neutral-900 mb-2">Deploy</h3>
+                                <p class="text-neutral-500">Attiva l'inoltro e lascia che l'IA gestisca il flusso, notificandoti solo ciò che conta.</p>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="relative fade-in-section">
-                    <div class="absolute inset-0 bg-gradient-to-r from-neutral-800/20 to-neutral-900/20 blur-3xl -z-10"></div>
-                    <div class="p-8 rounded-3xl bg-neutral-900 border border-neutral-800 shadow-2xl">
-                        <div class="flex items-center justify-between mb-8 pb-6 border-b border-neutral-800">
+                    <div class="absolute inset-0 bg-gradient-to-r from-blue-100/50 to-purple-100/50 blur-3xl -z-10"></div>
+                    <div class="p-8 rounded-3xl bg-white border border-neutral-200 shadow-2xl">
+                        <div class="flex items-center justify-between mb-8 pb-6 border-b border-neutral-100">
                             <div class="flex gap-2">
-                                <div class="w-3 h-3 rounded-full bg-neutral-700"></div>
-                                <div class="w-3 h-3 rounded-full bg-neutral-700"></div>
+                                <div class="w-3 h-3 rounded-full bg-neutral-200"></div>
+                                <div class="w-3 h-3 rounded-full bg-neutral-200"></div>
                             </div>
-                            <span class="text-xs font-mono text-neutral-500">LIVE MONITOR</span>
+                            <span class="text-xs font-mono text-neutral-400">LIVE MONITOR</span>
                         </div>
                         <div class="space-y-6">
                             <div class="flex gap-4">
-                                <div class="w-8 h-8 rounded-full bg-neutral-800 flex-shrink-0"></div>
-                                <div class="bg-neutral-800/50 p-4 rounded-2xl rounded-tl-none text-sm text-neutral-300 max-w-[85%]">
+                                <div class="w-8 h-8 rounded-full bg-neutral-100 flex-shrink-0"></div>
+                                <div class="bg-neutral-50 border border-neutral-100 p-4 rounded-2xl rounded-tl-none text-sm text-neutral-600 max-w-[85%]">
                                     Buongiorno, vorrei prenotare una visita specialistica per la prossima settimana.
                                 </div>
                             </div>
                             <div class="flex gap-4 flex-row-reverse">
-                                <div class="w-8 h-8 rounded-full bg-white flex-shrink-0"></div>
-                                <div class="bg-white text-black p-4 rounded-2xl rounded-tr-none text-sm max-w-[85%] shadow-lg">
+                                <div class="w-8 h-8 rounded-full bg-neutral-900 flex-shrink-0"></div>
+                                <div class="bg-neutral-900 text-white p-4 rounded-2xl rounded-tr-none text-sm max-w-[85%] shadow-lg">
                                     Certamente. Preferisce la mattina o il pomeriggio? Ho disponibilità martedì alle 10:00.
                                 </div>
                             </div>
@@ -239,24 +249,24 @@
     </section>
 
     <!-- Pricing -->
-    <section id="prezzi" class="py-32 relative bg-neutral-900/20">
+    <section id="prezzi" class="py-32 relative bg-white">
         <div class="max-w-7xl mx-auto px-6">
             <div class="text-center mb-20 fade-in-section">
-                <h2 class="text-4xl font-bold mb-6 tracking-tight text-white">Piani & Tariffe</h2>
-                <p class="text-neutral-400">Trasparenza totale. Nessun costo nascosto.</p>
+                <h2 class="text-4xl font-bold mb-6 tracking-tight text-neutral-900">Piani & Tariffe</h2>
+                <p class="text-neutral-500">Trasparenza totale. Nessun costo nascosto.</p>
             </div>
             {% include 'pricing_partial.html' %}
         </div>
     </section>
 
     <!-- CTA Footer -->
-    <section class="py-32 border-t border-neutral-900">
+    <section class="py-32 border-t border-neutral-100 bg-neutral-50">
         <div class="max-w-4xl mx-auto px-6 text-center fade-in-section">
-            <h2 class="text-4xl md:text-5xl font-bold mb-8 text-white tracking-tight">Pronto a trasformare la tua segreteria?</h2>
-            <p class="text-xl text-neutral-400 mb-12 font-light">Unisciti alle aziende che hanno scelto l'efficienza senza compromessi.</p>
+            <h2 class="text-4xl md:text-5xl font-bold mb-8 text-neutral-900 tracking-tight">Pronto a trasformare la tua segreteria?</h2>
+            <p class="text-xl text-neutral-500 mb-12 font-light">Unisciti alle aziende che hanno scelto l'efficienza senza compromessi.</p>
 
             <div class="flex flex-col sm:flex-row justify-center gap-4">
-                <button type="button" data-booking-open class="px-8 py-4 rounded-2xl bg-white text-black font-semibold text-lg hover:bg-neutral-200 transition-all duration-200 hover:scale-105 shadow-xl">
+                <button type="button" data-booking-open class="px-8 py-4 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-300/50">
                     Inizia il Test Gratuito
                 </button>
             </div>
@@ -264,15 +274,15 @@
     </section>
 
     <!-- Footer -->
-    <footer class="py-12 border-t border-neutral-900 bg-black">
+    <footer class="py-12 border-t border-neutral-200 bg-white">
         <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
             <div class="text-neutral-500 text-sm">
                 &copy; 2024 Automa AI. All rights reserved.
             </div>
             <div class="flex gap-8">
-                <a href="/privacy" class="text-sm text-neutral-500 hover:text-white transition-colors">Privacy</a>
-                <a href="/terms" class="text-sm text-neutral-500 hover:text-white transition-colors">Terms</a>
-                <a href="mailto:info@automa.ai" class="text-sm text-neutral-500 hover:text-white transition-colors">Contact</a>
+                <a href="/privacy" class="text-sm text-neutral-500 hover:text-neutral-900 transition-colors">Privacy</a>
+                <a href="/terms" class="text-sm text-neutral-500 hover:text-neutral-900 transition-colors">Terms</a>
+                <a href="mailto:info@automa.ai" class="text-sm text-neutral-500 hover:text-neutral-900 transition-colors">Contact</a>
             </div>
         </div>
     </footer>
