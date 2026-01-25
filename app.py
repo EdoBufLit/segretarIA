@@ -1053,67 +1053,134 @@ def _merge_legacy_file_stats(
         if not log_path.exists():
             continue
 
-        with log_path.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
+    logs = (
+        db.query(CallLog)
+        .filter(CallLog.agent_id.in_(agent_ids))
+        .order_by(CallLog.timestamp.asc())
+        .all()
+    )
 
-                try:
-                    entry = json.loads(line)
-                except Exception:
-                    continue
+    if logs:
+        for log in logs:
+            if not log.timestamp:
+                continue
 
-                ts = entry.get("timestamp")
-                if not ts:
-                    continue
+            dt = log.timestamp
+            total_calls += 1
 
-                try:
-                    dt = datetime.fromisoformat(ts)
-                except Exception:
-                    continue
+            # ---- per giorno ----
+            day_str = dt.date().isoformat()
+            stats_by_day[day_str] = stats_by_day.get(day_str, 0) + 1
 
-                total_calls += 1
+            # ---- per cliente ----
+            stats_by_client[log.agent_id] = stats_by_client.get(log.agent_id, 0) + 1
 
-                day_str = dt.date().isoformat()
-                stats_by_day[day_str] = stats_by_day.get(day_str, 0) + 1
-                stats_by_client[agent_id] = stats_by_client.get(agent_id, 0) + 1
+            # ---- oggi / ultimi 7 giorni ----
+            d = dt.date()
+            if d == today:
+                calls_today += 1
+            if d >= last_7_start:
+                calls_last_7 += 1
 
-                d = dt.date()
-                if d == today:
-                    calls_today += 1
-                if d >= last_7_start:
-                    calls_last_7 += 1
+            # ---- errori / fallite ----
+            inner_data = (log.raw_data or {}).get("data", {})
+            status = log.status or inner_data.get("status")
 
-                inner_data = entry.get("data", {})
-                status = inner_data.get("status")
+            if status == "failure":
+                errors += 1
+            elif status == "success":
+                pass
+            else:
+                analysis = inner_data.get("analysis", {})
+                call_successful = None
+                termination_reason = None
+                if isinstance(analysis, dict):
+                    call_successful = analysis.get("call_successful")
+                    termination_reason = analysis.get("termination_reason")
 
-                if status == "failure":
+                if call_successful == "failure" or termination_reason:
                     errors += 1
-                elif status == "success":
-                    pass
-                else:
-                    analysis = inner_data.get("analysis", {})
-                    call_successful = None
-                    termination_reason = None
-                    if isinstance(analysis, dict):
-                        call_successful = analysis.get("call_successful")
-                        termination_reason = analysis.get("termination_reason")
 
-                    if call_successful == "failure" or termination_reason:
+            # ---- AI enrichment (categoria / urgenza) ----
+            ai = (log.raw_data or {}).get("ai_enrichment", {})
+            cat = ai.get("category", "altro")
+            urg = ai.get("urgency", "media")
+
+            stats_by_category[cat] = stats_by_category.get(cat, 0) + 1
+            stats_by_urgency[urg] = stats_by_urgency.get(urg, 0) + 1
+
+            # ---- heatmap ora x giorno ----
+            hour = dt.hour
+            weekday = dt.weekday()  # 0 = Monday, 6 = Sunday
+            if 0 <= hour < 24 and 0 <= weekday < 7:
+                heatmap[hour][weekday] += 1
+    else:
+        for agent_id in agent_ids:
+            log_path = LOGS_DIR / f"{agent_id}.log"
+            if not log_path.exists():
+                continue
+
+            with log_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    try:
+                        entry = json.loads(line)
+                    except Exception:
+                        continue
+
+                    ts = entry.get("timestamp")
+                    if not ts:
+                        continue
+
+                    try:
+                        dt = datetime.fromisoformat(ts)
+                    except Exception:
+                        continue
+
+                    total_calls += 1
+
+                    day_str = dt.date().isoformat()
+                    stats_by_day[day_str] = stats_by_day.get(day_str, 0) + 1
+                    stats_by_client[agent_id] = stats_by_client.get(agent_id, 0) + 1
+
+                    d = dt.date()
+                    if d == today:
+                        calls_today += 1
+                    if d >= last_7_start:
+                        calls_last_7 += 1
+
+                    inner_data = entry.get("data", {})
+                    status = inner_data.get("status")
+
+                    if status == "failure":
                         errors += 1
+                    elif status == "success":
+                        pass
+                    else:
+                        analysis = inner_data.get("analysis", {})
+                        call_successful = None
+                        termination_reason = None
+                        if isinstance(analysis, dict):
+                            call_successful = analysis.get("call_successful")
+                            termination_reason = analysis.get("termination_reason")
 
-                ai = entry.get("ai_enrichment", {})
-                cat = ai.get("category", "altro")
-                urg = ai.get("urgency", "media")
+                        if call_successful == "failure" or termination_reason:
+                            errors += 1
 
-                stats_by_category[cat] = stats_by_category.get(cat, 0) + 1
-                stats_by_urgency[urg] = stats_by_urgency.get(urg, 0) + 1
+                    ai = entry.get("ai_enrichment", {})
+                    cat = ai.get("category", "altro")
+                    urg = ai.get("urgency", "media")
 
-                hour = dt.hour
-                weekday = dt.weekday()
-                if 0 <= hour < 24 and 0 <= weekday < 7:
-                    heatmap[hour][weekday] += 1
+                    stats_by_category[cat] = stats_by_category.get(cat, 0) + 1
+                    stats_by_urgency[urg] = stats_by_urgency.get(urg, 0) + 1
+
+                    hour = dt.hour
+                    weekday = dt.weekday()
+                    if 0 <= hour < 24 and 0 <= weekday < 7:
+                        heatmap[hour][weekday] += 1
 
     return total_calls, errors, calls_today, calls_last_7
 
