@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import secrets
 import sentry_sdk
 import re
 from datetime import datetime
@@ -31,7 +32,6 @@ from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouti
 from auth import (
     hash_password,
     verify_password,
-    generate_random_password,
     get_current_user,
     get_current_admin_user,
     require_role,
@@ -1772,7 +1772,7 @@ async def forgot_password_submit(request: Request, email: str = Form(...), db: S
 
     if user:
         # Generate token
-        token_raw = generate_random_password(32)
+        token_raw = secrets.token_urlsafe(32)
         token_hashed = hash_password(token_raw)
 
         # Store in DB
