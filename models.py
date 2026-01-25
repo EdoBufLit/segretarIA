@@ -149,3 +149,24 @@ class AgentRouting(Base):
 
     user = relationship("User")
     phone_number = relationship("PhoneNumber")
+
+class UnassignedEvent(Base):
+    __tablename__ = "unassigned_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String, index=True, nullable=True)
+    phone_number = Column(String, nullable=True)
+    payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User")

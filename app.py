@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import secrets
 import sentry_sdk
 import re
 from datetime import datetime
@@ -27,12 +28,10 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import get_db, SessionLocal
-from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken
 from auth import (
     hash_password,
     verify_password,
-    generate_reset_token,
-    verify_reset_token,
     get_current_user,
     get_current_admin_user,
     require_role,
@@ -41,6 +40,7 @@ from auth import (
     get_current_user_page,
     get_current_admin_user_page,
     require_role_page,
+    normalize_identifier,
 )
 from admin_service import AdminService
 from admin_seed import ensure_default_admin, ensure_plans
@@ -120,6 +120,30 @@ async def startup_event():
     ensure_default_admin()
     ensure_plans()
 
+    # Log DB Connection (Safe)
+    db_url = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+    if "@" in db_url:
+        # Sanitize credentials: postgresql://user:pass@host/db -> postgresql://...:***@host/db
+        try:
+            prefix = db_url.split("://")[0]
+            rest = db_url.split("@")[1]
+            logger.info(f"DATABASE_URL configured: {prefix}://***:***@{rest}")
+        except:
+            logger.info("DATABASE_URL configured (masked)")
+    else:
+        logger.info(f"DATABASE_URL configured: {db_url}")
+
+    # Log Current DB Revision
+    try:
+        # Avoid circular import or complex dependency if possible, but we need DB session
+        with SessionLocal() as db:
+            result = db.execute(text("SELECT version_num FROM alembic_version"))
+            row = result.fetchone()
+            rev = row[0] if row else "unknown"
+            logger.info(f"DB Schema Revision: {rev}")
+    except Exception as e:
+        logger.warning(f"Could not read alembic_version: {e}")
+
     # Log ADMIN_EMAIL status
     admin_email_configured = "yes" if os.getenv("ADMIN_EMAIL") else "no"
     logger.info(f"ADMIN_EMAIL configured: {admin_email_configured}")
@@ -168,6 +192,25 @@ ALLOWED_LEAD_SECTORS = {
     "Altro",
 }
 ALLOWED_LEAD_VOLUMES = {"0–20/mese", "20–100", "100–300", "300+"}
+
+def get_public_base_url(request: Optional[Request] = None) -> str:
+    """
+    Returns the public base URL of the application.
+    Prioritizes DOMAIN_NAME env var (e.g. 'https://myapp.com').
+    Falls back to request.base_url if available.
+    Defaults to localhost.
+    """
+    domain = os.getenv("DOMAIN_NAME")
+    if domain:
+        # Ensure scheme
+        if not domain.startswith("http"):
+            domain = f"https://{domain}"
+        return domain.rstrip("/")
+
+    if request:
+        return str(request.base_url).rstrip("/")
+
+    return os.getenv("PUBLIC_BASE_URL") or "http://127.0.0.1:8000"
 
 # Display configuration for plans (prices are not in DB yet)
 PLANS_DISPLAY = {
@@ -647,6 +690,29 @@ async def api_admin_delete_routing(
     db.commit()
     return {"status": "ok"}
 
+@app.get("/api/admin/unassigned-events")
+async def api_admin_get_unassigned_events(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    query = db.query(UnassignedEvent).order_by(UnassignedEvent.created_at.desc())
+    total = query.count()
+    events = query.offset(offset).limit(limit).all()
+
+    items = []
+    for e in events:
+        items.append({
+            "id": e.id,
+            "agent_id": e.agent_id,
+            "phone_number": e.phone_number,
+            "payload": e.payload,
+            "created_at": e.created_at.isoformat() if e.created_at else None
+        })
+
+    return {"status": "ok", "total": total, "items": items}
+
 # Legacy endpoints (kept for compatibility)
 @app.post("/admin/phone-numbers/create")
 async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
@@ -797,7 +863,7 @@ async def create_checkout_session(
     service = StripeService(db)
     try:
         # Assuming we have a configured base URL or use request headers
-        base_url = os.getenv("PUBLIC_BASE_URL") or os.getenv("BASE_URL") or "http://127.0.0.1:8000"
+        base_url = get_public_base_url()
         base_url = base_url.rstrip("/")
 
         success_url = f"{base_url}/dashboard?billing=success"
@@ -979,20 +1045,26 @@ async def elevenlabs_webhook(request: Request):
 
         # --- ENFORCEMENT & IDEMPOTENCY ---
         # Re-query agent using Agent model (legacy/primary logic)
-        # Note: If Agent model table is not populated for new agents, this block might block them.
-        # However, AgentRouting is for admin to resolve.
-        # If the user is not found, we block execution but we have already captured the routing info above.
-
         agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
-        if not agent_obj:
-            logger.warning(f"[WEBHOOK] Unknown agent_id {agent_id}. Blocking further processing.")
-            return {"status": "ignored", "reason": "unknown_agent"}
+        user = None
+        if agent_obj:
+            user = db.query(User).filter(User.agents.contains(agent_obj)).first()
 
-        # Find owner (Client)
-        user = db.query(User).filter(User.agents.contains(agent_obj)).first()
-        if not user:
-            logger.warning(f"[WEBHOOK] Agent {agent_id} has no user. Blocking.")
-            return {"status": "ignored", "reason": "orphaned_agent"}
+        if not agent_obj or not user:
+            logger.warning(f"[WEBHOOK] Unassigned agent/user for agent_id {agent_id}. Storing as unassigned.")
+            # Store in UnassignedEvent
+            try:
+                unassigned = UnassignedEvent(
+                    agent_id=agent_id,
+                    phone_number=to_number,
+                    payload=payload
+                )
+                db.add(unassigned)
+                db.commit()
+            except Exception as e:
+                logger.error(f"[WEBHOOK] Failed to save unassigned event: {e}")
+
+            return {"status": "ok", "message": "Event stored as unassigned"}
 
         # Check User Active
         if not user.is_active:
@@ -1692,84 +1764,134 @@ async def forgot_password_form(request: Request):
 
 @app.post("/forgot-password", response_class=HTMLResponse)
 async def forgot_password_submit(request: Request, email: str = Form(...), db: Session = Depends(get_db)):
-    clean_email = email.strip()
+    clean_email = normalize_identifier(email)
     user = db.query(User).filter(User.email == clean_email).first()
 
     # Always return success message to prevent enumeration
     msg = "Se l'email esiste, riceverai un link per il reset della password."
 
     if user:
-        token = generate_reset_token(clean_email)
-        public_url = os.getenv("PUBLIC_BASE_URL") or os.getenv("BASE_URL") or "http://localhost:8000"
-        reset_link = f"{public_url}/reset-password?token={token}"
+        # Generate token
+        token_raw = secrets.token_urlsafe(32)
+        token_hashed = hash_password(token_raw)
 
-        subject = "Reset Password - Segreteria IA"
+        # Store in DB
+        db_token = PasswordResetToken(
+            user_id=user.id,
+            token_hash=token_hashed,
+            expires_at=datetime.utcnow() + timedelta(minutes=30)
+        )
+        db.add(db_token)
+        db.commit()
+
+        # Build Link
+        public_url = get_public_base_url(request)
+        reset_link = f"{public_url}/reset-password?token={token_raw}&uid={user.id}"
+
+        subject = "Reimposta la tua password"
         body = f"""
         <p>Ciao {user.username},</p>
         <p>Hai richiesto il reset della password.</p>
         <p><a href="{reset_link}">Clicca qui per reimpostare la tua password</a></p>
-        <p>Il link scadrà tra 1 ora.</p>
+        <p>Il link scadrà tra 30 minuti ed è utilizzabile una sola volta.</p>
         <p>Se non sei stato tu, ignora questa email.</p>
         """
         try:
-            # Using send_email utility
-            # mailer.send_email(to, subject, body, html_body) - FROM is handled via env var
             send_email(user.email, subject, "Please view in HTML", html_body=body)
+            logger.info(f"Password reset email sent to {clean_email}")
         except Exception as e:
-            logger.error(f"Error sending reset email: {e}")
+            logger.error(f"Error sending reset email to {clean_email}: {e}")
             msg = "Errore durante l'invio dell'email. Riprova più tardi."
 
     return templates.TemplateResponse("forgot_password.html", {"request": request, "message": msg})
 
 
 @app.get("/reset-password", response_class=HTMLResponse)
-async def reset_password_form(request: Request, token: str = Query(...)):
-    email = verify_reset_token(token)
-    if not email:
+async def reset_password_form(request: Request, token: str = Query(...), uid: int = Query(...), db: Session = Depends(get_db)):
+    # Validate token existence roughly (detailed check on submit or here if strictly needed)
+    # We check if active token exists for user
+    # Note: We can't verify hash without the raw token, which we have.
+    # But for GET, we might just show the form.
+    # Security: If we verify here, we prevent spamming.
+
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+         return templates.TemplateResponse("forgot_password.html", {"request": request, "error": "Link non valido."})
+
+    # Find valid tokens for user
+    tokens = db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == uid,
+        PasswordResetToken.used_at == None,
+        PasswordResetToken.expires_at > datetime.utcnow()
+    ).all()
+
+    valid_found = False
+    for t in tokens:
+        if verify_password(token, t.token_hash):
+            valid_found = True
+            break
+
+    if not valid_found:
         return templates.TemplateResponse(
             "forgot_password.html",
             {"request": request, "error": "Link scaduto o non valido. Richiedi un nuovo reset."}
         )
-    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "email": email})
+
+    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token, "uid": uid, "email": user.email})
 
 
 @app.post("/reset-password", response_class=HTMLResponse)
 async def reset_password_submit(
     request: Request,
     token: str = Form(...),
+    uid: int = Form(...),
     password: str = Form(...),
     password_confirm: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    email = verify_reset_token(token)
-    if not email:
-        return templates.TemplateResponse(
-            "forgot_password.html",
-            {"request": request, "error": "Link scaduto o non valido. Richiedi un nuovo reset."}
-        )
-
     if len(password) < 8:
          return templates.TemplateResponse(
             "reset_password.html",
-            {"request": request, "token": token, "email": email, "error": "La password deve essere di almeno 8 caratteri."}
+            {"request": request, "token": token, "uid": uid, "error": "La password deve essere di almeno 8 caratteri."}
         )
 
     if password != password_confirm:
         return templates.TemplateResponse(
             "reset_password.html",
-            {"request": request, "token": token, "email": email, "error": "Le password non coincidono."}
+            {"request": request, "token": token, "uid": uid, "error": "Le password non coincidono."}
         )
 
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(User.id == uid).first()
     if not user:
-         # Should rarely happen if token is valid but user deleted in meantime
-         return templates.TemplateResponse(
+         return templates.TemplateResponse("forgot_password.html", {"request": request, "error": "Utente non trovato."})
+
+    # Verify Token
+    tokens = db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == uid,
+        PasswordResetToken.used_at == None,
+        PasswordResetToken.expires_at > datetime.utcnow()
+    ).all()
+
+    valid_token_record = None
+    for t in tokens:
+        if verify_password(token, t.token_hash):
+            valid_token_record = t
+            break
+
+    if not valid_token_record:
+        return templates.TemplateResponse(
             "forgot_password.html",
-            {"request": request, "error": "Utente non trovato."}
+            {"request": request, "error": "Link scaduto o già utilizzato."}
         )
 
+    # Reset
     user.password_hash = hash_password(password)
+    valid_token_record.used_at = datetime.utcnow()
     db.commit()
+
+    # Invalidate sessions?
+    # Current session is cookie based. We can't invalidate client cookies from here easily without a session table.
+    # But since password changed, they can login with new one.
 
     return RedirectResponse(url="/login?reset=1", status_code=302)
 
@@ -1839,8 +1961,12 @@ async def register_submit(
     db: Session = Depends(get_db),
 ):
     errors = {}
-    clean_username = username.strip()
-    clean_email = email.strip()
+    # Normalization
+    clean_username = normalize_identifier(username)
+    clean_email = normalize_identifier(email)
+
+    ip_address = _get_client_ip(request)
+    logger.info(f"REGISTER_ATTEMPT: username={clean_username} email={clean_email} ip={ip_address}")
 
     if not clean_username:
         errors["username"] = "Lo username è obbligatorio."
@@ -1884,9 +2010,19 @@ async def register_submit(
     try:
         db.add(new_user)
         db.commit()
+
+        # Verify Persistence
+        db.expire_all() # Ensure we fetch from DB
+        saved_user = db.query(User).filter(User.id == new_user.id).first()
+        if saved_user:
+             logger.info(f"REGISTER_OK: id={saved_user.id} role={saved_user.role} active={saved_user.is_active}")
+             logger.info("REGISTER_DB_VERIFIED")
+        else:
+             logger.critical(f"REGISTER_FAIL_PERSISTENCE: User {new_user.id} committed but not found.")
+
     except Exception as exc:
         db.rollback()
-        logger.warning("Error creating new client user: %s", exc)
+        logger.error(f"REGISTER_FAIL: {type(exc).__name__} {exc}")
         errors["form"] = "Errore durante la registrazione. Riprova."
         return templates.TemplateResponse(
             "register.html",
@@ -2018,10 +2154,34 @@ async def login_submit(
     password: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    user = db.query(User).filter(User.username == username).first()
+    normalized_username = normalize_identifier(username)
+    logger.info(f"LOGIN_ATTEMPT: username={normalized_username}")
 
-    if not user or not user.is_active or not verify_password(password, user.password_hash):
+    # Try to find by username OR email (if desired, but currently code assumes username field is username)
+    # The form field is 'username' but user might type email.
+    # The legacy code: user = db.query(User).filter(User.username == username).first()
+    # Let's support both if it's an email format?
+    # For now, stick to strictly matching what register did (username=clean_username).
+
+    user = db.query(User).filter(User.username == normalized_username).first()
+
+    # If not found, try email just in case user is confused
+    if not user and "@" in normalized_username:
+         user = db.query(User).filter(User.email == normalized_username).first()
+
+    if not user:
+        logger.warning(f"LOGIN_FAIL_USER_NOT_FOUND: {normalized_username}")
         return RedirectResponse(url="/login?error=1", status_code=302)
+
+    if not user.is_active:
+        logger.warning(f"LOGIN_FAIL_INACTIVE: {normalized_username} id={user.id}")
+        return RedirectResponse(url="/login?error=1", status_code=302)
+
+    if not verify_password(password, user.password_hash):
+        logger.warning(f"LOGIN_FAIL_HASH_MISMATCH: {normalized_username} id={user.id}")
+        return RedirectResponse(url="/login?error=1", status_code=302)
+
+    logger.info(f"LOGIN_OK: id={user.id} role={user.role}")
 
     request.session["user"] = {
         "user_id": user.id,
@@ -2032,6 +2192,30 @@ async def login_submit(
     if user.role == "admin":
         return RedirectResponse(url="/dashboard", status_code=302)
     return RedirectResponse(url="/client/dashboard", status_code=302)
+
+@app.get("/api/admin/users/debug")
+async def admin_debug_users(
+    email: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    if not email:
+        return {"error": "Provide email query param"}
+
+    norm_email = normalize_identifier(email)
+    user = db.query(User).filter(User.email == norm_email).first()
+    if not user:
+        return {"status": "not_found", "searched_email": norm_email}
+
+    return {
+        "status": "found",
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "is_active": user.is_active,
+        "hash_prefix": user.password_hash[:10] if user.password_hash else None
+    }
 
 
 def _read_logs(
