@@ -27,7 +27,7 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import get_db, SessionLocal
-from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent
 from auth import (
     hash_password,
     verify_password,
@@ -647,6 +647,29 @@ async def api_admin_delete_routing(
     db.commit()
     return {"status": "ok"}
 
+@app.get("/api/admin/unassigned-events")
+async def api_admin_get_unassigned_events(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    query = db.query(UnassignedEvent).order_by(UnassignedEvent.created_at.desc())
+    total = query.count()
+    events = query.offset(offset).limit(limit).all()
+
+    items = []
+    for e in events:
+        items.append({
+            "id": e.id,
+            "agent_id": e.agent_id,
+            "phone_number": e.phone_number,
+            "payload": e.payload,
+            "created_at": e.created_at.isoformat() if e.created_at else None
+        })
+
+    return {"status": "ok", "total": total, "items": items}
+
 # Legacy endpoints (kept for compatibility)
 @app.post("/admin/phone-numbers/create")
 async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
@@ -979,20 +1002,26 @@ async def elevenlabs_webhook(request: Request):
 
         # --- ENFORCEMENT & IDEMPOTENCY ---
         # Re-query agent using Agent model (legacy/primary logic)
-        # Note: If Agent model table is not populated for new agents, this block might block them.
-        # However, AgentRouting is for admin to resolve.
-        # If the user is not found, we block execution but we have already captured the routing info above.
-
         agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
-        if not agent_obj:
-            logger.warning(f"[WEBHOOK] Unknown agent_id {agent_id}. Blocking further processing.")
-            return {"status": "ignored", "reason": "unknown_agent"}
+        user = None
+        if agent_obj:
+            user = db.query(User).filter(User.agents.contains(agent_obj)).first()
 
-        # Find owner (Client)
-        user = db.query(User).filter(User.agents.contains(agent_obj)).first()
-        if not user:
-            logger.warning(f"[WEBHOOK] Agent {agent_id} has no user. Blocking.")
-            return {"status": "ignored", "reason": "orphaned_agent"}
+        if not agent_obj or not user:
+            logger.warning(f"[WEBHOOK] Unassigned agent/user for agent_id {agent_id}. Storing as unassigned.")
+            # Store in UnassignedEvent
+            try:
+                unassigned = UnassignedEvent(
+                    agent_id=agent_id,
+                    phone_number=to_number,
+                    payload=payload
+                )
+                db.add(unassigned)
+                db.commit()
+            except Exception as e:
+                logger.error(f"[WEBHOOK] Failed to save unassigned event: {e}")
+
+            return {"status": "ok", "message": "Event stored as unassigned"}
 
         # Check User Active
         if not user.is_active:

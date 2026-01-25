@@ -149,3 +149,12 @@ class AgentRouting(Base):
 
     user = relationship("User")
     phone_number = relationship("PhoneNumber")
+
+class UnassignedEvent(Base):
+    __tablename__ = "unassigned_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String, index=True, nullable=True)
+    phone_number = Column(String, nullable=True)
+    payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
