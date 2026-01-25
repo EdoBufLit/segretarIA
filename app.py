@@ -169,7 +169,6 @@ STUDIO_NAME = os.getenv("STUDIO_NAME", "Segreteria IA")
 
 # Email mittente (la tua)
 EMAIL_FROM = os.getenv("EMAIL_FROM")  # es: "Segreteria IA <edo.buffa9898@gmail.com>"
-EMAIL_TO_FALLBACK = os.getenv("EMAIL_TO")  # nel dubbio
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -984,37 +983,6 @@ def _calculate_analytics(db: Session, agent_ids: List[str]) -> Dict[str, Any]:
             weekday = dt.weekday()  # 0 = Monday, 6 = Sunday
             if 0 <= hour < 24 and 0 <= weekday < 7:
                 heatmap[hour][weekday] += 1
-        total_calls, errors, calls_today, calls_last_7 = _merge_legacy_file_stats(
-            agent_ids,
-            db_agents,
-            stats_by_day,
-            stats_by_client,
-            stats_by_category,
-            stats_by_urgency,
-            heatmap,
-            today,
-            last_7_start,
-            total_calls,
-            errors,
-            calls_today,
-            calls_last_7,
-        )
-    else:
-        total_calls, errors, calls_today, calls_last_7 = _merge_legacy_file_stats(
-            agent_ids,
-            set(),
-            stats_by_day,
-            stats_by_client,
-            stats_by_category,
-            stats_by_urgency,
-            heatmap,
-            today,
-            last_7_start,
-            total_calls,
-            errors,
-            calls_today,
-            calls_last_7,
-        )
 
     return {
         "status": "ok",
@@ -1031,158 +999,6 @@ def _calculate_analytics(db: Session, agent_ids: List[str]) -> Dict[str, Any]:
     }
 
 
-def _merge_legacy_file_stats(
-    agent_ids: List[str],
-    db_agents: set[str],
-    stats_by_day: Dict[str, int],
-    stats_by_client: Dict[str, int],
-    stats_by_category: Dict[str, int],
-    stats_by_urgency: Dict[str, int],
-    heatmap: list[list[int]],
-    today: date,
-    last_7_start: date,
-    total_calls: int,
-    errors: int,
-    calls_today: int,
-    calls_last_7: int,
-) -> tuple[int, int, int, int]:
-    for agent_id in agent_ids:
-        if agent_id in db_agents:
-            continue
-        log_path = LOGS_DIR / f"{agent_id}.log"
-        if not log_path.exists():
-            continue
-
-    logs = (
-        db.query(CallLog)
-        .filter(CallLog.agent_id.in_(agent_ids))
-        .order_by(CallLog.timestamp.asc())
-        .all()
-    )
-
-    if logs:
-        for log in logs:
-            if not log.timestamp:
-                continue
-
-            dt = log.timestamp
-            total_calls += 1
-
-            # ---- per giorno ----
-            day_str = dt.date().isoformat()
-            stats_by_day[day_str] = stats_by_day.get(day_str, 0) + 1
-
-            # ---- per cliente ----
-            stats_by_client[log.agent_id] = stats_by_client.get(log.agent_id, 0) + 1
-
-            # ---- oggi / ultimi 7 giorni ----
-            d = dt.date()
-            if d == today:
-                calls_today += 1
-            if d >= last_7_start:
-                calls_last_7 += 1
-
-            # ---- errori / fallite ----
-            inner_data = (log.raw_data or {}).get("data", {})
-            status = log.status or inner_data.get("status")
-
-            if status == "failure":
-                errors += 1
-            elif status == "success":
-                pass
-            else:
-                analysis = inner_data.get("analysis", {})
-                call_successful = None
-                termination_reason = None
-                if isinstance(analysis, dict):
-                    call_successful = analysis.get("call_successful")
-                    termination_reason = analysis.get("termination_reason")
-
-                if call_successful == "failure" or termination_reason:
-                    errors += 1
-
-            # ---- AI enrichment (categoria / urgenza) ----
-            ai = (log.raw_data or {}).get("ai_enrichment", {})
-            cat = ai.get("category", "altro")
-            urg = ai.get("urgency", "media")
-
-            stats_by_category[cat] = stats_by_category.get(cat, 0) + 1
-            stats_by_urgency[urg] = stats_by_urgency.get(urg, 0) + 1
-
-            # ---- heatmap ora x giorno ----
-            hour = dt.hour
-            weekday = dt.weekday()  # 0 = Monday, 6 = Sunday
-            if 0 <= hour < 24 and 0 <= weekday < 7:
-                heatmap[hour][weekday] += 1
-    else:
-        for agent_id in agent_ids:
-            log_path = LOGS_DIR / f"{agent_id}.log"
-            if not log_path.exists():
-                continue
-
-            with log_path.open("r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-
-                    try:
-                        entry = json.loads(line)
-                    except Exception:
-                        continue
-
-                    ts = entry.get("timestamp")
-                    if not ts:
-                        continue
-
-                    try:
-                        dt = datetime.fromisoformat(ts)
-                    except Exception:
-                        continue
-
-                    total_calls += 1
-
-                    day_str = dt.date().isoformat()
-                    stats_by_day[day_str] = stats_by_day.get(day_str, 0) + 1
-                    stats_by_client[agent_id] = stats_by_client.get(agent_id, 0) + 1
-
-                    d = dt.date()
-                    if d == today:
-                        calls_today += 1
-                    if d >= last_7_start:
-                        calls_last_7 += 1
-
-                    inner_data = entry.get("data", {})
-                    status = inner_data.get("status")
-
-                    if status == "failure":
-                        errors += 1
-                    elif status == "success":
-                        pass
-                    else:
-                        analysis = inner_data.get("analysis", {})
-                        call_successful = None
-                        termination_reason = None
-                        if isinstance(analysis, dict):
-                            call_successful = analysis.get("call_successful")
-                            termination_reason = analysis.get("termination_reason")
-
-                        if call_successful == "failure" or termination_reason:
-                            errors += 1
-
-                    ai = entry.get("ai_enrichment", {})
-                    cat = ai.get("category", "altro")
-                    urg = ai.get("urgency", "media")
-
-                    stats_by_category[cat] = stats_by_category.get(cat, 0) + 1
-                    stats_by_urgency[urg] = stats_by_urgency.get(urg, 0) + 1
-
-                    hour = dt.hour
-                    weekday = dt.weekday()
-                    if 0 <= hour < 24 and 0 <= weekday < 7:
-                        heatmap[hour][weekday] += 1
-
-    return total_calls, errors, calls_today, calls_last_7
 
 @app.get("/analytics/global")
 async def analytics_global(
@@ -2261,87 +2077,39 @@ def _read_logs(
 
     logs = query.order_by(CallLog.timestamp.desc()).all()
 
-    if logs:
-        for log in logs:
-            raw = log.raw_data or {}
-            ts = log.timestamp.isoformat() if log.timestamp else None
-            if not ts:
+    for log in logs:
+        raw = log.raw_data or {}
+        ts = log.timestamp.isoformat() if log.timestamp else None
+        if not ts:
+            continue
+
+        data = raw.get("data", {}) or {}
+        analysis = data.get("analysis", {}) or {}
+        summary = (
+            analysis.get("transcript_summary")
+            or analysis.get("summary")
+            or data.get("summary")
+            or ""
+        )
+        duration = data.get("duration_secs") or data.get("metadata", {}).get("call_duration_secs")
+        caller = data.get("caller_number") or data.get("user_id") or "unknown"
+        status_value = log.status or data.get("status") or "success"
+
+        item = {
+            "timestamp": ts,
+            "caller": caller,
+            "status": status_value,
+            "summary": str(summary).strip(),
+            "duration_secs": duration,
+            "raw": raw
+        }
+
+        if q:
+            q_low = q.lower()
+            if q_low not in json.dumps(item, ensure_ascii=False).lower():
                 continue
 
-            data = raw.get("data", {}) or {}
-            analysis = data.get("analysis", {}) or {}
-            summary = (
-                analysis.get("transcript_summary")
-                or analysis.get("summary")
-                or data.get("summary")
-                or ""
-            )
-            duration = data.get("duration_secs") or data.get("metadata", {}).get("call_duration_secs")
-            caller = data.get("caller_number") or data.get("user_id") or "unknown"
-            status_value = log.status or data.get("status") or "success"
-
-            item = {
-                "timestamp": ts,
-                "caller": caller,
-                "status": status_value,
-                "summary": str(summary).strip(),
-                "duration_secs": duration,
-                "raw": raw
-            }
-
-            if q:
-                q_low = q.lower()
-                if q_low not in json.dumps(item, ensure_ascii=False).lower():
-                    continue
-
-            items.append(item)
-    else:
-        for agent_id in agent_ids:
-            log_path = LOGS_DIR / f"{agent_id}.log"
-            if not log_path.exists():
-                continue
-
-            with log_path.open("r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        raw = json.loads(line)
-                        ts = raw.get("timestamp")
-                        if not ts:
-                            continue
-                        d = datetime.fromisoformat(ts)
-                        d_date = d.date()
-
-                        if df and d_date < df:
-                            continue
-                        if dt and d_date > dt:
-                            continue
-
-                        analysis = raw.get("data", {}).get("analysis", {})
-                        call_ok = analysis.get("call_successful")
-                        is_failure = (call_ok == "failure")
-
-                        if status == "success" and is_failure:
-                            continue
-                        if status == "failure" and not is_failure:
-                            continue
-
-                        item = {
-                            "timestamp": ts,
-                            "caller": raw.get("data", {}).get("user_id", "unknown"),
-                            "status": "failure" if is_failure else "success",
-                            "summary": raw.get("data", {}).get("analysis", {}).get("transcript_summary", "").strip(),
-                            "duration_secs": raw.get("data", {}).get("metadata", {}).get("call_duration_secs", None),
-                            "raw": raw
-                        }
-
-                        if q:
-                            q_low = q.lower()
-                            if q_low not in json.dumps(item, ensure_ascii=False).lower():
-                                continue
-
-                        items.append(item)
-                    except Exception:
-                        continue
+        items.append(item)
 
     total = len(items)
     paginated_items = items[offset:offset + limit]

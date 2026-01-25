@@ -1,6 +1,6 @@
 import json
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, ANY
 from fastapi.testclient import TestClient
 from app import app
 from models import User, Agent
@@ -21,7 +21,7 @@ def test_logs_rbac_admin_access():
 
         response = client.get("/logs/any_agent_id/list")
         assert response.status_code == 200
-        mock_read.assert_called_with(['any_agent_id'], 50, 0, 'all', None, None, None)
+        mock_read.assert_called_with(ANY, ['any_agent_id'], 50, 0, 'all', None, None, None)
 
     app.dependency_overrides = {}
 

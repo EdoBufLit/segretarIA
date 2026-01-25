@@ -11,12 +11,8 @@ from datetime import datetime
 logger = logging.getLogger("call_utils")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-LOGS_DIR = Path("logs")
-LOGS_DIR.mkdir(exist_ok=True)
-
 def log_call(agent_id: str, data: Dict[str, Any]):
-    """Salva una riga JSON in logs/<agent_id>.log"""
-    log_path = LOGS_DIR / f"{agent_id}.log"
+    """Salva una riga JSON in DB (CallLog)"""
     timestamp = datetime.utcnow()
     entry = {
         "timestamp": timestamp.isoformat(),
@@ -34,6 +30,7 @@ def log_call(agent_id: str, data: Dict[str, Any]):
         )
         db.add(call_log)
         db.commit()
+        logger.info(f"[LOG] Salvata chiamata su DB per agent {agent_id}")
     except Exception as exc:
         logger.warning(f"[LOG] DB write failed for agent {agent_id}: {exc}")
     finally:
@@ -41,10 +38,6 @@ def log_call(agent_id: str, data: Dict[str, Any]):
             db.close()
         except Exception:
             pass
-
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    logger.info(f"[LOG] Salvata chiamata in {log_path}")
 
 def extract_transcript_text(payload: dict) -> str:
     """
