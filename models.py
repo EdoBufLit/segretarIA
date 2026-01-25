@@ -56,6 +56,28 @@ class Agent(Base):
     )
     usage_events = relationship("UsageEvent", back_populates="agent")
 
+class AgentSettings(Base):
+    __tablename__ = "agent_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String, unique=True, index=True, nullable=False)
+    greeting = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
+    agent_phone_number_id = Column(String, nullable=True)
+    test_phone_number = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class CallLog(Base):
+    __tablename__ = "call_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String, index=True, nullable=False)
+    timestamp = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    text = Column(String, nullable=True)
+    status = Column(String, nullable=True)
+    raw_data = Column(JSON, nullable=True)
+
 class Plan(Base):
     __tablename__ = "plans"
 

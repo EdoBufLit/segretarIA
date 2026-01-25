@@ -2,6 +2,8 @@ import os
 import json
 from typing import Any, Dict, Optional, List
 from openai import OpenAI
+from db import SessionLocal
+from models import CallLog
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -15,11 +17,31 @@ LOGS_DIR.mkdir(exist_ok=True)
 def log_call(agent_id: str, data: Dict[str, Any]):
     """Salva una riga JSON in logs/<agent_id>.log"""
     log_path = LOGS_DIR / f"{agent_id}.log"
+    timestamp = datetime.utcnow()
     entry = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": timestamp.isoformat(),
         "agent_id": agent_id,
         "data": data
     }
+    try:
+        db = SessionLocal()
+        call_log = CallLog(
+            agent_id=agent_id,
+            timestamp=timestamp,
+            text=data.get("summary") or data.get("transcript_text"),
+            status=data.get("status"),
+            raw_data=entry
+        )
+        db.add(call_log)
+        db.commit()
+    except Exception as exc:
+        logger.warning(f"[LOG] DB write failed for agent {agent_id}: {exc}")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
     with log_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     logger.info(f"[LOG] Salvata chiamata in {log_path}")

@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 import os
-import json
 import csv
 from io import StringIO
 from typing import Optional
@@ -112,41 +111,6 @@ class AdminService:
             send_email(admin_email, subject, body)
 
         return subscription
-
-    def sync_clients_to_json(self):
-        import json
-
-        clients_json_path = "clients.json"
-
-        try:
-            with open(clients_json_path, "r") as f:
-                clients_data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            clients_data = {}
-
-        updated_count = 0
-        created_count = 0
-
-        client_users = self.db.query(User).filter(User.role == "client").all()
-
-        for user in client_users:
-            for agent in user.agents:
-                agent_id_str = str(agent.agent_id)
-                if agent_id_str not in clients_data:
-                    created_count += 1
-                else:
-                    updated_count += 1
-
-                clients_data[agent_id_str] = {
-                    **clients_data.get(agent_id_str, {}),
-                    "studio_name": user.studio_name,
-                    "email_to": user.email
-                }
-
-        with open(clients_json_path, "w") as f:
-            json.dump(clients_data, f, indent=2, ensure_ascii=False)
-
-        return {"created": created_count, "updated": updated_count}
 
     def get_all_phone_numbers(self):
         return self.db.query(PhoneNumber).all()
