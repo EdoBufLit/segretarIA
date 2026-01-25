@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import os
 import csv
+import json
 from io import StringIO
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -265,7 +266,7 @@ class AdminService:
 
         output = StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Timestamp", "AgentID", "Caller", "Status", "Duration", "Summary"])
+        writer.writerow(["Timestamp", "AgentID", "Caller", "Status", "Duration", "Summary", "Transcript", "AI_Analysis"])
         yield output.getvalue()
         output.seek(0)
         output.truncate(0)
@@ -315,7 +316,13 @@ class AdminService:
                 # Fallback to DB status if not in JSON, or vice versa
                 status = log.status or data.get("status", "success")
                 duration = data.get("duration_secs", "")
-                summary = log.text or data.get("summary") or data.get("analysis", {}).get("summary", "")
+
+                # Analysis/Summary extraction
+                analysis = data.get("analysis", {})
+                summary = log.text or data.get("summary") or analysis.get("summary", "")
+
+                transcript = data.get("transcript_text", "")
+                analysis_json = json.dumps(analysis, ensure_ascii=False) if analysis else ""
 
                 writer.writerow([
                     ts_str,
@@ -323,7 +330,9 @@ class AdminService:
                     caller,
                     status,
                     duration,
-                    summary
+                    summary,
+                    transcript,
+                    analysis_json
                 ])
                 yield output.getvalue()
                 output.seek(0)
