@@ -221,12 +221,16 @@ def process_elevenlabs_event_job(payload: dict):
     # ENQUEUE EMAIL
 
     # 1. Use DB resolved values
-    studio_name = db_studio_name or STUDIO_NAME
+    studio_name = db_studio_name
     email_to = db_email_to
 
     # 2. Strict Check: If no user/email found in DB, log unrouted and skip.
     if not email_to:
         logger.warning(f"[JOB] Unrouted event for agent_id={agent_id}. No user/email found in DB. Skipping email.")
+        return
+
+    if not studio_name:
+        logger.warning(f"[JOB] Missing studio_name for agent_id {agent_id}. Skipping email.")
         return
 
     try:
