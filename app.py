@@ -54,7 +54,6 @@ from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
-from call_utils import extract_transcript_text, summarize_call, build_email_body_html, enrich_call_with_ai, log_call
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -921,211 +920,51 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 async def elevenlabs_webhook(request: Request):
     """
     Webhook ElevenLabs.
+    - Single body read
+    - Signature verification
+    - Type validation
+    - Async processing
     """
-    # 0) Auth check
+    # 0) Auth & Body Read
     secret = os.getenv("ELEVENLABS_WEBHOOK_SECRET")
-    # We must read the raw body for verification
     raw_body = await request.body()
 
     if secret:
         if not verify_elevenlabs_signature(raw_body, request.headers, secret):
-            logger.warning("invalid signature")
+            logger.warning("[WEBHOOK] Invalid signature")
             return Response(status_code=401)
 
-    # Controlla se clients.json è cambiato e, se sì, ricarica
-    maybe_reload_clients()
-
-    # payload decoding was handled below, let's keep it safe
-    # If raw_body is consumed, it's cached in Starlette Request, so await request.body() again works or we reuse raw_body variable.
-    # We already read it into raw_body.
-
+    # 1) Parse
     try:
-         payload = json.loads(raw_body.decode("utf-8"))
-    except Exception:
-         # Fallback to existing logic flow if needed, but below we have try/catch blocks too.
-         # The original code did:
-         # raw_body = await request.body()
-         # payload = json.loads(raw_body.decode("utf-8"))
-         # But then it repeated body reading/decoding later in 1) Body grezzo.
-         # Let's fix the flow to be cleaner using the raw_body we just read.
-         pass
-
-    # 1) Body Parsing & Validation
-    try:
-        body_str = raw_body.decode("utf-8", errors="replace")
+        payload = json.loads(raw_body.decode("utf-8"))
     except Exception as e:
-        logger.exception("[WEBHOOK] Errore lettura body")
-        return {"status": "ignored", "reason": f"body read error: {e}"}
+        logger.error(f"[WEBHOOK] JSON Decode Error: {e}")
+        return Response(status_code=400, content="Invalid JSON")
 
-    if not body_str.strip():
-        logger.warning("[WEBHOOK] Body vuoto.")
-        return {"status": "ignored", "reason": "empty body"}
-
-    try:
-        payload = json.loads(body_str)
-    except json.JSONDecodeError as e:
-        logger.exception("[WEBHOOK] JSON non valido")
-        return {"status": "ignored", "reason": f"invalid json: {e}"}
-
-    # estrai transcript
-    transcript_text = extract_transcript_text(payload)
-
-    # arricchimento AI
-    ai_data = enrich_call_with_ai(transcript_text)
-
-    # quando costruisci l'entry di log:
-    entry = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "data": payload,
-        "transcript_text": transcript_text,
-        "ai_enrichment": ai_data,
-    }
-
-    logger.info("[WEBHOOK] Payload ElevenLabs ricevuto")
-
-    # 3) Tipo evento
+    # 2) Validate Type
     event_type = payload.get("type")
     if event_type != "post_call_transcription":
-        logger.info(f"[WEBHOOK] Ignoro evento di tipo {event_type}")
-        return {"status": "ignored", "reason": f"unsupported type {event_type}"}
+        # Return 200 to acknowledge receipt but ignore logic
+        return {"status": "ignored", "reason": "unsupported type"}
 
-    data: Dict[str, Any] = payload.get("data", {}) or {}
+    # 3) Extract Minimal Info for Log
+    data = payload.get("data", {})
+    agent_id = data.get("agent_id")
+    call_id = data.get("metadata", {}).get("phone_call", {}).get("call_sid")
 
-    # 3b) Agent ID (chi identifica il cliente)
-    agent_id: Optional[str] = data.get("agent_id")
+    logger.info(f"[WEBHOOK] Enqueuing event type={event_type} agent={agent_id} call={call_id}")
 
-    # Metadati chiamata
-    metadata: Dict[str, Any] = data.get("metadata", {}) or {}
-    start_unix = metadata.get("start_time_unix_secs")
-    duration_secs = metadata.get("call_duration_secs")
-
-    # Extract inbound number (the number called)
-    # ElevenLabs payload structure varies, check documentation or logs
-    # Usually metadata -> phone_call -> to_number (or similar)
-    phone_call_meta = metadata.get("phone_call", {})
-    to_number = phone_call_meta.get("number") or phone_call_meta.get("to_number")
-    # Also check inbound_phone_number_id if needed, but we rely on E.164
-
-    started_at: Optional[str] = None
-    ended_at: Optional[str] = None
-
+    # 4) Enqueue
     try:
-        if isinstance(start_unix, (int, float)):
-            started_dt = datetime.utcfromtimestamp(start_unix)
-            started_at = started_dt.isoformat()
-            if isinstance(duration_secs, (int, float)):
-                ended_dt = datetime.utcfromtimestamp(start_unix + duration_secs)
-                ended_at = ended_dt.isoformat()
+        queue = get_queue()
+        queue.enqueue(process_elevenlabs_event_job, payload)
     except Exception as e:
-        logger.warning(f"[WEBHOOK] Errore calcolo orari chiamata: {e}")
+        logger.error(f"[WEBHOOK] Failed to enqueue: {e}")
+        # Return 500 so ElevenLabs retries if our infrastructure is down
+        raise HTTPException(status_code=500, detail="Queue unavailable")
 
-    # --- UPSERT ROUTING & PHONE NUMBER ---
-    # We do this BEFORE enforcement so we capture unassigned agents/numbers
-    with SessionLocal() as db:
-        try:
-            # 1. Upsert PhoneNumber if present
-            phone_obj = None
-            if to_number:
-                # Basic normalization
-                if not to_number.startswith("+"):
-                    to_number = "+" + to_number
-
-                phone_obj = db.query(PhoneNumber).filter(PhoneNumber.e164 == to_number).first()
-                if not phone_obj:
-                    logger.info(f"[WEBHOOK] Discovered new phone number {to_number}")
-                    phone_obj = PhoneNumber(
-                        e164=to_number,
-                        provider="elevenlabs",
-                        status="active",
-                        user_id=None # Unknown initially
-                    )
-                    db.add(phone_obj)
-                    db.flush() # Get ID
-
-            # 2. Upsert AgentRouting
-            if agent_id:
-                routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id).first()
-                if routing:
-                    routing.last_event_at = datetime.utcnow()
-                    # Optionally link phone number if missing
-                    if not routing.phone_number_id and phone_obj:
-                        routing.phone_number_id = phone_obj.id
-                else:
-                    logger.info(f"[WEBHOOK] Discovered new unassigned agent {agent_id}")
-                    routing = AgentRouting(
-                        agent_id=agent_id,
-                        user_id=None,
-                        status="unassigned",
-                        phone_number_id=phone_obj.id if phone_obj else None,
-                        last_event_at=datetime.utcnow()
-                    )
-                    db.add(routing)
-                db.commit()
-        except Exception as e:
-            logger.error(f"[WEBHOOK] Error upserting routing/phone: {e}")
-            db.rollback()
-            # Continue execution, do not crash webhook
-
-        # --- ENFORCEMENT & IDEMPOTENCY ---
-        # Re-query agent using Agent model (legacy/primary logic)
-        agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
-        user = None
-        if agent_obj:
-            user = db.query(User).filter(User.agents.contains(agent_obj)).first()
-
-        if not agent_obj or not user:
-            logger.warning(f"[WEBHOOK] Unassigned agent/user for agent_id {agent_id}. Storing as unassigned.")
-            # Store in UnassignedEvent
-            try:
-                unassigned = UnassignedEvent(
-                    agent_id=agent_id,
-                    phone_number=to_number,
-                    payload=payload
-                )
-                db.add(unassigned)
-                db.commit()
-            except Exception as e:
-                logger.error(f"[WEBHOOK] Failed to save unassigned event: {e}")
-
-            return {"status": "ok", "message": "Event stored as unassigned"}
-
-        # Check User Active
-        if not user.is_active:
-            logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
-            return {"status": "suspended"}
-
-        # Check Subscription Active
-        active_sub = db.query(Subscription).filter(
-            Subscription.user_id == user.id,
-            Subscription.state == "active"
-        ).first()
-        if not active_sub:
-            logger.warning(f"[WEBHOOK] No active subscription for user {user.username} (agent {agent_id}). Blocking.")
-            return {"status": "suspended", "reason": "no_active_subscription"}
-
-        # IDEMPOTENCY CHECK
-        if duration_secs and agent_id:
-            call_id = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
-            if call_id:
-                from models import UsageEvent
-                exists = db.query(UsageEvent).filter_by(call_id=call_id).first()
-                if exists:
-                    logger.info(f"[WEBHOOK] Duplicate call_id {call_id}. Idempotency check passed. Skipping.")
-                    return {"status": "ok", "message": "Duplicate event ignored"}
-
-        # Enqueue processing job - MOVED INSIDE VALIDATION SCOPE (or after successful checks)
-        try:
-            queue = get_queue()
-            queue.enqueue(process_elevenlabs_event_job, payload)
-            logger.info(f"[WEBHOOK] Job enqueued for agent {agent_id}")
-        except Exception as e:
-            logger.error(f"[WEBHOOK] Failed to enqueue job (Redis down?): {e}")
-            # Fallback logic could be added here, but for now we return 200
-            # and rely on the queue. In real prod, might return 500 to trigger retry.
-            # Given requirement to return fast response, we accept queue dependency.
-            raise HTTPException(status_code=500, detail="Queue unavailable")
-
-    return {"status": "ok", "message": "Webhook received and processing enqueued."}
+    # 5) Return Immediate Success
+    return {"status": "ok"}
 
 @app.get("/clients")
 async def list_clients(admin: User = Depends(get_current_admin_user)):
