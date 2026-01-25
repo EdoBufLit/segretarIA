@@ -1,38 +1,38 @@
 <script src="/static/billing.js"></script>
 <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
     <!-- Starter Plan -->
-    <div class="glass-card p-8 rounded-2xl flex flex-col hover:-translate-y-1 transition-all duration-300 relative group">
-        <h3 class="text-2xl font-bold text-white mb-2">{{ plans.starter.name }}</h3>
-        <p class="text-gray-400 mb-6">{{ plans.starter.description }}</p>
-        <div class="text-4xl font-bold text-white mb-2">{{ plans.starter.price_display }}<span class="text-lg text-gray-500 font-normal">{{ plans.starter.interval_display }}</span></div>
-        <p class="text-sm text-gray-500 mb-6">{{ plans.starter.minutes }} minuti inclusi</p>
+    <div class="bg-white border border-neutral-200 shadow-sm p-8 rounded-2xl flex flex-col hover:-translate-y-1 transition-all duration-300 relative group">
+        <h3 class="text-2xl font-bold text-neutral-900 mb-2">{{ plans.starter.name }}</h3>
+        <p class="text-neutral-500 mb-6">{{ plans.starter.description }}</p>
+        <div class="text-4xl font-bold text-neutral-900 mb-2">{{ plans.starter.price_display }}<span class="text-lg text-neutral-500 font-normal">{{ plans.starter.interval_display }}</span></div>
+        <p class="text-sm text-neutral-500 mb-6">{{ plans.starter.minutes }} minuti inclusi</p>
         <ul class="space-y-3 mb-8 flex-1">
-            <li class="flex items-center text-gray-300">
+            <li class="flex items-center text-neutral-600">
                 <svg class="w-5 h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 Assistente IA H24
             </li>
-            <li class="flex items-center text-gray-300">
+            <li class="flex items-center text-neutral-600">
                 <svg class="w-5 h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 Report via Email
             </li>
-             <li class="flex items-center text-gray-300">
+             <li class="flex items-center text-neutral-600">
                 <svg class="w-5 h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 Supporto Standard
             </li>
         </ul>
         {% if user %}
-        <button onclick="buyPlan('{{ plans.starter.code }}')" class="w-full py-3 border border-white/20 text-white rounded-lg font-bold hover:bg-white/10 transition-colors">
+        <button onclick="buyPlan('{{ plans.starter.code }}')" class="w-full py-3 border border-neutral-200 text-neutral-900 rounded-lg font-bold hover:bg-neutral-50 transition-colors">
             Acquista {{ plans.starter.name }}
         </button>
         {% else %}
-        <a href="/login" class="block text-center w-full py-3 border border-white/20 text-white rounded-lg font-bold hover:bg-white/10 transition-colors">
+        <a href="/login" class="block text-center w-full py-3 border border-neutral-200 text-neutral-900 rounded-lg font-bold hover:bg-neutral-50 transition-colors">
             Inizia Ora
         </a>
         {% endif %}
     </div>
 
     <!-- Pro Plan -->
-    <div class="relative p-8 rounded-2xl flex flex-col transform md:-translate-y-4 hover:-translate-y-6 transition-all duration-300 z-10 bg-black/40 border border-blue-500/50 shadow-[0_0_40px_rgba(37,99,235,0.2)] backdrop-blur-md">
+    <div class="relative p-8 rounded-2xl flex flex-col transform md:-translate-y-4 hover:-translate-y-6 transition-all duration-300 z-10 bg-neutral-900 border border-blue-500/50 shadow-[0_0_40px_rgba(37,99,235,0.2)] backdrop-blur-md">
         <div class="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">POPOLARE</div>
         <h3 class="text-2xl font-bold text-white mb-2">{{ plans.pro.name }}</h3>
         <p class="text-gray-300 mb-6">{{ plans.pro.description }}</p>
@@ -64,31 +64,31 @@
     </div>
 
     <!-- Business Plan -->
-    <div class="glass-card p-8 rounded-2xl flex flex-col hover:-translate-y-1 transition-all duration-300">
-        <h3 class="text-2xl font-bold text-white mb-2">{{ plans.business.name }}</h3>
-        <p class="text-gray-400 mb-6">{{ plans.business.description }}</p>
-        <div class="text-4xl font-bold text-white mb-2">{{ plans.business.price_display }}<span class="text-lg text-gray-500 font-normal">{{ plans.business.interval_display }}</span></div>
-        <p class="text-sm text-gray-500 mb-6">{{ plans.business.minutes }} minuti inclusi</p>
+    <div class="bg-white border border-neutral-200 shadow-sm p-8 rounded-2xl flex flex-col hover:-translate-y-1 transition-all duration-300">
+        <h3 class="text-2xl font-bold text-neutral-900 mb-2">{{ plans.business.name }}</h3>
+        <p class="text-neutral-500 mb-6">{{ plans.business.description }}</p>
+        <div class="text-4xl font-bold text-neutral-900 mb-2">{{ plans.business.price_display }}<span class="text-lg text-neutral-500 font-normal">{{ plans.business.interval_display }}</span></div>
+        <p class="text-sm text-neutral-500 mb-6">{{ plans.business.minutes }} minuti inclusi</p>
         <ul class="space-y-3 mb-8 flex-1">
-            <li class="flex items-center text-gray-300">
+            <li class="flex items-center text-neutral-600">
                 <svg class="w-5 h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 Minuti elevati
             </li>
-            <li class="flex items-center text-gray-300">
+            <li class="flex items-center text-neutral-600">
                 <svg class="w-5 h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 API Access
             </li>
-            <li class="flex items-center text-gray-300">
+            <li class="flex items-center text-neutral-600">
                 <svg class="w-5 h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 Account Manager
             </li>
         </ul>
         {% if user %}
-        <button onclick="buyPlan('{{ plans.business.code }}')" class="w-full py-3 border border-white/20 text-white rounded-lg font-bold hover:bg-white/10 transition-colors">
+        <button onclick="buyPlan('{{ plans.business.code }}')" class="w-full py-3 border border-neutral-200 text-neutral-900 rounded-lg font-bold hover:bg-neutral-50 transition-colors">
             Acquista {{ plans.business.name }}
         </button>
         {% else %}
-        <a href="/login" class="block text-center w-full py-3 border border-white/20 text-white rounded-lg font-bold hover:bg-white/10 transition-colors">
+        <a href="/login" class="block text-center w-full py-3 border border-neutral-200 text-neutral-900 rounded-lg font-bold hover:bg-neutral-50 transition-colors">
             Inizia Ora
         </a>
         {% endif %}
