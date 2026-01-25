@@ -15,7 +15,7 @@ import app as app_module
 import db as db_module
 from admin_seed import ensure_default_admin
 from db import Base, get_db
-from models import User, Subscription, Plan, UsageEvent, PhoneNumber, Agent
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber, Agent, AgentRouting
 from auth import hash_password
 
 class AdminDeleteTests(unittest.TestCase):
@@ -106,6 +106,56 @@ class AdminDeleteTests(unittest.TestCase):
         session = self.SessionLocal()
         u = session.query(User).filter_by(id=client_id).first()
         self.assertIsNone(u)
+        session.close()
+
+    def test_delete_client_with_agent_routing(self):
+        self.login_admin()
+
+        session = self.SessionLocal()
+
+        client = User(
+            username="client_routing",
+            email="client_routing@example.com",
+            password_hash=hash_password("pass"),
+            role="client",
+            is_active=True
+        )
+        session.add(client)
+        session.commit()
+
+        # Add Phone Number
+        ph = PhoneNumber(
+            e164="+39000000001",
+            user_id=client.id,
+            provider="test",
+            status="active"
+        )
+        session.add(ph)
+        session.commit()
+
+        # Add AgentRouting
+        routing = AgentRouting(
+            user_id=client.id,
+            agent_id="ag_routing",
+            phone_number_id=ph.id,
+            is_active=True
+        )
+        session.add(routing)
+        session.commit()
+
+        client_id = client.id
+        routing_id = routing.id
+        session.close()
+
+        # Delete
+        res = self.client.delete(f"/admin/users/{client_id}")
+        self.assertEqual(res.status_code, 200)
+
+        # Verify
+        session = self.SessionLocal()
+        self.assertIsNone(session.query(User).filter_by(id=client_id).first())
+        self.assertIsNone(session.query(PhoneNumber).filter_by(user_id=client_id).first())
+        self.assertIsNone(session.query(AgentRouting).filter_by(id=routing_id).first())
         session.close()
 
     def test_delete_client_with_dependencies(self):

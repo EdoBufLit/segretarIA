@@ -493,11 +493,12 @@ async function loadUsersTable(offsetOverride = null) {
 
             const subBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold ${subBadgeClass}">${u.subscription_status.toUpperCase()}</span>`;
 
+            const safeUsername = u.username.replace(/'/g, "\\'");
             const actionBtn = u.is_active
-                ? `<button onclick="suspendUser(${u.id}, '${u.username}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">SOSPENDI</button>`
+                ? `<button onclick="suspendUser(${u.id}, '${safeUsername}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">SOSPENDI</button>`
                 : `<div class="flex gap-2 justify-end">
-                     <button onclick="unsuspendUser(${u.id}, '${u.username}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">RIATTIVA</button>
-                     <button onclick="deleteUser(${u.id}, '${u.username}')" class="text-white hover:text-red-200 text-xs font-bold bg-red-600 hover:bg-red-700 px-2 py-1 rounded shadow">ELIMINA</button>
+                     <button onclick="unsuspendUser(${u.id}, '${safeUsername}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">RIATTIVA</button>
+                     <button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-white hover:text-red-200 text-xs font-bold bg-red-600 hover:bg-red-700 px-2 py-1 rounded shadow">ELIMINA</button>
                    </div>`;
 
             tr.innerHTML = `
@@ -725,6 +726,127 @@ function cancelDeprovision(id, e164) {
                 } else {
                     const err = await res.json();
                     showToast("Errore: " + (err.detail || "Errore sconosciuto"), "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Errore di rete", "error");
+            }
+        }
+    );
+}
+
+// =========================
+// ROUTING (INSTRADAMENTI)
+// =========================
+
+async function loadRoutingTable() {
+    try {
+        const res = await fetch("/api/admin/routing");
+        if (!res.ok) throw new Error("Failed to fetch routing");
+        const data = await res.json();
+        const items = data.items || [];
+
+        const tbody = document.getElementById("routing-table-body");
+        tbody.innerHTML = "";
+
+        if (items.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-[var(--muted)]">Nessun instradamento trovato.</td></tr>`;
+            return;
+        }
+
+        items.forEach(r => {
+            const tr = document.createElement("tr");
+            tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+
+            const statusBadge = r.is_active
+                ? `<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">ATTIVO</span>`
+                : `<span class="px-2 py-0.5 rounded text-xs font-bold bg-gray-500/20 text-gray-400">INATTIVO</span>`;
+
+            const actions = `<button onclick="deleteRouting(${r.id})" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">ELIMINA</button>`;
+
+            const username = r.username ? `${r.username} (ID: ${r.user_id})` : `<span class="text-yellow-500">Sconosciuto</span>`;
+            const lastEvent = r.last_event_at ? r.last_event_at.split('T')[0] : "-";
+
+            tr.innerHTML = `
+                <td class="px-4 py-2">${username}</td>
+                <td class="px-4 py-2 font-mono text-xs">${r.agent_id}</td>
+                <td class="px-4 py-2 font-mono">${r.e164}</td>
+                <td class="px-4 py-2">${statusBadge}</td>
+                <td class="px-4 py-2 text-sm text-[var(--muted)]">${lastEvent}</td>
+                <td class="px-4 py-2 text-right">${actions}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error("Error loading routing:", e);
+        showToast("Errore caricamento instradamenti", "error");
+    }
+}
+
+function openAddRoutingModal() {
+    const modal = document.getElementById("add-routing-modal");
+    if (modal) {
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+    }
+}
+
+function closeAddRoutingModal() {
+    const modal = document.getElementById("add-routing-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        document.getElementById("add-routing-form").reset();
+    }
+}
+
+async function handleCreateRouting(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+
+    // Convert to JSON
+    const payload = {
+        user_id: parseInt(formData.get("user_id")),
+        agent_id: formData.get("agent_id"),
+        phone_number_id: parseInt(formData.get("phone_number_id")),
+        is_active: formData.get("is_active") === "on"
+    };
+
+    try {
+        const res = await fetch("/api/admin/routing", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast("Routing creato correttamente", "success");
+            closeAddRoutingModal();
+            loadRoutingTable();
+        } else {
+            const err = await res.json();
+            showToast("Errore: " + (err.detail || "Impossibile creare"), "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Errore di rete", "error");
+    }
+}
+
+function deleteRouting(id) {
+    showConfirm(
+        "ELIMINA ROUTING",
+        `Vuoi davvero eliminare questo instradamento?`,
+        async () => {
+            try {
+                const res = await fetch(`/api/admin/routing/${id}`, { method: "DELETE" });
+                if (res.ok) {
+                    showToast("Routing eliminato", "success");
+                    loadRoutingTable();
+                } else {
+                    const err = await res.json();
+                    showToast("Errore: " + (err.detail || "Impossibile eliminare"), "error");
                 }
             } catch (e) {
                 console.error(e);

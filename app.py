@@ -27,7 +27,7 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import get_db, SessionLocal
-from models import User, Subscription, Plan, UsageEvent, PhoneNumber
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting
 from auth import (
     hash_password,
     verify_password,
@@ -528,6 +528,106 @@ async def api_admin_cancel_deprovision(
         return {"status": "ok"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+# === API Agent Routing ===
+
+class AgentRoutingCreate(BaseModel):
+    user_id: int
+    agent_id: str
+    phone_number_id: int
+    is_active: bool = True
+
+class AgentRoutingUpdate(BaseModel):
+    agent_id: Optional[str] = None
+    phone_number_id: Optional[int] = None
+    is_active: Optional[bool] = None
+
+@app.get("/api/admin/routing")
+async def api_admin_get_routing(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    routings = db.query(AgentRouting).all()
+    items = []
+    for r in routings:
+        items.append({
+            "id": r.id,
+            "user_id": r.user_id,
+            "username": r.user.username if r.user else "Unknown",
+            "agent_id": r.agent_id,
+            "phone_number_id": r.phone_number_id,
+            "e164": r.phone_number.e164 if r.phone_number else "Unknown",
+            "is_active": r.is_active,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "last_event_at": r.last_event_at.isoformat() if r.last_event_at else None
+        })
+    return {"status": "ok", "items": items}
+
+@app.post("/api/admin/routing")
+async def api_admin_create_routing(
+    payload: AgentRoutingCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    # Verify user exists
+    user = db.query(User).filter(User.id == payload.user_id).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="User not found")
+
+    # Verify phone exists
+    phone = db.query(PhoneNumber).filter(PhoneNumber.id == payload.phone_number_id).first()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Phone number not found")
+
+    new_routing = AgentRouting(
+        user_id=payload.user_id,
+        agent_id=payload.agent_id,
+        phone_number_id=payload.phone_number_id,
+        is_active=payload.is_active
+    )
+    db.add(new_routing)
+    db.commit()
+    db.refresh(new_routing)
+
+    return {"status": "ok", "id": new_routing.id}
+
+@app.patch("/api/admin/routing/{routing_id}")
+async def api_admin_update_routing(
+    routing_id: int,
+    payload: AgentRoutingUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    routing = db.query(AgentRouting).filter(AgentRouting.id == routing_id).first()
+    if not routing:
+        raise HTTPException(status_code=404, detail="Routing not found")
+
+    if payload.agent_id is not None:
+        routing.agent_id = payload.agent_id
+    if payload.phone_number_id is not None:
+        phone = db.query(PhoneNumber).filter(PhoneNumber.id == payload.phone_number_id).first()
+        if not phone:
+             raise HTTPException(status_code=400, detail="Phone number not found")
+        routing.phone_number_id = payload.phone_number_id
+    if payload.is_active is not None:
+        routing.is_active = payload.is_active
+
+    db.commit()
+    return {"status": "ok"}
+
+@app.delete("/api/admin/routing/{routing_id}")
+async def api_admin_delete_routing(
+    routing_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    routing = db.query(AgentRouting).filter(AgentRouting.id == routing_id).first()
+    if not routing:
+        raise HTTPException(status_code=404, detail="Routing not found")
+
+    db.delete(routing)
+    db.commit()
+    return {"status": "ok"}
 
 # Legacy endpoints (kept for compatibility)
 @app.post("/admin/phone-numbers/create")
@@ -1257,6 +1357,9 @@ async def admin_delete_user(
 
     try:
         # 3. Transactional deletion of dependencies
+        # Delete AgentRouting (depends on User and PhoneNumber)
+        db.query(AgentRouting).filter(AgentRouting.user_id == user.id).delete()
+
         # Delete UsageEvents
         db.query(UsageEvent).filter(UsageEvent.user_id == user.id).delete()
 

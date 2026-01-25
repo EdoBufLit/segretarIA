@@ -193,6 +193,39 @@
         </div>
     </div>
 
+    <!-- ADD ROUTING MODAL -->
+    <div id="add-routing-modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="glass-card w-11/12 max-w-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                 <h3 class="text-xl font-bold text-white">Nuovo Instradamento</h3>
+                 <button onclick="closeAddRoutingModal()" class="text-white hover:text-gray-300"><i data-feather="x"></i></button>
+            </div>
+            <form id="add-routing-form" onsubmit="handleCreateRouting(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[var(--muted)] mb-1">Utente (ID)</label>
+                    <input type="number" name="user_id" required class="w-full p-2 rounded bg-black/20 border border-[var(--border)] text-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[var(--muted)] mb-1">Agente (ElevenLabs ID)</label>
+                    <input type="text" name="agent_id" required placeholder="agent_..." class="w-full p-2 rounded bg-black/20 border border-[var(--border)] text-white font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[var(--muted)] mb-1">Numero (ID Database)</label>
+                    <input type="number" name="phone_number_id" required class="w-full p-2 rounded bg-black/20 border border-[var(--border)] text-white">
+                    <p class="text-xs text-[var(--muted)] mt-1">ID interno del numero (vedi sezione Numeri).</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" name="is_active" id="routing-active" checked class="rounded bg-black/20 border border-[var(--border)] text-blue-600">
+                    <label for="routing-active" class="text-sm text-white">Attivo</label>
+                </div>
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" onclick="closeAddRoutingModal()" class="px-4 py-2 rounded bg-[var(--panel2)] border border-[var(--border)] text-white hover:bg-white/10">Annulla</button>
+                    <button type="submit" class="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium shadow-lg">Salva</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- CONFIRMATION MODAL -->
     <div id="confirm-modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50 backdrop-blur-sm">
         <div class="glass-card w-11/12 max-w-md p-6 text-center">
@@ -260,6 +293,11 @@
                     class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
                     <i data-feather="phone" class="w-5 h-5"></i>
                     <span class="font-medium">Numeri</span>
+                </a>
+                <a href="#" data-section="routing" onclick="openSection('routing')"
+                    class="nav-item flex items-center gap-3 p-3 rounded-lg text-[var(--muted)] hover:text-white transition-all">
+                    <i data-feather="shuffle" class="w-5 h-5"></i>
+                    <span class="font-medium">Instradamenti</span>
                 </a>
                 {% endif %}
 
@@ -412,6 +450,39 @@
                         <button onclick="triggerExport('logs')" class="mt-auto px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded font-medium shadow transition-colors flex items-center gap-2">
                             <i data-feather="file-text"></i> Export Log (CSV)
                         </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION: ROUTING (INSTRADAMENTI) -->
+            <section id="section-routing" class="section hidden w-full">
+                <div class="glass-card p-6 mb-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xl font-bold text-white">Gestione Instradamenti</h3>
+                        <div class="flex gap-2">
+                             <button onclick="openAddRoutingModal()" class="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2">
+                                <i data-feather="plus" class="w-4 h-4"></i> Nuovo Routing
+                            </button>
+                            <button onclick="loadRoutingTable()" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded text-sm font-medium">
+                                <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-separate border-spacing-y-2">
+                            <thead>
+                                <tr>
+                                    <th class="px-4 py-2">Cliente</th>
+                                    <th class="px-4 py-2">Agente (ID)</th>
+                                    <th class="px-4 py-2">Numero (E.164)</th>
+                                    <th class="px-4 py-2">Stato</th>
+                                    <th class="px-4 py-2">Ultimo Evento</th>
+                                    <th class="px-4 py-2 text-right">Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody id="routing-table-body" class="text-sm text-[var(--text)]"></tbody>
+                        </table>
                     </div>
                 </div>
             </section>
@@ -718,6 +789,7 @@
                 'logs': 'Storico Chiamate',
                 'clients': 'Lista Clienti',
                 'phonenumbers': 'Gestione Numeri',
+                'routing': 'Instradamenti',
                 'analytics': 'Statistiche',
                 'settings': 'Configurazione'
             };
@@ -749,6 +821,7 @@
             if (name === "analytics" && typeof loadAdminMetrics === "function") loadAdminMetrics();
             if (name === "users" && typeof loadUsersTable === "function") loadUsersTable(0);
             if (name === "phonenumbers" && typeof loadPhoneNumbersTable === "function") loadPhoneNumbersTable();
+            if (name === "routing" && typeof loadRoutingTable === "function") loadRoutingTable();
 
             // Toggle Sections
             document.querySelectorAll(".section").forEach(s => s.classList.add("hidden"));

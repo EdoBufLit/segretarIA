@@ -133,3 +133,18 @@ class AuditEvent(Base):
     entity_type = Column(String, nullable=True) # 'user', 'subscription'
     entity_id = Column(String, nullable=True) # ID of the entity
     meta_json = Column(JSON, nullable=True) # Extra details
+
+class AgentRouting(Base):
+    __tablename__ = "agent_routing"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    agent_id = Column(String, nullable=False)
+    phone_number_id = Column(Integer, ForeignKey("phone_numbers.id"), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    last_event_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+    phone_number = relationship("PhoneNumber")
