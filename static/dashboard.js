@@ -764,7 +764,13 @@ async function loadRoutingTable() {
 
             const actions = `<button onclick="deleteRouting(${r.id})" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">ELIMINA</button>`;
 
-            const username = r.username ? `${r.username} (ID: ${r.user_id})` : `<span class="text-yellow-500">Sconosciuto</span>`;
+            let username = `<span class="text-yellow-500">Sconosciuto</span>`;
+            if (r.username && r.username !== "Unknown") {
+                username = `${r.username} (ID: ${r.user_id})`;
+            } else if (r.status === "unassigned") {
+                username = `<span class="text-red-400 font-bold animate-pulse">NON ASSEGNATO</span>`;
+            }
+
             const lastEvent = r.last_event_at ? r.last_event_at.split('T')[0] : "-";
 
             tr.innerHTML = `

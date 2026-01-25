@@ -532,15 +532,18 @@ async def api_admin_cancel_deprovision(
 # === API Agent Routing ===
 
 class AgentRoutingCreate(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None
     agent_id: str
-    phone_number_id: int
+    phone_number_id: Optional[int] = None
     is_active: bool = True
+    status: str = "active"
 
 class AgentRoutingUpdate(BaseModel):
+    user_id: Optional[int] = None
     agent_id: Optional[str] = None
     phone_number_id: Optional[int] = None
     is_active: Optional[bool] = None
+    status: Optional[str] = None
 
 @app.get("/api/admin/routing")
 async def api_admin_get_routing(
@@ -557,6 +560,7 @@ async def api_admin_get_routing(
             "agent_id": r.agent_id,
             "phone_number_id": r.phone_number_id,
             "e164": r.phone_number.e164 if r.phone_number else "Unknown",
+            "status": r.status,
             "is_active": r.is_active,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "last_event_at": r.last_event_at.isoformat() if r.last_event_at else None
@@ -569,21 +573,24 @@ async def api_admin_create_routing(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user)
 ):
-    # Verify user exists
-    user = db.query(User).filter(User.id == payload.user_id).first()
-    if not user:
-        raise HTTPException(status_code=400, detail="User not found")
+    # Verify user exists if provided
+    if payload.user_id:
+        user = db.query(User).filter(User.id == payload.user_id).first()
+        if not user:
+            raise HTTPException(status_code=400, detail="User not found")
 
-    # Verify phone exists
-    phone = db.query(PhoneNumber).filter(PhoneNumber.id == payload.phone_number_id).first()
-    if not phone:
-        raise HTTPException(status_code=400, detail="Phone number not found")
+    # Verify phone exists if provided
+    if payload.phone_number_id:
+        phone = db.query(PhoneNumber).filter(PhoneNumber.id == payload.phone_number_id).first()
+        if not phone:
+            raise HTTPException(status_code=400, detail="Phone number not found")
 
     new_routing = AgentRouting(
         user_id=payload.user_id,
         agent_id=payload.agent_id,
         phone_number_id=payload.phone_number_id,
-        is_active=payload.is_active
+        is_active=payload.is_active,
+        status=payload.status
     )
     db.add(new_routing)
     db.commit()
@@ -602,6 +609,15 @@ async def api_admin_update_routing(
     if not routing:
         raise HTTPException(status_code=404, detail="Routing not found")
 
+    if payload.user_id is not None:
+        if payload.user_id == 0: # convention to unassign
+             routing.user_id = None
+        else:
+             user = db.query(User).filter(User.id == payload.user_id).first()
+             if not user:
+                 raise HTTPException(status_code=400, detail="User not found")
+             routing.user_id = payload.user_id
+
     if payload.agent_id is not None:
         routing.agent_id = payload.agent_id
     if payload.phone_number_id is not None:
@@ -611,6 +627,8 @@ async def api_admin_update_routing(
         routing.phone_number_id = payload.phone_number_id
     if payload.is_active is not None:
         routing.is_active = payload.is_active
+    if payload.status is not None:
+        routing.status = payload.status
 
     db.commit()
     return {"status": "ok"}
@@ -892,6 +910,13 @@ async def elevenlabs_webhook(request: Request):
     start_unix = metadata.get("start_time_unix_secs")
     duration_secs = metadata.get("call_duration_secs")
 
+    # Extract inbound number (the number called)
+    # ElevenLabs payload structure varies, check documentation or logs
+    # Usually metadata -> phone_call -> to_number (or similar)
+    phone_call_meta = metadata.get("phone_call", {})
+    to_number = phone_call_meta.get("number") or phone_call_meta.get("to_number")
+    # Also check inbound_phone_number_id if needed, but we rely on E.164
+
     started_at: Optional[str] = None
     ended_at: Optional[str] = None
 
@@ -905,11 +930,62 @@ async def elevenlabs_webhook(request: Request):
     except Exception as e:
         logger.warning(f"[WEBHOOK] Errore calcolo orari chiamata: {e}")
 
-    # ENFORCEMENT & IDEMPOTENCY
+    # --- UPSERT ROUTING & PHONE NUMBER ---
+    # We do this BEFORE enforcement so we capture unassigned agents/numbers
     with SessionLocal() as db:
+        try:
+            # 1. Upsert PhoneNumber if present
+            phone_obj = None
+            if to_number:
+                # Basic normalization
+                if not to_number.startswith("+"):
+                    to_number = "+" + to_number
+
+                phone_obj = db.query(PhoneNumber).filter(PhoneNumber.e164 == to_number).first()
+                if not phone_obj:
+                    logger.info(f"[WEBHOOK] Discovered new phone number {to_number}")
+                    phone_obj = PhoneNumber(
+                        e164=to_number,
+                        provider="elevenlabs",
+                        status="active",
+                        user_id=None # Unknown initially
+                    )
+                    db.add(phone_obj)
+                    db.flush() # Get ID
+
+            # 2. Upsert AgentRouting
+            if agent_id:
+                routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id).first()
+                if routing:
+                    routing.last_event_at = datetime.utcnow()
+                    # Optionally link phone number if missing
+                    if not routing.phone_number_id and phone_obj:
+                        routing.phone_number_id = phone_obj.id
+                else:
+                    logger.info(f"[WEBHOOK] Discovered new unassigned agent {agent_id}")
+                    routing = AgentRouting(
+                        agent_id=agent_id,
+                        user_id=None,
+                        status="unassigned",
+                        phone_number_id=phone_obj.id if phone_obj else None,
+                        last_event_at=datetime.utcnow()
+                    )
+                    db.add(routing)
+                db.commit()
+        except Exception as e:
+            logger.error(f"[WEBHOOK] Error upserting routing/phone: {e}")
+            db.rollback()
+            # Continue execution, do not crash webhook
+
+        # --- ENFORCEMENT & IDEMPOTENCY ---
+        # Re-query agent using Agent model (legacy/primary logic)
+        # Note: If Agent model table is not populated for new agents, this block might block them.
+        # However, AgentRouting is for admin to resolve.
+        # If the user is not found, we block execution but we have already captured the routing info above.
+
         agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
         if not agent_obj:
-            logger.warning(f"[WEBHOOK] Unknown agent_id {agent_id}. Blocking.")
+            logger.warning(f"[WEBHOOK] Unknown agent_id {agent_id}. Blocking further processing.")
             return {"status": "ignored", "reason": "unknown_agent"}
 
         # Find owner (Client)

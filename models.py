@@ -138,9 +138,10 @@ class AgentRouting(Base):
     __tablename__ = "agent_routing"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     agent_id = Column(String, nullable=False)
-    phone_number_id = Column(Integer, ForeignKey("phone_numbers.id"), nullable=False)
+    phone_number_id = Column(Integer, ForeignKey("phone_numbers.id"), nullable=True)
+    status = Column(String, default="active", nullable=False)  # active, unassigned
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
