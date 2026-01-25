@@ -1044,64 +1044,33 @@ async def remove_client(body: RemoveClientRequest, admin: User = Depends(get_cur
 @app.get("/logs/{agent_id}/list")
 async def view_logs_list(
     agent_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    status: Optional[str] = None,
-    q: Optional[str] = None,
-    admin: User = Depends(get_current_admin_user)
-    # date_from, date_to ... si possono aggiungere
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    status: str = Query("all"),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
+    q: str = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     Restituisce i log impaginati e filtrabili per la dashboard.
+    RBAC:
+    - Admin: può accedere a qualsiasi agent_id
+    - Client: può accedere solo ai suoi agent_id
     """
     maybe_reload_clients()
-    
-    log_path = LOGS_DIR / f"{agent_id}.log"
-    if not log_path.exists():
-        return {"items": [], "total": 0}
-        
-    all_logs = []
-    with log_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                entry = json.loads(line)
-                inner_data = entry.get("data", {})
-                
-                # Se c'è un filtro 'q' (search)
-                if q:
-                    # Cerca in caller_number, summary, analysis
-                    search_content = f"{inner_data.get('caller_number','')} {inner_data.get('summary','')} {str(inner_data.get('analysis',''))}".lower()
-                    if q.lower() not in search_content:
-                        continue
-                        
-                # Se c'è un filtro status
-                row_status = inner_data.get("status", "success")
-                if status and status != "all":
-                    if row_status != status:
-                        continue
-                
-                item = {
-                    "timestamp": entry.get("timestamp"),
-                    "caller": inner_data.get("caller_number", "Unknown"),
-                    "status": row_status,
-                    "duration_secs": inner_data.get("duration_secs"),
-                    "summary": inner_data.get("summary") or inner_data.get("analysis", {}).get("summary", ""),
-                    "raw": entry
-                }
-                all_logs.append(item)
-            except:
-                pass
-                
-    # Ordinamento: dal più recente
-    all_logs.reverse()
-    
-    total = len(all_logs)
-    paginated = all_logs[offset : offset + limit]
-    
-    return {
-        "items": paginated,
-        "total": total
-    }
+
+    # RBAC Check
+    if current_user.role != "admin":
+        # Check ownership
+        user = db.query(User).filter(User.id == current_user.id).first()
+        user_agents = [a.agent_id for a in user.agents]
+        if agent_id not in user_agents:
+            raise HTTPException(status_code=403, detail="Access denied to this agent")
+
+    # Delegate to _read_logs which handles filtering/reading
+    return _read_logs([agent_id], limit, offset, status, date_from, date_to, q)
 
 @app.get("/logs/{agent_id}")
 async def view_logs(agent_id: str, admin: User = Depends(get_current_admin_user)):
@@ -2187,26 +2156,6 @@ def _read_logs(
     return {"status": "ok", "total": total, "items": paginated_items}
 
 
-@app.get("/logs/{agent_id}/list")
-async def get_logs_filtered(
-    agent_id: str,
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    status: str = Query("all"),
-    date_from: str = Query(None),
-    date_to: str = Query(None),
-    q: str = Query(None),
-    admin: User = Depends(get_current_admin_user)
-):
-    """
-    Ritorna i log del cliente in formato filtrabile e paginato (Admin-only).
-    """
-    maybe_reload_clients()
-
-    if agent_id not in CLIENTS:
-        raise HTTPException(status_code=404, detail="Cliente non trovato")
-
-    return _read_logs([agent_id], limit, offset, status, date_from, date_to, q)
 
 
 @app.get("/api/logs")
