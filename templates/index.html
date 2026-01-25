@@ -19,7 +19,6 @@
     </script>
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/booking_wizard.css">
 
     <!-- Removed effects.css to ensure clean Light Theme -->
 
@@ -285,34 +284,52 @@
         </div>
     </footer>
 
-    <div id="booking-wizard" class="booking-wizard" aria-hidden="true">
-        <div class="booking-wizard__backdrop" data-booking-close></div>
-        <div class="booking-wizard__card" role="dialog" aria-modal="true" aria-labelledby="booking-wizard-title">
-            <!-- Existing Wizard Content (Managed by JS) -->
-            <button type="button" class="booking-wizard__close" data-booking-close aria-label="Chiudi wizard">
+    <div id="booking-wizard" class="fixed inset-0 z-50 hidden items-center justify-center p-4 sm:p-6" aria-hidden="true">
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-neutral-900/60 backdrop-blur-sm transition-opacity" data-booking-close></div>
+
+        <!-- Card -->
+        <div class="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden transform transition-all p-8 md:p-10" role="dialog" aria-modal="true" aria-labelledby="booking-wizard-title">
+
+            <!-- Close Button -->
+            <button type="button" class="absolute top-6 right-6 text-neutral-400 hover:text-neutral-900 transition-colors p-2 rounded-xl hover:bg-neutral-50" data-booking-close aria-label="Chiudi wizard">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
-            <div class="booking-wizard__header">
-                <div>
-                    <p class="booking-wizard__progress-text" id="booking-wizard-progress">1/4</p>
-                    <h3 id="booking-wizard-title" class="booking-wizard__title">Richiesta Contatto</h3>
-                </div>
+
+            <!-- Header -->
+            <div class="flex flex-col gap-1 mb-8">
+                <p class="text-sm font-semibold text-neutral-500 tracking-wide uppercase" id="booking-wizard-progress">1/4</p>
+                <h3 id="booking-wizard-title" class="text-3xl font-bold text-neutral-900 tracking-tight">Richiesta Contatto</h3>
             </div>
-            <div class="booking-wizard__progress">
-                <div class="booking-wizard__progress-bar" id="booking-wizard-progress-bar"></div>
+
+            <!-- Progress Bar -->
+            <div class="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden mb-8">
+                <div class="h-full bg-neutral-900 transition-all duration-500 ease-out" id="booking-wizard-progress-bar" style="width: 0%"></div>
             </div>
-            <form id="booking-wizard-form" class="booking-wizard__form" novalidate>
-                <div id="booking-wizard-step" class="booking-wizard__step"></div>
-                <p id="booking-wizard-error" class="booking-wizard__error" role="alert" aria-live="polite"></p>
-                <div class="booking-wizard__actions">
-                    <button type="button" class="booking-wizard__secondary" id="booking-wizard-prev">Indietro</button>
-                    <button type="button" class="booking-wizard__primary" id="booking-wizard-next">Avanti</button>
+
+            <!-- Form -->
+            <form id="booking-wizard-form" class="flex flex-col flex-1 overflow-y-auto" novalidate>
+                <div id="booking-wizard-step" class="space-y-6 flex-1 min-h-[200px]"></div>
+
+                <div class="mt-8 pt-6 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <p id="booking-wizard-error" class="text-sm text-red-500 font-medium" role="alert" aria-live="polite"></p>
+                    <div class="flex gap-3 w-full sm:w-auto">
+                        <button type="button" class="flex-1 sm:flex-none px-6 py-3 rounded-xl text-neutral-600 font-medium hover:bg-neutral-50 hover:text-neutral-900 transition-colors" id="booking-wizard-prev">Indietro</button>
+                        <button type="button" class="flex-1 sm:flex-none px-8 py-3 rounded-xl bg-neutral-900 text-white font-semibold shadow-lg shadow-neutral-900/20 hover:bg-neutral-800 hover:scale-105 transition-all active:scale-95" id="booking-wizard-next">Avanti</button>
+                    </div>
                 </div>
             </form>
-            <div id="booking-wizard-success" class="booking-wizard__success" hidden>
-                <div class="booking-wizard__success-icon">✅</div>
-                <p class="booking-wizard__success-text">Richiesta inviata con successo.</p>
-                <button type="button" class="booking-wizard__primary" data-booking-close>Chiudi</button>
+
+            <!-- Success State -->
+            <div id="booking-wizard-success" class="flex flex-col items-center justify-center text-center py-12 space-y-6 hidden">
+                <div class="w-20 h-20 rounded-full bg-green-100 text-green-600 flex items-center justify-center mb-2">
+                    <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </div>
+                <div>
+                    <h4 class="text-2xl font-bold text-neutral-900 mb-2">Richiesta Inviata!</h4>
+                    <p class="text-neutral-500">Un nostro consulente ti contatterà a breve.</p>
+                </div>
+                <button type="button" class="px-8 py-3 rounded-xl bg-neutral-900 text-white font-semibold hover:bg-neutral-800 transition-all" data-booking-close>Chiudi</button>
             </div>
         </div>
     </div>

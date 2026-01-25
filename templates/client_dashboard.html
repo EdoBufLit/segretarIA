@@ -70,6 +70,10 @@
                 <i data-feather="bar-chart-2" class="w-4 h-4"></i>
                 Statistiche
             </a>
+            <a href="#" data-section="numbers" onclick="openSection('numbers')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
+                <i data-feather="phone" class="w-4 h-4"></i>
+                Numeri
+            </a>
             <div class="pt-4 mt-4 border-t border-neutral-100"></div>
             <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
                 <i data-feather="settings" class="w-4 h-4"></i>
@@ -243,6 +247,35 @@
                     <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
                         <h3 class="text-base font-semibold text-neutral-900 mb-4">Urgenza</h3>
                         <ul id="analytics-urgency-list" class="space-y-2 text-sm text-neutral-600"></ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- NUMBERS SECTION -->
+            <section id="section-numbers" class="section hidden space-y-6">
+                <div class="dashboard-card bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-white">
+                        <h3 class="text-base font-semibold text-neutral-900">Numeri Assegnati</h3>
+                        <button onclick="loadClientNumbers()" class="p-2 hover:bg-neutral-100 rounded-lg transition-colors text-neutral-500" title="Aggiorna">
+                            <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-neutral-50 border-b border-neutral-100">
+                                <tr>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Numero</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Agente</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Note</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato</th>
+                                    <th class="px-6 py-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="numbers-table-body" class="divide-y divide-neutral-100 bg-white">
+                                <!-- Populated by JS -->
+                                <tr><td colspan="5" class="text-center py-8 text-neutral-500 text-sm">Caricamento...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
