@@ -1520,3 +1520,5 @@ function closeLogDetail() {
     modal.classList.add("hidden");
     modal.classList.remove("flex");
 }
+
+
