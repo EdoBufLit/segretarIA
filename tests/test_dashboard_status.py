@@ -39,36 +39,16 @@ def test_dashboard_status_active():
     sub = create_mock_subscription(state="active")
 
     mock_db = MagicMock()
-
-    # We need to handle multiple queries
-    # 1. db.query(Subscription) -> ... -> first()
-    # 2. db.query(func.sum) -> ... -> scalar()
-
-    def query_side_effect(*args):
-        if args[0] == Subscription:
-            # Return mock that behaves like the subscription query
-            q = MagicMock()
-            q.filter.return_value.first.return_value = sub
-            return q
-        elif str(args[0]) == str(func.sum(UsageEvent.billed_seconds)):
-             # Return mock that behaves like the usage query
-             q = MagicMock()
-             q.filter.return_value.scalar.return_value = 0 # 0 seconds used
-             return q
-        else:
-             return MagicMock()
-
-    # Since comparing func.sum objects is hard, let's just make the mock return a flexible object
-    # that can handle both chains.
-
-    # Simpler approach: Make the default return value handle both chains loosely.
-    # The subscription chain ends in .first()
-    # The usage chain ends in .scalar()
-
     query_mock = mock_db.query.return_value
-    query_mock.filter.return_value.first.return_value = sub
-    query_mock.filter.return_value.order_by.return_value.first.return_value = sub
-    query_mock.filter.return_value.scalar.return_value = 0
+
+    # FLUENT INTERFACE MOCK
+    # When .filter() is called, return the same query_mock object
+    query_mock.filter.return_value = query_mock
+    query_mock.order_by.return_value = query_mock
+
+    # Set return values for terminal methods
+    query_mock.first.return_value = sub
+    query_mock.scalar.return_value = 0 # 0 seconds used
 
     app.dependency_overrides[get_current_user_page] = lambda: user
     app.dependency_overrides[get_db] = lambda: mock_db
@@ -84,10 +64,12 @@ def test_dashboard_status_no_sub():
 
     mock_db = MagicMock()
     query_mock = mock_db.query.return_value
+
+    query_mock.filter.return_value = query_mock
+    query_mock.order_by.return_value = query_mock
+
     # First query returns None
-    query_mock.filter.return_value.first.return_value = None
-    # Second query (fallback) also returns None
-    query_mock.filter.return_value.order_by.return_value.first.return_value = None
+    query_mock.first.return_value = None
 
     app.dependency_overrides[get_current_user_page] = lambda: user
     app.dependency_overrides[get_db] = lambda: mock_db
@@ -102,9 +84,12 @@ def test_dashboard_status_suspended():
 
     mock_db = MagicMock()
     query_mock = mock_db.query.return_value
-    query_mock.filter.return_value.first.return_value = sub
-    # Usage query
-    query_mock.filter.return_value.scalar.return_value = 0
+
+    query_mock.filter.return_value = query_mock
+    query_mock.order_by.return_value = query_mock
+
+    query_mock.first.return_value = sub
+    query_mock.scalar.return_value = 0
 
     app.dependency_overrides[get_current_user_page] = lambda: user
     app.dependency_overrides[get_db] = lambda: mock_db

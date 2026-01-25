@@ -1674,7 +1674,10 @@ async def dashboard(
 
         # Calculate usage for this subscription
         usage_seconds = db.query(func.sum(UsageEvent.billed_seconds)) \
-                            .filter(UsageEvent.subscription_id == sub.id).scalar() or 0
+                            .filter(UsageEvent.subscription_id == sub.id) \
+                            .filter(UsageEvent.created_at >= sub.cycle_start) \
+                            .filter(UsageEvent.created_at <= sub.cycle_end) \
+                            .scalar() or 0
 
         minutes_used = usage_seconds / 60
         minutes_remaining = max(0, minutes_limit - minutes_used)

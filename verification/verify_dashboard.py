@@ -32,12 +32,15 @@ mock_sub.updated_at = datetime.utcnow()
 mock_db = MagicMock()
 
 query_mock = mock_db.query.return_value
-# For subscription query: .filter().first() -> mock_sub
-query_mock.filter.return_value.first.return_value = mock_sub
-# For fallback subscription query: .filter().order_by().first() -> mock_sub
-query_mock.filter.return_value.order_by.return_value.first.return_value = mock_sub
-# For usage query: .filter().scalar() -> 120 (seconds) -> 2 minutes used
-query_mock.filter.return_value.scalar.return_value = 120
+
+# FLUENT INTERFACE MOCK
+# When .filter() is called, return the same query_mock object
+query_mock.filter.return_value = query_mock
+query_mock.order_by.return_value = query_mock
+
+# Set return values for terminal methods
+query_mock.first.return_value = mock_sub
+query_mock.scalar.return_value = 120  # 120 seconds -> 2 minutes used
 
 # OVERRIDE DEPENDENCIES
 app.dependency_overrides[get_current_user_page] = lambda: mock_user
