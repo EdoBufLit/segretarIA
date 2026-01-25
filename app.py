@@ -27,7 +27,7 @@ import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import get_db, SessionLocal
-from models import User, Subscription, Plan
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting
 from auth import (
     hash_password,
     verify_password,
@@ -119,6 +119,11 @@ async def startup_event():
     """
     ensure_default_admin()
     ensure_plans()
+
+    # Log ADMIN_EMAIL status
+    admin_email_configured = "yes" if os.getenv("ADMIN_EMAIL") else "no"
+    logger.info(f"ADMIN_EMAIL configured: {admin_email_configured}")
+
     try:
         logger.info("Starting database backup...")
         perform_backup()
@@ -430,7 +435,220 @@ async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db
     numbers = service.get_all_phone_numbers()
     return templates.TemplateResponse("admin_phonenumbers.html", {"request": request, "numbers": numbers})
 
-@app.post("/admin/phone-numbers/create") # Temporary for testing
+# === API Phone Numbers ===
+
+class CreatePhoneNumberRequest(BaseModel):
+    e164: str
+    user_id: int
+    notes: Optional[str] = None
+
+class UpdatePhoneNumberRequest(BaseModel):
+    notes: Optional[str] = None
+
+@app.get("/api/admin/phone-numbers")
+async def api_admin_get_phone_numbers(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    numbers = service.get_all_phone_numbers()
+    items = []
+    for n in numbers:
+        items.append({
+            "id": n.id,
+            "e164": n.e164,
+            "user_id": n.user_id,
+            "username": n.user.username if n.user else None,
+            "status": n.status,
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+            "released_at": n.released_at.isoformat() if n.released_at else None,
+            "notes": n.notes
+        })
+    return {
+        "status": "ok",
+        "items": items
+    }
+
+@app.post("/api/admin/phone-numbers")
+async def api_admin_create_phone_number(
+    payload: CreatePhoneNumberRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    try:
+        phone = service.create_phone_number(payload.e164, payload.user_id)
+        if payload.notes:
+            phone.notes = payload.notes
+            db.commit()
+
+        return {"status": "ok", "id": phone.id, "e164": phone.e164}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.patch("/api/admin/phone-numbers/{phone_id}")
+async def api_admin_update_phone_number(
+    phone_id: int,
+    payload: UpdatePhoneNumberRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    phone = db.query(PhoneNumber).filter(PhoneNumber.id == phone_id).first()
+    if not phone:
+        raise HTTPException(status_code=404, detail="Number not found")
+
+    if payload.notes is not None:
+        phone.notes = payload.notes
+
+    db.commit()
+    return {"status": "ok"}
+
+@app.delete("/api/admin/phone-numbers/{phone_id}")
+async def api_admin_delete_phone_number(
+    phone_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    try:
+        service.mark_phone_number_released(phone_id)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/api/admin/phone-numbers/{phone_id}/cancel-deprovision")
+async def api_admin_cancel_deprovision(
+    phone_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    try:
+        service.cancel_phone_number_deprovisioning(phone_id)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+# === API Agent Routing ===
+
+class AgentRoutingCreate(BaseModel):
+    user_id: Optional[int] = None
+    agent_id: str
+    phone_number_id: Optional[int] = None
+    is_active: bool = True
+    status: str = "active"
+
+class AgentRoutingUpdate(BaseModel):
+    user_id: Optional[int] = None
+    agent_id: Optional[str] = None
+    phone_number_id: Optional[int] = None
+    is_active: Optional[bool] = None
+    status: Optional[str] = None
+
+@app.get("/api/admin/routing")
+async def api_admin_get_routing(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    routings = db.query(AgentRouting).all()
+    items = []
+    for r in routings:
+        items.append({
+            "id": r.id,
+            "user_id": r.user_id,
+            "username": r.user.username if r.user else "Unknown",
+            "agent_id": r.agent_id,
+            "phone_number_id": r.phone_number_id,
+            "e164": r.phone_number.e164 if r.phone_number else "Unknown",
+            "status": r.status,
+            "is_active": r.is_active,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "last_event_at": r.last_event_at.isoformat() if r.last_event_at else None
+        })
+    return {"status": "ok", "items": items}
+
+@app.post("/api/admin/routing")
+async def api_admin_create_routing(
+    payload: AgentRoutingCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    # Verify user exists if provided
+    if payload.user_id:
+        user = db.query(User).filter(User.id == payload.user_id).first()
+        if not user:
+            raise HTTPException(status_code=400, detail="User not found")
+
+    # Verify phone exists if provided
+    if payload.phone_number_id:
+        phone = db.query(PhoneNumber).filter(PhoneNumber.id == payload.phone_number_id).first()
+        if not phone:
+            raise HTTPException(status_code=400, detail="Phone number not found")
+
+    new_routing = AgentRouting(
+        user_id=payload.user_id,
+        agent_id=payload.agent_id,
+        phone_number_id=payload.phone_number_id,
+        is_active=payload.is_active,
+        status=payload.status
+    )
+    db.add(new_routing)
+    db.commit()
+    db.refresh(new_routing)
+
+    return {"status": "ok", "id": new_routing.id}
+
+@app.patch("/api/admin/routing/{routing_id}")
+async def api_admin_update_routing(
+    routing_id: int,
+    payload: AgentRoutingUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    routing = db.query(AgentRouting).filter(AgentRouting.id == routing_id).first()
+    if not routing:
+        raise HTTPException(status_code=404, detail="Routing not found")
+
+    if payload.user_id is not None:
+        if payload.user_id == 0: # convention to unassign
+             routing.user_id = None
+        else:
+             user = db.query(User).filter(User.id == payload.user_id).first()
+             if not user:
+                 raise HTTPException(status_code=400, detail="User not found")
+             routing.user_id = payload.user_id
+
+    if payload.agent_id is not None:
+        routing.agent_id = payload.agent_id
+    if payload.phone_number_id is not None:
+        phone = db.query(PhoneNumber).filter(PhoneNumber.id == payload.phone_number_id).first()
+        if not phone:
+             raise HTTPException(status_code=400, detail="Phone number not found")
+        routing.phone_number_id = payload.phone_number_id
+    if payload.is_active is not None:
+        routing.is_active = payload.is_active
+    if payload.status is not None:
+        routing.status = payload.status
+
+    db.commit()
+    return {"status": "ok"}
+
+@app.delete("/api/admin/routing/{routing_id}")
+async def api_admin_delete_routing(
+    routing_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    routing = db.query(AgentRouting).filter(AgentRouting.id == routing_id).first()
+    if not routing:
+        raise HTTPException(status_code=404, detail="Routing not found")
+
+    db.delete(routing)
+    db.commit()
+    return {"status": "ok"}
+
+# Legacy endpoints (kept for compatibility)
+@app.post("/admin/phone-numbers/create")
 async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     service = AdminService(db)
     try:
@@ -449,7 +667,7 @@ async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(
         raise HTTPException(status_code=404, detail=str(e))
 
 @app.post("/admin/phone-numbers/{phone_id}/cancel-deprovision")
-async def admin_cancel_deprovision(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+async def admin_cancel_deprovision_legacy(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
     service = AdminService(db)
     try:
         service.cancel_phone_number_deprovisioning(phone_id)
@@ -692,6 +910,13 @@ async def elevenlabs_webhook(request: Request):
     start_unix = metadata.get("start_time_unix_secs")
     duration_secs = metadata.get("call_duration_secs")
 
+    # Extract inbound number (the number called)
+    # ElevenLabs payload structure varies, check documentation or logs
+    # Usually metadata -> phone_call -> to_number (or similar)
+    phone_call_meta = metadata.get("phone_call", {})
+    to_number = phone_call_meta.get("number") or phone_call_meta.get("to_number")
+    # Also check inbound_phone_number_id if needed, but we rely on E.164
+
     started_at: Optional[str] = None
     ended_at: Optional[str] = None
 
@@ -705,11 +930,62 @@ async def elevenlabs_webhook(request: Request):
     except Exception as e:
         logger.warning(f"[WEBHOOK] Errore calcolo orari chiamata: {e}")
 
-    # ENFORCEMENT & IDEMPOTENCY
+    # --- UPSERT ROUTING & PHONE NUMBER ---
+    # We do this BEFORE enforcement so we capture unassigned agents/numbers
     with SessionLocal() as db:
+        try:
+            # 1. Upsert PhoneNumber if present
+            phone_obj = None
+            if to_number:
+                # Basic normalization
+                if not to_number.startswith("+"):
+                    to_number = "+" + to_number
+
+                phone_obj = db.query(PhoneNumber).filter(PhoneNumber.e164 == to_number).first()
+                if not phone_obj:
+                    logger.info(f"[WEBHOOK] Discovered new phone number {to_number}")
+                    phone_obj = PhoneNumber(
+                        e164=to_number,
+                        provider="elevenlabs",
+                        status="active",
+                        user_id=None # Unknown initially
+                    )
+                    db.add(phone_obj)
+                    db.flush() # Get ID
+
+            # 2. Upsert AgentRouting
+            if agent_id:
+                routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id).first()
+                if routing:
+                    routing.last_event_at = datetime.utcnow()
+                    # Optionally link phone number if missing
+                    if not routing.phone_number_id and phone_obj:
+                        routing.phone_number_id = phone_obj.id
+                else:
+                    logger.info(f"[WEBHOOK] Discovered new unassigned agent {agent_id}")
+                    routing = AgentRouting(
+                        agent_id=agent_id,
+                        user_id=None,
+                        status="unassigned",
+                        phone_number_id=phone_obj.id if phone_obj else None,
+                        last_event_at=datetime.utcnow()
+                    )
+                    db.add(routing)
+                db.commit()
+        except Exception as e:
+            logger.error(f"[WEBHOOK] Error upserting routing/phone: {e}")
+            db.rollback()
+            # Continue execution, do not crash webhook
+
+        # --- ENFORCEMENT & IDEMPOTENCY ---
+        # Re-query agent using Agent model (legacy/primary logic)
+        # Note: If Agent model table is not populated for new agents, this block might block them.
+        # However, AgentRouting is for admin to resolve.
+        # If the user is not found, we block execution but we have already captured the routing info above.
+
         agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
         if not agent_obj:
-            logger.warning(f"[WEBHOOK] Unknown agent_id {agent_id}. Blocking.")
+            logger.warning(f"[WEBHOOK] Unknown agent_id {agent_id}. Blocking further processing.")
             return {"status": "ignored", "reason": "unknown_agent"}
 
         # Find owner (Client)
@@ -1136,6 +1412,62 @@ async def admin_unsuspend_user(user_id: int, db: Session = Depends(get_db), admi
     )
 
     return {"status": "ok", "message": f"User {user.username} unsuspended"}
+
+@app.delete("/admin/users/{user_id}")
+async def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    # 1. Fetch user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 2. Safety checks
+    if user.id == admin.id:
+        raise HTTPException(status_code=403, detail="Cannot delete self")
+
+    if user.role == "admin":
+        raise HTTPException(status_code=403, detail="Cannot delete other admins")
+
+    try:
+        # 3. Transactional deletion of dependencies
+        # Delete AgentRouting (depends on User and PhoneNumber)
+        db.query(AgentRouting).filter(AgentRouting.user_id == user.id).delete()
+
+        # Delete UsageEvents
+        db.query(UsageEvent).filter(UsageEvent.user_id == user.id).delete()
+
+        # Delete PhoneNumbers
+        db.query(PhoneNumber).filter(PhoneNumber.user_id == user.id).delete()
+
+        # Delete Subscriptions
+        db.query(Subscription).filter(Subscription.user_id == user.id).delete()
+
+        # Delete User
+        db.delete(user)
+
+        db.commit()
+
+        # 4. Logging
+        logger.info(f"User {user.username} (id={user.id}) deleted by admin {admin.username}")
+        audit_logger.log_audit_event(
+            db=db,
+            actor_type="admin",
+            action="delete_user",
+            entity_type="user",
+            entity_id=str(user_id),
+            admin_username=admin.username,
+            meta={"deleted_username": user.username}
+        )
+
+        return {"status": "ok", "message": f"User {user.username} deleted"}
+
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"Error deleting user {user_id}")
+        raise HTTPException(status_code=500, detail="Database error during deletion")
 
 @app.get("/admin/metrics")
 async def admin_metrics(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
@@ -1644,8 +1976,12 @@ async def lead_submit(request: Request, payload: Dict[str, Any] = Body(...)):
             media_type="application/json",
         )
 
-    to_email = os.getenv("LEADS_EMAIL_TO") or EMAIL_TO_FALLBACK
-    if to_email:
+    to_email = os.getenv("ADMIN_EMAIL")
+
+    logger.info("Attempting to send lead email")
+    if not to_email:
+        logger.warning("ADMIN_EMAIL is not configured. Skipping email sending.")
+    else:
         subject = "Nuova richiesta prenotazione"
         body = (
             f"<p>Nuovo lead ricevuto:</p>"
@@ -1660,7 +1996,15 @@ async def lead_submit(request: Request, payload: Dict[str, Any] = Body(...)):
             f"</ul>"
         )
         try:
-            send_email(to_email, subject, "Nuovo lead ricevuto. Vedi HTML.", html_body=body)
+            # Using reply_to for the lead's email
+            send_email(
+                to_addr=to_email,
+                subject=subject,
+                body="Nuovo lead ricevuto. Vedi HTML.",
+                html_body=body,
+                reply_to=lead_entry['email']
+            )
+            logger.info("Lead email sent successfully")
         except Exception as exc:
             logger.warning("Unable to send lead email: %s", exc)
 

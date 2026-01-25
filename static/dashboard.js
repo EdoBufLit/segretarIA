@@ -7,12 +7,14 @@ let clients = {};
 // =========================
 
 // Custom confirmation modal function
-function showConfirm(title, message, onConfirm) {
+function showConfirm(title, message, onConfirm, expectedText = null) {
     const modal = document.getElementById('confirm-modal');
     const titleEl = document.getElementById('confirm-title');
     const messageEl = document.getElementById('confirm-message');
     const okBtn = document.getElementById('confirm-ok-btn');
     const cancelBtn = document.getElementById('confirm-cancel-btn');
+    const inputContainer = document.getElementById('confirm-input-container');
+    const input = document.getElementById('confirm-input');
 
     titleEl.textContent = title;
     messageEl.textContent = message;
@@ -28,6 +30,31 @@ function showConfirm(title, message, onConfirm) {
     okBtn.parentNode.replaceChild(newOkBtn, okBtn);
     const newCancelBtn = cancelBtn.cloneNode(true);
     cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+    // Handle Input Mode
+    if (expectedText && inputContainer && input) {
+        inputContainer.classList.remove('hidden');
+        input.value = "";
+
+        // Initial state
+        newOkBtn.disabled = true;
+        newOkBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+        input.oninput = () => {
+             if (input.value === expectedText) {
+                 newOkBtn.disabled = false;
+                 newOkBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+             } else {
+                 newOkBtn.disabled = true;
+                 newOkBtn.classList.add('opacity-50', 'cursor-not-allowed');
+             }
+        };
+        setTimeout(() => input.focus(), 100);
+    } else {
+        if (inputContainer) inputContainer.classList.add('hidden');
+        newOkBtn.disabled = false;
+        newOkBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
 
     // Add new handlers
     newOkBtn.addEventListener('click', () => {
@@ -69,36 +96,10 @@ function renderDashboardUI() {
             </div>
         `;
     } else {
+        // Admin View - Removed Widgets (Clienti attuali & Chart) as requested.
+        // The container is left empty or can be used for other Admin-specific widgets in the future.
         container.innerHTML = `
-            <!-- CLIENTI -->
-            <div class="glass-card mb-10">
-                <h2 class="text-2xl font-semibold mb-4 text-white">Clienti attuali</h2>
-
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-separate border-spacing-y-2">
-                        <thead>
-                            <tr>
-                                <th class="py-3 px-4 text-left text-[var(--muted)]">Agent ID</th>
-                                <th class="py-3 px-4 text-left text-[var(--muted)]">Studio</th>
-                                <th class="py-3 px-4 text-left text-[var(--muted)]">Email</th>
-                                <th class="py-3 px-4 text-right text-[var(--muted)]">Azioni</th>
-                            </tr>
-                        </thead>
-                        <tbody id="clients-table-body" class="space-y-2">
-                            <!-- Popolato via JS -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-
-            <!-- GRAFICO GENERALE -->
-            <div class="glass-card mb-10">
-                <h2 class="text-2xl font-semibold mb-4 text-white">📈 Attività giornaliera (totale)</h2>
-                <canvas id="chart_all_clients"></canvas>
-            </div>
-
-            <!-- MODAL LOGS -->
+            <!-- MODAL LOGS (Optional, kept if needed for deep links, though usually accessed via Logs tab) -->
             <div id="logModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm">
                 <div class="glass-card w-11/12 max-w-2xl p-6">
                     <h2 class="text-xl font-semibold mb-4 text-white">Log chiamate</h2>
@@ -122,6 +123,7 @@ async function loadClients() {
     const data = await res.json();
     clients = data.clients || {};
 
+    // Check if the table body exists (it was removed from Admin dashboard view)
     const tbody = document.getElementById("clients-table-body");
     if (!tbody) return;
 
@@ -491,9 +493,13 @@ async function loadUsersTable(offsetOverride = null) {
 
             const subBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold ${subBadgeClass}">${u.subscription_status.toUpperCase()}</span>`;
 
+            const safeUsername = u.username.replace(/'/g, "\\'");
             const actionBtn = u.is_active
-                ? `<button onclick="suspendUser(${u.id}, '${u.username}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">SOSPENDI</button>`
-                : `<button onclick="unsuspendUser(${u.id}, '${u.username}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">RIATTIVA</button>`;
+                ? `<button onclick="suspendUser(${u.id}, '${safeUsername}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">SOSPENDI</button>`
+                : `<div class="flex gap-2 justify-end">
+                     <button onclick="unsuspendUser(${u.id}, '${safeUsername}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">RIATTIVA</button>
+                     <button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-white hover:text-red-200 text-xs font-bold bg-red-600 hover:bg-red-700 px-2 py-1 rounded shadow">ELIMINA</button>
+                   </div>`;
 
             tr.innerHTML = `
                 <td class="px-4 py-2">${u.id}</td>
@@ -542,6 +548,29 @@ function suspendUser(id, username) {
     });
 }
 
+function deleteUser(id, username) {
+    showConfirm(
+        "ELIMINA UTENTE",
+        `ATTENZIONE: Stai per eliminare definitivamente l'utente ${username} e TUTTI i dati associati (chiamate, abbonamenti, numeri). Azione IRREVERSIBILE.`,
+        async () => {
+            try {
+                const res = await fetch(`/admin/users/${id}`, { method: "DELETE" });
+                if (res.ok) {
+                    showToast("Utente eliminato correttamente", "success");
+                    loadUsersTable();
+                } else {
+                    const err = await res.json();
+                    showToast("Errore: " + (err.detail || "Impossibile eliminare"), "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Errore di rete", "error");
+            }
+        },
+        "ELIMINA"
+    );
+}
+
 function unsuspendUser(id, username) {
     showConfirm("Riattiva Utente", `Vuoi riattivare ${username}?`, async () => {
         const res = await fetch(`/admin/users/${id}/unsuspend`, { method: "POST" });
@@ -552,6 +581,285 @@ function unsuspendUser(id, username) {
             showToast("Errore", "error");
         }
     });
+}
+
+// =========================
+// PHONE NUMBERS (NUMERI)
+// =========================
+
+async function loadPhoneNumbersTable() {
+    try {
+        const res = await fetch("/api/admin/phone-numbers");
+        if (!res.ok) throw new Error("Failed to fetch phone numbers");
+        const data = await res.json();
+        const items = data.items || [];
+
+        const tbody = document.getElementById("phonenumbers-table-body");
+        tbody.innerHTML = "";
+
+        if (items.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-[var(--muted)]">Nessun numero trovato.</td></tr>`;
+            return;
+        }
+
+        items.forEach(n => {
+            const tr = document.createElement("tr");
+            tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+
+            let statusBadge = "";
+            if (n.status === 'active') statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">ATTIVO</span>`;
+            else if (n.status === 'released') statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-gray-500/20 text-gray-400">RILASCIATO</span>`;
+            else if (n.status === 'pending_deprovision') statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400">IN RILASCIO</span>`;
+            else statusBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-500/20 text-red-400">${n.status}</span>`;
+
+            let actions = "";
+            if (n.status === 'active') {
+                actions = `<button onclick="releasePhoneNumber(${n.id}, '${n.e164}')" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">RILASCIA</button>`;
+            } else if (n.status === 'pending_deprovision') {
+                actions = `<button onclick="cancelDeprovision(${n.id}, '${n.e164}')" class="text-green-400 hover:text-green-300 text-xs font-bold border border-green-500/30 px-2 py-1 rounded">ANNULLA RILASCIO</button>`;
+            } else {
+                 actions = `<span class="text-xs text-[var(--muted)]">Nessuna azione</span>`;
+            }
+
+            const username = n.username ? `${n.username} (ID: ${n.user_id})` : `<span class="text-yellow-500">Non assegnato</span>`;
+            const created = n.created_at ? n.created_at.split('T')[0] : "-";
+            const notes = n.notes ? `<span title="${n.notes}" class="truncate max-w-[150px] inline-block cursor-help border-b border-dotted border-gray-500">${n.notes}</span>` : "-";
+
+            tr.innerHTML = `
+                <td class="px-4 py-2 font-mono">${n.e164}</td>
+                <td class="px-4 py-2">${username}</td>
+                <td class="px-4 py-2">${statusBadge}</td>
+                <td class="px-4 py-2 text-sm text-[var(--muted)]">${notes}</td>
+                <td class="px-4 py-2 text-sm text-[var(--muted)]">${created}</td>
+                <td class="px-4 py-2 text-right">${actions}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error("Error loading phone numbers:", e);
+        showToast("Errore caricamento numeri", "error");
+    }
+}
+
+function openAddPhoneNumberModal() {
+    const modal = document.getElementById("add-phonenumber-modal");
+    if (modal) {
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+    }
+}
+
+function closeAddPhoneNumberModal() {
+    const modal = document.getElementById("add-phonenumber-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        document.getElementById("add-phonenumber-form").reset();
+    }
+}
+
+async function handleCreatePhoneNumber(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+
+    // Convert to JSON
+    const payload = {
+        e164: formData.get("e164"),
+        user_id: parseInt(formData.get("user_id")),
+        notes: formData.get("notes")
+    };
+
+    try {
+        const res = await fetch("/api/admin/phone-numbers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast("Numero creato correttamente", "success");
+            closeAddPhoneNumberModal();
+            loadPhoneNumbersTable();
+        } else {
+            const err = await res.json();
+            showToast("Errore: " + (err.detail || "Impossibile creare"), "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Errore di rete", "error");
+    }
+}
+
+function releasePhoneNumber(id, e164) {
+    showConfirm(
+        "RILASCIA NUMERO",
+        `Sei sicuro di voler rilasciare il numero ${e164}? Smetterà di funzionare e verrà rimosso dall'account utente.`,
+        async () => {
+            try {
+                const res = await fetch(`/api/admin/phone-numbers/${id}`, { method: "DELETE" });
+                if (res.ok) {
+                    showToast("Numero rilasciato", "success");
+                    loadPhoneNumbersTable();
+                } else {
+                    const err = await res.json();
+                    showToast("Errore: " + (err.detail || "Impossibile rilasciare"), "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Errore di rete", "error");
+            }
+        }
+    );
+}
+
+function cancelDeprovision(id, e164) {
+    showConfirm(
+        "Annulla Rilascio",
+        `Vuoi annullare il rilascio programmato per ${e164}?`,
+        async () => {
+            try {
+                const res = await fetch(`/api/admin/phone-numbers/${id}/cancel-deprovision`, { method: "POST" });
+                if (res.ok) {
+                    showToast("Rilascio annullato", "success");
+                    loadPhoneNumbersTable();
+                } else {
+                    const err = await res.json();
+                    showToast("Errore: " + (err.detail || "Errore sconosciuto"), "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Errore di rete", "error");
+            }
+        }
+    );
+}
+
+// =========================
+// ROUTING (INSTRADAMENTI)
+// =========================
+
+async function loadRoutingTable() {
+    try {
+        const res = await fetch("/api/admin/routing");
+        if (!res.ok) throw new Error("Failed to fetch routing");
+        const data = await res.json();
+        const items = data.items || [];
+
+        const tbody = document.getElementById("routing-table-body");
+        tbody.innerHTML = "";
+
+        if (items.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-[var(--muted)]">Nessun instradamento trovato.</td></tr>`;
+            return;
+        }
+
+        items.forEach(r => {
+            const tr = document.createElement("tr");
+            tr.className = "hover:bg-white/5 transition-colors border-b border-[var(--border)]";
+
+            const statusBadge = r.is_active
+                ? `<span class="px-2 py-0.5 rounded text-xs font-bold bg-green-500/20 text-green-400">ATTIVO</span>`
+                : `<span class="px-2 py-0.5 rounded text-xs font-bold bg-gray-500/20 text-gray-400">INATTIVO</span>`;
+
+            const actions = `<button onclick="deleteRouting(${r.id})" class="text-red-400 hover:text-red-300 text-xs font-bold border border-red-500/30 px-2 py-1 rounded">ELIMINA</button>`;
+
+            let username = `<span class="text-yellow-500">Sconosciuto</span>`;
+            if (r.username && r.username !== "Unknown") {
+                username = `${r.username} (ID: ${r.user_id})`;
+            } else if (r.status === "unassigned") {
+                username = `<span class="text-red-400 font-bold animate-pulse">NON ASSEGNATO</span>`;
+            }
+
+            const lastEvent = r.last_event_at ? r.last_event_at.split('T')[0] : "-";
+
+            tr.innerHTML = `
+                <td class="px-4 py-2">${username}</td>
+                <td class="px-4 py-2 font-mono text-xs">${r.agent_id}</td>
+                <td class="px-4 py-2 font-mono">${r.e164}</td>
+                <td class="px-4 py-2">${statusBadge}</td>
+                <td class="px-4 py-2 text-sm text-[var(--muted)]">${lastEvent}</td>
+                <td class="px-4 py-2 text-right">${actions}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error("Error loading routing:", e);
+        showToast("Errore caricamento instradamenti", "error");
+    }
+}
+
+function openAddRoutingModal() {
+    const modal = document.getElementById("add-routing-modal");
+    if (modal) {
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+    }
+}
+
+function closeAddRoutingModal() {
+    const modal = document.getElementById("add-routing-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        document.getElementById("add-routing-form").reset();
+    }
+}
+
+async function handleCreateRouting(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+
+    // Convert to JSON
+    const payload = {
+        user_id: parseInt(formData.get("user_id")),
+        agent_id: formData.get("agent_id"),
+        phone_number_id: parseInt(formData.get("phone_number_id")),
+        is_active: formData.get("is_active") === "on"
+    };
+
+    try {
+        const res = await fetch("/api/admin/routing", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast("Routing creato correttamente", "success");
+            closeAddRoutingModal();
+            loadRoutingTable();
+        } else {
+            const err = await res.json();
+            showToast("Errore: " + (err.detail || "Impossibile creare"), "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Errore di rete", "error");
+    }
+}
+
+function deleteRouting(id) {
+    showConfirm(
+        "ELIMINA ROUTING",
+        `Vuoi davvero eliminare questo instradamento?`,
+        async () => {
+            try {
+                const res = await fetch(`/api/admin/routing/${id}`, { method: "DELETE" });
+                if (res.ok) {
+                    showToast("Routing eliminato", "success");
+                    loadRoutingTable();
+                } else {
+                    const err = await res.json();
+                    showToast("Errore: " + (err.detail || "Impossibile eliminare"), "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Errore di rete", "error");
+            }
+        }
+    );
 }
 
 // =========================
@@ -888,6 +1196,32 @@ function startStatusPolling() {
     // Poll every 15s normally
     dashboardPollInterval = setInterval(updateDashboardStatus, 15000);
 }
+
+// Page Visibility API to pause/resume polling
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        // Pause polling
+        if (dashboardPollInterval) {
+            clearInterval(dashboardPollInterval);
+            dashboardPollInterval = null;
+        }
+        if (typeof stopLogsPolling === "function") {
+            stopLogsPolling();
+        }
+    } else {
+        // Resume polling
+        if (!dashboardPollInterval) {
+            startStatusPolling();
+        }
+        // Resume logs polling if on logs section
+        const activeSection = document.querySelector('.nav-item-active');
+        if (activeSection && activeSection.dataset.section === 'logs') {
+            if (typeof startLogsPolling === "function") {
+                startLogsPolling();
+            }
+        }
+    }
+});
 
 
 // =========================
