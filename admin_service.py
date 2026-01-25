@@ -249,7 +249,7 @@ class AdminService:
 
     def export_logs_csv_generator(self, from_date: datetime, to_date: datetime, client_filter: Optional[str] = None, admin_username: str = "system"):
         """
-        Exports logs from logs directory as a CSV generator.
+        Exports logs from DB (CallLog) as a CSV generator.
         Cols: Timestamp, AgentID, Caller, Status, Duration, Summary
         """
 
@@ -270,12 +270,13 @@ class AdminService:
         output.seek(0)
         output.truncate(0)
 
-        logs_dir = "logs"
-        if not os.path.exists(logs_dir):
-            return
+        from models import CallLog
 
-        # Gather agent_ids to check
-        agent_ids = []
+        query = self.db.query(CallLog).filter(
+            CallLog.timestamp >= from_date,
+            CallLog.timestamp <= to_date
+        )
+
         if client_filter:
             # Check if client_filter is a User ID (integer)
             try:
@@ -284,62 +285,48 @@ class AdminService:
                 user = self.db.query(User).filter(User.id == user_id).first()
                 if user:
                     agent_ids = [agent.agent_id for agent in user.agents]
+                    query = query.filter(CallLog.agent_id.in_(agent_ids))
                 else:
-                    return
+                    return # No user found, empty result
             except ValueError:
+                # Assume it's an agent_id directly
                 if client_filter.replace("-", "").replace("_", "").isalnum():
-                     agent_ids = [client_filter]
+                     query = query.filter(CallLog.agent_id == client_filter)
                 else:
                      return
-        else:
-            # List all .log files
-            for filename in os.listdir(logs_dir):
-                if filename.endswith(".log"):
-                    agent_ids.append(filename[:-4])
 
-        for agent_id in agent_ids:
-            # Sanitize agent_id for path safety
-            safe_agent_id = os.path.basename(agent_id)
-            if safe_agent_id != agent_id:
-                continue
+        query = query.order_by(CallLog.timestamp.desc())
 
-            log_path = os.path.join(logs_dir, f"{safe_agent_id}.log")
-            if not os.path.exists(log_path):
-                continue
+        # Batch query
+        batch_size = 1000
+        offset = 0
+        while True:
+            logs = query.offset(offset).limit(batch_size).all()
+            if not logs:
+                break
 
-            with open(log_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                        ts_str = entry.get("timestamp")
-                        if not ts_str:
-                            continue
+            for log in logs:
+                ts_str = log.timestamp.isoformat() if log.timestamp else ""
 
-                        ts_dt = datetime.fromisoformat(ts_str)
-                        if from_date.tzinfo is None and ts_dt.tzinfo is not None:
-                            ts_dt = ts_dt.replace(tzinfo=None)
+                raw = log.raw_data or {}
+                data = raw.get("data", {})
 
-                        if not (from_date <= ts_dt <= to_date):
-                            continue
+                caller = data.get("caller_number", "N/D")
+                # Fallback to DB status if not in JSON, or vice versa
+                status = log.status or data.get("status", "success")
+                duration = data.get("duration_secs", "")
+                summary = log.text or data.get("summary") or data.get("analysis", {}).get("summary", "")
 
-                        data = entry.get("data", {})
+                writer.writerow([
+                    ts_str,
+                    log.agent_id,
+                    caller,
+                    status,
+                    duration,
+                    summary
+                ])
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
 
-                        caller = data.get("caller_number", "N/D")
-                        status = data.get("status", "success")
-                        duration = data.get("duration_secs", "")
-                        summary = data.get("summary") or data.get("analysis", {}).get("summary", "")
-
-                        writer.writerow([
-                            ts_str,
-                            agent_id,
-                            caller,
-                            status,
-                            duration,
-                            summary
-                        ])
-                        yield output.getvalue()
-                        output.seek(0)
-                        output.truncate(0)
-
-                    except (json.JSONDecodeError, ValueError):
-                        continue
+            offset += batch_size

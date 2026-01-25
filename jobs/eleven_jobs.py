@@ -205,7 +205,7 @@ def process_elevenlabs_event_job(payload: dict):
     if duration_secs and duration_secs < 3:
         status = "failure"
 
-    # LOG CALL (File)
+    # LOG CALL
     log_call(agent_id, {
         "transcript_text": transcript_text,
         "analysis": analysis_structured,
