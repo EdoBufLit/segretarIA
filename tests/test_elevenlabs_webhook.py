@@ -72,9 +72,18 @@ def test_webhook_valid_signature_ignored_type():
 
 def test_webhook_success():
     with patch.dict(os.environ, {"ELEVENLABS_WEBHOOK_SECRET": SECRET}):
-        with patch("app.get_queue") as mock_get_queue:
+        with patch("app.get_queue") as mock_get_queue, \
+             patch("app.SessionLocal") as mock_session_cls:
+
             mock_queue = MagicMock()
             mock_get_queue.return_value = mock_queue
+
+            # Mock DB Session to return None for queries (simulate unknown agent)
+            mock_session = MagicMock()
+            mock_session_cls.return_value.__enter__.return_value = mock_session
+            # Default mock return is MagicMock, so filter().first() will return MagicMock
+            # We want it to return None to simulate "Not found"
+            mock_session.query.return_value.filter.return_value.first.return_value = None
 
             payload_dict = {"type": "post_call_transcription", "data": {"agent_id": "test"}}
             payload_bytes = json.dumps(payload_dict).encode("utf-8")

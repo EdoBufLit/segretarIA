@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Request, Body, Query, Response
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from dotenv import load_dotenv
 from mailer import send_email
 from openai import OpenAI
@@ -929,6 +929,51 @@ async def elevenlabs_webhook(request: Request):
     data = payload.get("data", {})
     agent_id = data.get("agent_id")
     call_id = data.get("metadata", {}).get("phone_call", {}).get("call_sid")
+
+    # --- BLOCKING LOGIC START ---
+    if agent_id:
+        try:
+            with SessionLocal() as db:
+                # 1. Check AgentRouting (Enabled/Disabled)
+                routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id).first()
+                if routing:
+                    if not routing.is_active:
+                        logger.warning(f"[WEBHOOK] Blocked: Agent {agent_id} is disabled.")
+                        return JSONResponse(status_code=403, content={"error": "Piano scaduto o agente disattivato"})
+
+                # 2. Resolve User
+                user = None
+                if routing and routing.user_id:
+                     user = db.query(User).filter(User.id == routing.user_id).first()
+
+                if not user:
+                     # Try legacy/direct mapping via Agent table
+                     agent_obj = db.query(Agent).filter(Agent.agent_id == agent_id).first()
+                     if agent_obj:
+                         user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+
+                # 3. Check User Status & Plan
+                if user:
+                     if not user.is_active:
+                          logger.warning(f"[WEBHOOK] Blocked: User {user.username} is suspended.")
+                          return JSONResponse(status_code=403, content={"error": "Piano scaduto o agente disattivato"})
+
+                     # Check active subscription
+                     active_sub = db.query(Subscription).filter(
+                         Subscription.user_id == user.id,
+                         Subscription.state == "active"
+                     ).first()
+
+                     if not active_sub:
+                          logger.warning(f"[WEBHOOK] Blocked: User {user.username} has no active subscription.")
+                          log_critical_error(f"Webhook bloccato per user {user.username} (agent {agent_id}) - nessun piano attivo.")
+                          return JSONResponse(status_code=403, content={"error": "Piano scaduto o agente disattivato"})
+
+        except Exception as e:
+            # If DB fails, we log but fail safe (block) as per requirements
+            logger.error(f"[WEBHOOK] Error checking blocking rules: {e}")
+            return JSONResponse(status_code=403, content={"error": "System error during validation"})
+    # --- BLOCKING LOGIC END ---
 
     logger.info(f"[WEBHOOK] Enqueuing event type={event_type} agent={agent_id} call={call_id}")
 
