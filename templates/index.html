@@ -12,6 +12,15 @@
                 extend: {
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
+                    },
+                    keyframes: {
+                        fadeInUp: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    },
+                    animation: {
+                        'fade-in-up': 'fadeInUp 0.2s ease-out forwards',
                     }
                 }
             }
@@ -309,7 +318,7 @@
 
             <!-- Form -->
             <form id="booking-wizard-form" class="flex flex-col flex-1 overflow-y-auto" novalidate>
-                <div id="booking-wizard-step" class="space-y-6 flex-1 min-h-[200px]"></div>
+                <div id="booking-wizard-step" class="flex-1 min-h-[200px]"></div>
 
                 <div class="mt-8 pt-6 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-4">
                     <p id="booking-wizard-error" class="text-sm text-red-500 font-medium" role="alert" aria-live="polite"></p>

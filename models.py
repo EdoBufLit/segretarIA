@@ -34,6 +34,30 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     stripe_customer_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    subscription_plan = Column(String, default='NONE', nullable=False)
+    plan_expires_at = Column(DateTime, nullable=True)
+
+    def has_active_plan(self):
+        """
+        Check if user has an active plan.
+        Prioritizes manual expiration date if set.
+        Otherwise falls back to checking active Subscription records.
+        """
+        # 1. Manual Override via plan_expires_at
+        if self.plan_expires_at:
+            return self.plan_expires_at > datetime.datetime.utcnow()
+
+        # 2. Manual Permanent Plan (if plan is set but no expiration, assume indefinite if not NONE?
+        # Or require expiration? Prompt says "plan_expires_at (datetime)".
+        # Usually manual plans have expiration. If None, maybe it means fallback to Stripe?
+        # Let's check subscriptions relationship.
+
+        # 3. Stripe Subscriptions
+        for sub in self.subscriptions:
+            if sub.state == 'active':
+                return True
+
+        return False
 
     # Relationships
     subscriptions = relationship("Subscription", back_populates="user")

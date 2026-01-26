@@ -958,14 +958,9 @@ async def elevenlabs_webhook(request: Request):
                           logger.warning(f"[WEBHOOK] Blocked: User {user.username} is suspended.")
                           return JSONResponse(status_code=403, content={"error": "Piano scaduto o agente disattivato"})
 
-                     # Check active subscription
-                     active_sub = db.query(Subscription).filter(
-                         Subscription.user_id == user.id,
-                         Subscription.state == "active"
-                     ).first()
-
-                     if not active_sub:
-                          logger.warning(f"[WEBHOOK] Blocked: User {user.username} has no active subscription.")
+                     # Check active plan (Manual or Stripe)
+                     if not user.has_active_plan():
+                          logger.warning(f"[WEBHOOK] Blocked: User {user.username} has no active plan.")
                           log_critical_error(f"Webhook bloccato per user {user.username} (agent {agent_id}) - nessun piano attivo.")
                           return JSONResponse(status_code=403, content={"error": "Piano scaduto o agente disattivato"})
 
@@ -1223,7 +1218,8 @@ async def api_client_phone_numbers(
 class AdminUpdateUserRequest(BaseModel):
     studio_name: Optional[str] = None
     email: Optional[str] = None
-    # Potentially other fields like notification_email if we add it later
+    subscription_plan: Optional[str] = None
+    plan_expires_at: Optional[str] = None # ISO format or YYYY-MM-DD
 
 
 def _apply_admin_user_update(user: User, payload: AdminUpdateUserRequest, db: Session) -> None:
@@ -1236,6 +1232,28 @@ def _apply_admin_user_update(user: User, payload: AdminUpdateUserRequest, db: Se
 
     if payload.studio_name is not None:
         user.studio_name = payload.studio_name
+
+    if payload.subscription_plan is not None:
+        user.subscription_plan = payload.subscription_plan
+
+    if payload.plan_expires_at is not None:
+        if payload.plan_expires_at == "":
+            user.plan_expires_at = None
+        else:
+            try:
+                # Try full ISO first, then date only
+                try:
+                    dt = datetime.fromisoformat(payload.plan_expires_at)
+                except ValueError:
+                    dt = datetime.strptime(payload.plan_expires_at, "%Y-%m-%d")
+                    # Set to end of day if just date provided? Or strictly time?
+                    # Let's assume midnight or specific time if provided.
+                    # If just date, admin probably means "until this date inclusive", so end of day is safer?
+                    # Or just keep it simple.
+                    dt = dt.replace(hour=23, minute=59, second=59)
+                user.plan_expires_at = dt
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format")
 
 @app.get("/admin/users")
 async def admin_list_users(
@@ -1272,6 +1290,8 @@ async def admin_list_users(
             "is_active": u.is_active,
             "subscription_status": sub_status,
             "plan_code": plan_code,
+            "subscription_plan": u.subscription_plan,
+            "plan_expires_at": u.plan_expires_at.strftime("%Y-%m-%d") if u.plan_expires_at else None,
             "created_at": u.created_at.isoformat() if u.created_at else None
         })
 
@@ -1621,12 +1641,27 @@ async def dashboard(
         Subscription.state == "active"
     ).first()
 
-    if not sub:
+    # Manual Plan Check
+    manual_plan_active = False
+    manual_plan_obj = None
+    if not sub and user.has_active_plan():
+         # If no active stripe sub, but user has active plan (manual)
+         # Verify it is indeed manual (subscription_plan is set)
+         if user.subscription_plan and user.subscription_plan != 'NONE':
+             manual_plan_active = True
+             manual_plan_obj = db.query(Plan).filter(Plan.code == user.subscription_plan).first()
+
+    # Fallback to inactive sub if neither active stripe nor manual found
+    if not sub and not manual_plan_active:
         sub = db.query(Subscription).filter(
             Subscription.user_id == user.id
         ).order_by(Subscription.id.desc()).first()
 
     subscription_data = None
+    minutes_limit = 0
+    minutes_used = 0
+    minutes_remaining = 0
+
     if sub:
         subscription_data = {
             "state": sub.state,
@@ -1635,6 +1670,43 @@ async def dashboard(
             "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
             "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
         }
+
+        if sub.plan:
+            minutes_limit = sub.plan.minutes_per_cycle
+            # Calculate usage for this subscription
+            usage_seconds = db.query(func.sum(UsageEvent.billed_seconds)) \
+                                .filter(UsageEvent.subscription_id == sub.id) \
+                                .filter(UsageEvent.created_at >= sub.cycle_start) \
+                                .filter(UsageEvent.created_at <= sub.cycle_end) \
+                                .scalar() or 0
+            minutes_used = usage_seconds / 60
+            minutes_remaining = max(0, minutes_limit - minutes_used)
+
+    elif manual_plan_active and manual_plan_obj:
+        # Construct virtual subscription data for manual plan
+        cycle_end_dt = user.plan_expires_at if user.plan_expires_at else datetime.utcnow() + timedelta(days=30)
+        cycle_start_dt = cycle_end_dt - timedelta(days=30) # Virtual cycle window
+
+        subscription_data = {
+            "state": "active",
+            "plan_code": manual_plan_obj.code,
+            "cycle_start": cycle_start_dt.isoformat(),
+            "cycle_end": cycle_end_dt.isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+            "is_manual": True
+        }
+
+        minutes_limit = manual_plan_obj.minutes_per_cycle
+
+        # Calculate usage based on user_id and virtual cycle (since no sub id)
+        usage_seconds = db.query(func.sum(UsageEvent.billed_seconds)) \
+                            .filter(UsageEvent.user_id == user.id) \
+                            .filter(UsageEvent.created_at >= cycle_start_dt) \
+                            .filter(UsageEvent.created_at <= cycle_end_dt) \
+                            .scalar() or 0
+        minutes_used = usage_seconds / 60
+        minutes_remaining = max(0, minutes_limit - minutes_used)
+
 
     # Convert User to dict safe for JSON
     user_dict = {
@@ -1654,24 +1726,6 @@ async def dashboard(
             "user": user_dict,
             "subscription": subscription_data
         })
-
-    # Client Logic
-    minutes_limit = 0
-    minutes_used = 0
-    minutes_remaining = 0
-
-    if sub and sub.plan:
-        minutes_limit = sub.plan.minutes_per_cycle
-
-        # Calculate usage for this subscription
-        usage_seconds = db.query(func.sum(UsageEvent.billed_seconds)) \
-                            .filter(UsageEvent.subscription_id == sub.id) \
-                            .filter(UsageEvent.created_at >= sub.cycle_start) \
-                            .filter(UsageEvent.created_at <= sub.cycle_end) \
-                            .scalar() or 0
-
-        minutes_used = usage_seconds / 60
-        minutes_remaining = max(0, minutes_limit - minutes_used)
 
     return templates.TemplateResponse("client_dashboard.html", {
         "request": request,
@@ -1711,7 +1765,13 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
             Subscription.state == "active"
         ).first()
 
-        if not sub:
+        # Check Manual Plan if no active stripe sub
+        manual_plan_active = False
+        if not sub and user.has_active_plan():
+             if user.subscription_plan and user.subscription_plan != 'NONE':
+                 manual_plan_active = True
+
+        if not sub and not manual_plan_active:
             # Fallback to any latest subscription
             # Subscription model does not have created_at, using id instead
             sub = db.query(Subscription).filter(
@@ -1727,6 +1787,17 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
                 "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
                 "stripe_subscription_id": sub.stripe_subscription_id,
                 "stripe_price_id": sub.stripe_price_id
+            }
+        elif manual_plan_active:
+             cycle_end_dt = user.plan_expires_at if user.plan_expires_at else datetime.utcnow() + timedelta(days=30)
+             cycle_start_dt = cycle_end_dt - timedelta(days=30)
+             subscription_data = {
+                "state": "active",
+                "plan_code": user.subscription_plan,
+                "cycle_start": cycle_start_dt.isoformat(),
+                "cycle_end": cycle_end_dt.isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+                "is_manual": True
             }
 
         return {
