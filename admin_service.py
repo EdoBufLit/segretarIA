@@ -121,7 +121,12 @@ class AdminService:
         if not user:
             raise ValueError("User not found")
 
-        new_phone = PhoneNumber(e164=e164, user_id=user_id)
+        new_phone = PhoneNumber(
+            e164=e164,
+            user_id=user_id,
+            status="active",
+            released_at=None
+        )
         self.db.add(new_phone)
         self.db.commit()
         self.db.refresh(new_phone)
@@ -154,6 +159,32 @@ class AdminService:
             send_email(admin_email, subject, body)
 
         return phone
+
+    def delete_phone_number_permanent(self, phone_id: int, admin_username: str):
+        """
+        Hard delete of a phone number from the database.
+        Irreversible action.
+        """
+        phone = self.db.query(PhoneNumber).filter_by(id=phone_id).first()
+        if not phone:
+            raise ValueError("Phone number not found")
+
+        e164 = phone.e164
+        self.db.delete(phone)
+        self.db.commit()
+
+        # Audit Log
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
+            action="delete_phone_number_permanent",
+            entity_type="phone_number",
+            entity_id=str(phone_id),
+            meta={"e164": e164, "admin_username": admin_username},
+            admin_username=admin_username,
+            target_str=f"e164={e164}"
+        )
+        return True
 
     def reset_password_random(self, user_id: int, admin_username: str) -> str:
         """

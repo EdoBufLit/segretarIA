@@ -874,6 +874,8 @@ async function loadPhoneNumbersTable() {
             } else {
                  actions = `<span class="text-xs text-neutral-400">Nessuna azione</span>`;
             }
+            // Aggiungi bottone ELIMINA a tutti
+            actions += `<button onclick="deletePhoneNumberPermanent(${n.id}, '${n.e164}')" class="ml-2 text-neutral-600 hover:text-red-800 text-xs font-semibold border border-neutral-200 bg-neutral-50 hover:bg-red-50 px-2 py-1 rounded transition-colors">ELIMINA</button>`;
 
             const username = n.username ? `${n.username} (ID: ${n.user_id})` : `<span class="text-yellow-600 font-medium">Non assegnato</span>`;
             const created = n.created_at ? n.created_at.split('T')[0] : "-";
@@ -958,6 +960,28 @@ function releasePhoneNumber(id, e164) {
                 } else {
                     const err = await res.json();
                     showToast("Errore: " + (err.detail || "Impossibile rilasciare"), "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Errore di rete", "error");
+            }
+        }
+    );
+}
+
+function deletePhoneNumberPermanent(id, e164) {
+    showConfirm(
+        "Conferma eliminazione numero",
+        `Questa azione è irreversibile. Vuoi davvero eliminare il numero ${e164} definitivamente?`,
+        async () => {
+            try {
+                const res = await fetch(`/api/admin/phone-numbers/${id}/permanent`, { method: "DELETE" });
+                if (res.ok) {
+                    showToast("Numero eliminato", "success");
+                    loadPhoneNumbersTable();
+                } else {
+                    const err = await res.json();
+                    showToast("Errore: " + (err.detail || "Impossibile eliminare"), "error");
                 }
             } catch (e) {
                 console.error(e);

@@ -247,7 +247,7 @@ async function loadClientNumbers() {
         tbody.innerHTML = "";
 
         if (!data.items || data.items.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-neutral-500 text-sm">Nessun numero assegnato.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-neutral-500 text-sm">Nessun numero attivo è associato al tuo account al momento.</td></tr>`;
             return;
         }
 

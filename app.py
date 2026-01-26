@@ -437,6 +437,11 @@ async def api_admin_create_phone_number(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin_user)
 ):
+    # Check for duplicate
+    existing = db.query(PhoneNumber).filter(PhoneNumber.e164 == payload.e164).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Il numero è già presente nel sistema.")
+
     service = AdminService(db)
     try:
         phone = service.create_phone_number(payload.e164, payload.user_id)
@@ -474,6 +479,20 @@ async def api_admin_delete_phone_number(
     service = AdminService(db)
     try:
         service.mark_phone_number_released(phone_id)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.delete("/api/admin/phone-numbers/{phone_id}/permanent")
+async def api_admin_delete_phone_number_permanent(
+    phone_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    try:
+        service.delete_phone_number_permanent(phone_id, admin.username)
+        logger.info(f"Admin {admin.username} deleted number ID {phone_id}")
         return {"status": "ok"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1189,27 +1208,34 @@ async def api_client_phone_numbers(
 ):
     """
     Returns phone numbers assigned to the current client.
-    Uses AgentRouting as the source of truth.
+    Uses PhoneNumber as the source of truth (owned numbers).
     """
-    # Fetch active routing for this user
-    routings = db.query(AgentRouting).filter(
-        AgentRouting.user_id == current_user.id,
-        AgentRouting.is_active == True
+    phones = db.query(PhoneNumber).filter(
+        PhoneNumber.user_id == current_user.id,
+        PhoneNumber.released_at == None
     ).all()
 
     items = []
-    for r in routings:
-        # Get Phone Number details
-        phone = db.query(PhoneNumber).filter(PhoneNumber.id == r.phone_number_id).first()
-        # Get Agent details (optional, for display name)
-        agent = db.query(Agent).filter(Agent.agent_id == r.agent_id).first()
+    for p in phones:
+        # Try to find associated routing info if it exists
+        # We look for a routing entry that points to this phone number
+        routing = db.query(AgentRouting).filter(AgentRouting.phone_number_id == p.id).first()
+
+        agent_name = "Agente"
+        agent_id = "Non assegnato"
+
+        if routing:
+            agent_id = routing.agent_id
+            agent = db.query(Agent).filter(Agent.agent_id == routing.agent_id).first()
+            if agent:
+                agent_name = agent.display_name
 
         items.append({
-            "agent_id": r.agent_id,
-            "display_name": agent.display_name if agent else "Agente",
-            "phone_number": phone.e164 if phone else "N/D",
-            "notes": phone.notes if phone else None,
-            "status": r.status
+            "agent_id": agent_id,
+            "display_name": agent_name,
+            "phone_number": p.e164,
+            "notes": p.notes,
+            "status": p.status
         })
 
     return {"status": "ok", "items": items}
