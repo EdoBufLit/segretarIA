@@ -310,6 +310,9 @@ class StripeService:
             subscription.stripe_subscription_id = stripe_subscription_id
             # subscription.stripe_price_id = ...
 
+        # Sync redundant user fields for quick access
+        user.subscription_plan = plan.code
+        user.plan_expires_at = subscription.cycle_end
         self.db.commit()
 
         # Audit Log
@@ -327,6 +330,26 @@ class StripeService:
             admin_username="stripe_webhook",
             target_str=f"user={user.username} plan={plan_code}"
         )
+
+        # Notify User
+        try:
+            subject = f"Piano attivato: {plan_code.title()}"
+            minutes_included = plan.minutes_per_cycle
+            expiration_date = subscription.cycle_end.strftime("%d/%m/%Y")
+
+            body = f"""
+            <p>Ciao {user.username},</p>
+            <p>Il tuo piano <strong>{plan_code.title()}</strong> è stato attivato con successo.</p>
+            <ul>
+                <li><strong>Minuti inclusi:</strong> {minutes_included}</li>
+                <li><strong>Scadenza:</strong> {expiration_date}</li>
+            </ul>
+            <p>Accedi alla tua dashboard per iniziare ad usare il servizio.</p>
+            """
+            send_email(user.email, subject, "Piano attivato. Vedi HTML.", html_body=body)
+            logger.info(f"User notification sent to {user.email}")
+        except Exception as e:
+            logger.warning(f"Failed to send user notification email: {e}")
 
         # Notify Admin
         if ADMIN_EMAIL:
