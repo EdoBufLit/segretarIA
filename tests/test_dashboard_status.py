@@ -55,9 +55,9 @@ def test_dashboard_status_active():
 
     response = client.get("/dashboard")
     assert response.status_code == 200
-    # Check for the Green ATTIVO badge
-    assert '>ATTIVO</span>' in response.text
-    assert '>NON ATTIVO</span>' not in response.text
+    # Check for the Green Servizio Attivo badge
+    assert 'Servizio Attivo' in response.text
+    assert 'Servizio Sospeso' not in response.text
 
 def test_dashboard_status_no_sub():
     user = create_mock_user(is_active=True)
@@ -76,7 +76,7 @@ def test_dashboard_status_no_sub():
 
     response = client.get("/dashboard")
     assert response.status_code == 200
-    assert '>NON ATTIVO</span>' in response.text
+    assert 'Servizio Sospeso' in response.text
 
 def test_dashboard_status_suspended():
     user = create_mock_user(is_active=False)
@@ -96,4 +96,4 @@ def test_dashboard_status_suspended():
 
     response = client.get("/dashboard")
     assert response.status_code == 200
-    assert '>SOSPESO</span>' in response.text
+    assert 'Servizio Sospeso' in response.text

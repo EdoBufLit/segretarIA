@@ -517,9 +517,13 @@ async function loadUsersTable(offsetOverride = null) {
             const tr = document.createElement("tr");
             tr.className = "hover:bg-neutral-50 transition-colors border-b border-neutral-100 text-sm text-neutral-600";
 
-            const activeBadge = u.is_active
-                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">ATTIVO</span>`
-                : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">SOSPESO</span>`;
+            const toggleSwitch = `
+                <label class="inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer" ${u.is_active ? 'checked' : ''} onchange="toggleUserActive(${u.id}, '${u.username.replace(/'/g, "\\'")}', this)">
+                  <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-neutral-900 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                  <span class="ms-3 text-xs font-medium ${u.is_active ? 'text-green-700' : 'text-neutral-500'} toggle-label-${u.id}">${u.is_active ? 'Attivo' : 'Disattivato'}</span>
+                </label>
+            `;
 
             let subBadgeClass = "bg-neutral-100 text-neutral-500 border border-neutral-200";
             if (u.subscription_status === 'active') subBadgeClass = "bg-green-100 text-green-700 border border-green-200";
@@ -529,22 +533,17 @@ async function loadUsersTable(offsetOverride = null) {
             const subBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${subBadgeClass}">${u.subscription_status.toUpperCase()}</span>`;
 
             const safeUsername = u.username.replace(/'/g, "\\'");
-            const actionBtn = u.is_active
-                ? `<button onclick="suspendUser(${u.id}, '${safeUsername}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors">SOSPENDI</button>`
-                : `<div class="flex gap-2 justify-end">
-                     <button onclick="unsuspendUser(${u.id}, '${safeUsername}')" class="text-green-600 hover:text-green-800 text-xs font-semibold border border-green-200 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition-colors">RIATTIVA</button>
-                     <button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-white text-xs font-semibold bg-red-600 hover:bg-red-700 px-2 py-1 rounded shadow transition-colors">ELIMINA</button>
-                   </div>`;
+            const deleteBtn = `<button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors ml-2">ELIMINA</button>`;
 
             tr.innerHTML = `
                 <td class="px-6 py-3 font-mono text-xs text-neutral-500">${u.id}</td>
                 <td class="px-6 py-3 font-medium text-neutral-900">${u.email}</td>
                 <td class="px-6 py-3 text-neutral-500">${u.role}</td>
-                <td class="px-6 py-3">${activeBadge}</td>
+                <td class="px-6 py-3">${u.role === 'client' ? toggleSwitch : '-'}</td>
                 <td class="px-6 py-3 text-neutral-500 uppercase text-xs">${u.plan_code}</td>
                 <td class="px-6 py-3">${subBadge}</td>
                 <td class="px-6 py-3 text-right">
-                    ${u.role === 'client' ? actionBtn : ''}
+                    ${u.role === 'client' ? deleteBtn : ''}
                 </td>
             `;
             tbody.appendChild(tr);
@@ -571,16 +570,36 @@ function usersNext() {
     }
 }
 
-function suspendUser(id, username) {
-    showConfirm("Sospendi Utente", `Vuoi davvero sospendere ${username}? Non potrà più accedere.`, async () => {
-        const res = await fetch(`/admin/users/${id}/suspend`, { method: "POST" });
+async function toggleUserActive(id, username, checkbox) {
+    const isActive = checkbox.checked;
+    const action = isActive ? "unsuspend" : "suspend";
+    const label = document.querySelector(`.toggle-label-${id}`);
+
+    // Optimistic UI update
+    if (label) {
+        label.textContent = isActive ? "Attivo" : "Disattivato";
+        label.className = `ms-3 text-xs font-medium ${isActive ? 'text-green-700' : 'text-neutral-500'} toggle-label-${id}`;
+    }
+
+    try {
+        const res = await fetch(`/admin/users/${id}/${action}`, { method: "POST" });
         if (res.ok) {
-            showToast("Utente sospeso", "success");
-            loadUsersTable();
+            showToast(isActive ? "Utente riattivato" : "Utente sospeso", "success");
         } else {
-            showToast("Errore", "error");
+            // Revert on failure
+            checkbox.checked = !isActive;
+            if (label) {
+                label.textContent = !isActive ? "Attivo" : "Disattivato";
+                label.className = `ms-3 text-xs font-medium ${!isActive ? 'text-green-700' : 'text-neutral-500'} toggle-label-${id}`;
+            }
+            showToast("Errore durante l'aggiornamento stato", "error");
         }
-    });
+    } catch (e) {
+        console.error(e);
+        // Revert on error
+        checkbox.checked = !isActive;
+        showToast("Errore di rete", "error");
+    }
 }
 
 function deleteUser(id, username) {
@@ -606,16 +625,183 @@ function deleteUser(id, username) {
     );
 }
 
-function unsuspendUser(id, username) {
-    showConfirm("Riattiva Utente", `Vuoi riattivare ${username}?`, async () => {
-        const res = await fetch(`/admin/users/${id}/unsuspend`, { method: "POST" });
-        if (res.ok) {
-            showToast("Utente riattivato", "success");
-            loadUsersTable();
-        } else {
-            showToast("Errore", "error");
+
+// =========================
+// CHAT ADMIN
+// =========================
+
+let adminChatPollInterval = null;
+let currentChatUserId = null;
+
+function startAdminChatPolling() {
+    if (adminChatPollInterval) clearInterval(adminChatPollInterval);
+    checkAdminUnreadBadge();
+    adminChatPollInterval = setInterval(() => {
+        loadConversations();
+        if (currentChatUserId) {
+            loadChatDetail(currentChatUserId);
         }
-    });
+        checkAdminUnreadBadge();
+    }, 5000);
+}
+
+function stopAdminChatPolling() {
+    if (adminChatPollInterval) {
+        clearInterval(adminChatPollInterval);
+        adminChatPollInterval = null;
+    }
+}
+
+async function checkAdminUnreadBadge() {
+    try {
+        const res = await fetch("/api/chat/unread-count");
+        if (res.ok) {
+            const data = await res.json();
+            const count = data.count || 0;
+            const badge = document.getElementById("admin-chat-badge");
+            if (badge) {
+                if (count > 0) {
+                    badge.classList.remove("hidden");
+                } else {
+                    badge.classList.add("hidden");
+                }
+            }
+        }
+    } catch(e) {}
+}
+
+async function loadConversations() {
+    const list = document.getElementById("admin-conversations-list");
+    if (!list) return;
+
+    try {
+        const res = await fetch("/api/admin/chat/conversations");
+        const data = await res.json();
+        const convs = data.conversations || [];
+
+        if (convs.length === 0) {
+            list.innerHTML = `<div class="text-center py-8 text-neutral-400 text-sm">Nessuna conversazione attiva.</div>`;
+            return;
+        }
+
+        list.innerHTML = convs.map(c => {
+            const isActive = currentChatUserId === c.user_id;
+            const unreadBadge = c.unread_count > 0
+                ? `<span class="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">${c.unread_count}</span>`
+                : '';
+
+            return `
+                <div onclick="selectChatUser(${c.user_id}, '${c.username.replace(/'/g, "\\'")}')"
+                     class="p-4 cursor-pointer hover:bg-neutral-50 transition-colors border-l-4 ${isActive ? 'bg-neutral-50 border-neutral-900' : 'border-transparent'}">
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="font-medium text-sm text-neutral-900 truncate">${c.studio_name || c.username}</span>
+                        ${unreadBadge}
+                    </div>
+                    <div class="text-xs text-neutral-500 truncate">${c.last_message || "Nessun messaggio"}</div>
+                    <div class="text-[10px] text-neutral-400 mt-1 text-right">${c.last_active ? formatDate(c.last_active) : ''}</div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (e) {
+        console.warn("Conversations load error", e);
+    }
+}
+
+function selectChatUser(userId, username) {
+    currentChatUserId = userId;
+
+    // UI Update
+    document.getElementById("admin-chat-placeholder").classList.add("hidden");
+    document.getElementById("admin-chat-title").textContent = username;
+    document.getElementById("admin-chat-subtitle").textContent = "ID: " + userId;
+
+    loadChatDetail(userId);
+    loadConversations(); // Update selection style
+}
+
+async function loadChatDetail(userId) {
+    const container = document.getElementById("admin-chat-messages");
+    if (!container) return;
+
+    try {
+        // Mark read
+        fetch("/api/chat/read", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: userId })
+        });
+
+        const res = await fetch(`/api/chat/messages?limit=100&user_id=${userId}`);
+        const data = await res.json();
+        const items = data.items || [];
+
+        if (items.length === 0) {
+            container.innerHTML = `<div class="text-center text-neutral-400 text-sm my-auto">Nessun messaggio in questa conversazione.</div>`;
+            return;
+        }
+
+        // Render
+        const isScrolledToBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+
+        container.innerHTML = items.map(msg => {
+            const isMe = msg.sender === 'admin';
+            return `
+                <div class="flex ${isMe ? 'justify-end' : 'justify-start'}">
+                    <div class="max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${isMe ? 'bg-neutral-900 text-white rounded-br-none' : 'bg-neutral-100 text-neutral-800 rounded-bl-none'}">
+                        ${escapeHtml(msg.message)}
+                        <div class="text-[10px] opacity-50 mt-1 text-right">${formatTime(msg.created_at)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        if (isScrolledToBottom) {
+            container.scrollTop = container.scrollHeight;
+        }
+
+    } catch (e) {
+        console.warn("Chat detail error", e);
+    }
+}
+
+async function handleSendAdminChat(event) {
+    event.preventDefault();
+    if (!currentChatUserId) return;
+
+    const input = document.getElementById("admin-chat-input");
+    const message = input.value.trim();
+    if (!message) return;
+
+    try {
+        input.value = "";
+        const res = await fetch("/api/chat/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: message, user_id: currentChatUserId })
+        });
+
+        if (res.ok) {
+            loadChatDetail(currentChatUserId);
+        } else {
+            showToast("Errore invio messaggio", "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Errore di rete", "error");
+    }
+}
+
+function formatDate(isoStr) {
+    if (!isoStr) return "-";
+    const d = new Date(isoStr);
+    return d.toLocaleDateString("it-IT", { month: 'short', day: 'numeric' });
+}
+
+function formatTime(isoStr) {
+    if (!isoStr) return "";
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString("it-IT", { hour: '2-digit', minute: '2-digit' });
 }
 
 // =========================

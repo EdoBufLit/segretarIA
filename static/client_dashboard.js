@@ -47,6 +47,12 @@ function openSection(name) {
     if (name === "numbers") {
         loadClientNumbers();
     }
+    if (name === "chat") {
+        loadChatMessages();
+        startChatPolling();
+    } else {
+        stopChatPolling();
+    }
 }
 
 async function initDashboard() {
@@ -502,7 +508,113 @@ async function updateStatus() {
             window.location.reload();
             return;
         }
+
+        // Also check unread messages count for badge
+        const badgeRes = await fetch("/api/chat/unread-count");
+        if (badgeRes.ok) {
+            const data = await badgeRes.json();
+            const count = data.count || 0;
+            const badge = document.getElementById("nav-chat-badge");
+            if (badge) {
+                if (count > 0) {
+                    badge.classList.remove("hidden");
+                } else {
+                    badge.classList.add("hidden");
+                }
+            }
+        }
     } catch(e) {}
+}
+
+// =========================
+// CHAT LOGIC
+// =========================
+
+let chatPollInterval = null;
+
+function startChatPolling() {
+    if (chatPollInterval) clearInterval(chatPollInterval);
+    chatPollInterval = setInterval(loadChatMessages, 5000); // 5s polling
+}
+
+function stopChatPolling() {
+    if (chatPollInterval) {
+        clearInterval(chatPollInterval);
+        chatPollInterval = null;
+    }
+}
+
+async function loadChatMessages() {
+    const container = document.getElementById("chat-messages-container");
+    if (!container) return;
+
+    try {
+        const res = await fetch("/api/chat/messages?limit=100");
+        if (!res.ok) throw new Error("Chat fetch failed");
+        const data = await res.json();
+
+        const items = data.items || [];
+
+        if (items.length === 0) {
+            container.innerHTML = `<div class="text-center text-neutral-400 text-sm my-auto">Nessun messaggio. Scrivi qui sotto per contattare il supporto.</div>`;
+            return;
+        }
+
+        // Render messages
+        // Simple logic: if new items > old items, scroll to bottom
+        const isScrolledToBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+
+        container.innerHTML = items.map(msg => {
+            const isMe = msg.sender === 'client';
+            return `
+                <div class="flex ${isMe ? 'justify-end' : 'justify-start'}">
+                    <div class="max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${isMe ? 'bg-neutral-900 text-white rounded-br-none' : 'bg-neutral-100 text-neutral-800 rounded-bl-none'}">
+                        ${escapeHtml(msg.message)}
+                        <div class="text-[10px] opacity-50 mt-1 text-right">${formatTime(msg.created_at)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        if (isScrolledToBottom) {
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Mark as read if we are here
+        // Optimistic, fire and forget
+        fetch("/api/chat/read", { method: "POST", body: JSON.stringify({}), headers: { "Content-Type": "application/json" } });
+
+    } catch (e) {
+        console.warn("Chat load error", e);
+    }
+}
+
+async function handleSendChat(event) {
+    event.preventDefault();
+    const input = document.getElementById("chat-input");
+    const message = input.value.trim();
+    if (!message) return;
+
+    try {
+        // Optimistic UI append? Or just wait poll. Wait poll is safer for sync.
+        // But clear input immediately.
+        input.value = "";
+
+        const res = await fetch("/api/chat/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: message })
+        });
+
+        if (res.ok) {
+            loadChatMessages(); // Refresh immediately
+        } else {
+            alert("Errore nell'invio del messaggio.");
+        }
+    } catch (e) {
+        console.error("Send error", e);
+        alert("Errore di rete.");
+    }
 }
 
 // Mobile Menu
