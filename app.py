@@ -566,6 +566,11 @@ async def api_admin_create_routing(
         if not phone:
             raise HTTPException(status_code=400, detail="Phone number not found")
 
+        # Validation: Must be active
+        if phone.status != 'active' or phone.released_at is not None:
+             logger.warning(f"Admin attempted to bind inactive phone {phone.id} to routing")
+             raise HTTPException(status_code=400, detail="Il numero deve essere attivo per essere assegnato.")
+
     new_routing = AgentRouting(
         user_id=payload.user_id,
         agent_id=payload.agent_id,

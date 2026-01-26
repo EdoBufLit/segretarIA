@@ -116,8 +116,10 @@
                 </div>
                 <div>
                     <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Numero (ID Database)</label>
-                    <input type="number" name="phone_number_id" required class="w-full p-2.5 rounded-lg bg-white border border-neutral-300 text-neutral-900 focus:ring-2 focus:ring-neutral-900 focus:border-transparent outline-none transition-all">
-                    <p class="text-xs text-neutral-500 mt-1">ID interno del numero (vedi sezione Numeri).</p>
+                    <select id="routing-phone-select" name="phone_number_id" required class="w-full p-2.5 rounded-lg bg-white border border-neutral-300 text-neutral-900 focus:ring-2 focus:ring-neutral-900 focus:border-transparent outline-none transition-all">
+                        <option value="" disabled selected>Seleziona un numero...</option>
+                    </select>
+                    <p class="text-xs text-neutral-500 mt-1">Lo trovi nella colonna ID nella sezione Numeri.</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <input type="checkbox" name="is_active" id="routing-active" checked class="w-4 h-4 text-neutral-900 border-neutral-300 rounded focus:ring-neutral-900">
@@ -468,6 +470,7 @@
                             <table class="w-full text-left">
                                 <thead class="bg-neutral-50 border-b border-neutral-200">
                                     <tr>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">ID</th>
                                         <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Numero (E.164)</th>
                                         <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Assegnato a</th>
                                         <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato</th>

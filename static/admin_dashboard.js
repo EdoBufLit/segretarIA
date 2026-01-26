@@ -882,6 +882,7 @@ async function loadPhoneNumbersTable() {
             const notes = n.notes ? `<span title="${n.notes}" class="truncate max-w-[150px] inline-block cursor-help border-b border-dotted border-neutral-400">${n.notes}</span>` : "-";
 
             tr.innerHTML = `
+                <td class="px-6 py-3 font-mono text-xs text-neutral-500">${n.id}</td>
                 <td class="px-6 py-3 font-mono text-xs text-neutral-900">${n.e164}</td>
                 <td class="px-6 py-3 text-neutral-600">${username}</td>
                 <td class="px-6 py-3">${statusBadge}</td>
@@ -1067,8 +1068,36 @@ async function loadRoutingTable() {
     }
 }
 
-function openAddRoutingModal() {
+async function openAddRoutingModal() {
     const modal = document.getElementById("add-routing-modal");
+    const select = document.getElementById("routing-phone-select");
+
+    if (select) {
+        select.innerHTML = '<option value="" disabled selected>Caricamento...</option>';
+        try {
+            const res = await fetch("/api/admin/phone-numbers");
+            if (res.ok) {
+                const data = await res.json();
+                const items = data.items || [];
+                // Filter active
+                const active = items.filter(n => n.status === 'active' && !n.released_at);
+
+                select.innerHTML = '<option value="" disabled selected>Seleziona un numero...</option>';
+                active.forEach(n => {
+                    const opt = document.createElement("option");
+                    opt.value = n.id;
+                    opt.textContent = `${n.e164} (ID: ${n.id})`;
+                    select.appendChild(opt);
+                });
+            } else {
+                select.innerHTML = '<option value="" disabled>Errore caricamento</option>';
+            }
+        } catch (e) {
+             console.error(e);
+             select.innerHTML = '<option value="" disabled>Errore caricamento</option>';
+        }
+    }
+
     if (modal) {
         modal.classList.remove("hidden");
         modal.classList.add("flex");
@@ -1089,11 +1118,17 @@ async function handleCreateRouting(event) {
     const form = event.target;
     const formData = new FormData(form);
 
+    const phoneIdRaw = formData.get("phone_number_id");
+    if (!phoneIdRaw) {
+        showToast("⚠️ L’ID del numero selezionato non è valido o non esiste.", "error");
+        return;
+    }
+
     // Convert to JSON
     const payload = {
         user_id: parseInt(formData.get("user_id")),
         agent_id: formData.get("agent_id"),
-        phone_number_id: parseInt(formData.get("phone_number_id")),
+        phone_number_id: parseInt(phoneIdRaw),
         is_active: formData.get("is_active") === "on"
     };
 
