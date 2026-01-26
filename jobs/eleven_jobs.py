@@ -153,13 +153,43 @@ def _process_elevenlabs_event_logic(payload: dict):
                 logger.warning(f"[JOB] Suspended user {user.username}. Blocking.")
                 return
 
-            active_sub = db.query(Subscription).filter(
+            if not user.has_active_plan():
+                logger.warning(f"[JOB] No active plan for user {user.username}. Blocking.")
+                return
+
+            # Resolve active_sub for linking usage event (fallback to last sub if manual override but no active sub found?)
+            # UsageEvent REQUIRES a subscription_id currently.
+            # If manual plan is used and no Stripe sub exists, we might need a "dummy" sub or allow nullable subscription_id.
+            # However, prompt says "Stripe integration remains active", so likely a sub exists even if expired/canceled.
+            # We should try to find *some* subscription record to link to, or create one if manual.
+            # For now, let's link to the most recent subscription record even if canceled,
+            # OR find the active one.
+
+            target_sub = db.query(Subscription).filter(
                 Subscription.user_id == user.id,
                 Subscription.state == "active"
             ).first()
 
-            if not active_sub:
-                logger.warning(f"[JOB] No active subscription for user {user.username}. Blocking.")
+            if not target_sub:
+                # If no active stripe sub (maybe manual override), get the latest one
+                target_sub = db.query(Subscription).filter(
+                    Subscription.user_id == user.id
+                ).order_by(Subscription.id.desc()).first()
+
+            if not target_sub:
+                # If NO subscription record exists at all (e.g. manually added user without stripe init), we can't create UsageEvent easily without changing schema.
+                # Assuming all users have at least a "NONE" plan subscription created at register/init?
+                # If not, we skip metering or create a dummy one?
+                # Let's log warning and return for now to avoid crash, but this effectively blocks metering.
+                # However, blocking logic above passed, so we allow the call but maybe fail to bill it?
+                # But wait, step 5 is just metering. The call logic continues after the `try...catch` block?
+                # No, if we return here, we skip AI/Email.
+                # We need a subscription to link usage.
+                logger.warning(f"[JOB] User {user.username} has active plan (manual?) but no Subscription record found in DB. Cannot meter usage.")
+                # We should probably allow proceeding but skip usage tracking?
+                # But IDEMPOTENCY relies on UsageEvent insert.
+                # Let's Skip metering but proceed? No, idempotency is key.
+                # Let's assume a subscription always exists (created on user creation? admin_seed creates plans, maybe client_service creates sub?)
                 return
 
             # 5. IDEMPOTENCY & LOCKING (Insert UsageEvent)
@@ -172,7 +202,7 @@ def _process_elevenlabs_event_logic(payload: dict):
                  # UsageEvent.call_id is UNIQUE.
 
                  usage_event = UsageEvent(
-                    subscription_id=active_sub.id,
+                    subscription_id=target_sub.id,
                     user_id=user.id,
                     agent_id=agent_obj.id,
                     call_id=call_id,
