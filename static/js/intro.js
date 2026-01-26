@@ -1,94 +1,38 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. INTRO LOGIC
     const intro = document.getElementById('premium-intro');
-    const wordmark = document.querySelector('.intro-wordmark');
     const glow = document.querySelector('.intro-glow');
-    const hasPlayed = sessionStorage.getItem('intro_shown');
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const wordmark = document.querySelector('.intro-wordmark');
 
-    // Helper to dismiss
-    const dismissIntro = () => {
-        if (!intro) return;
-        intro.style.opacity = '0';
-        intro.style.pointerEvents = 'none';
-        document.body.style.overflow = ''; // Restore scroll
+    if (!intro) return;
+
+    // Check if intro has already been shown in this session
+    if (sessionStorage.getItem('introShown')) {
+        intro.style.display = 'none';
+        return;
+    }
+
+    // Ensure it is visible for animation
+    intro.style.display = 'flex';
+
+    // Trigger animation
+    requestAnimationFrame(() => {
+        intro.style.opacity = '1';
+
         setTimeout(() => {
-            intro.style.display = 'none';
-        }, 800); // Wait for transition
-    };
+            if (glow) glow.classList.add('visible');
+            if (wordmark) wordmark.classList.add('animate');
+        }, 300);
 
-    if (intro) {
-        if (hasPlayed || prefersReducedMotion) {
-            // Skip immediately
-            intro.style.display = 'none';
-        } else {
-            // Play Intro
-            document.body.style.overflow = 'hidden'; // Lock scroll
+        setTimeout(() => {
+            // Fade out and scale down
+            intro.style.opacity = '0';
+            intro.style.transform = 'scale(0.9)';
 
-            // Start Animation Sequence
-            requestAnimationFrame(() => {
-                intro.style.opacity = '1';
-                setTimeout(() => {
-                    if(wordmark) wordmark.classList.add('animate');
-                    if(glow) glow.classList.add('visible');
-                }, 100);
-
-                // End Sequence
-                setTimeout(() => {
-                    dismissIntro();
-                    sessionStorage.setItem('intro_shown', 'true');
-                }, 1300); // 1.3s duration
-            });
-
-            // ESC Listener
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') {
-                    dismissIntro();
-                    sessionStorage.setItem('intro_shown', 'true');
-                }
-            });
-        }
-    }
-
-    // 2. SCROLL ANIMATIONS (Existing)
-    const elements = document.querySelectorAll('.fade-in-up');
-
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.classList.add('visible');
-                observer.unobserve(entry.target);
-            }
-        });
-    }, {
-        threshold: 0.1,
-        rootMargin: "0px 0px -50px 0px"
+            // Remove from DOM/Layout after transition
+            setTimeout(() => {
+                intro.style.display = 'none';
+                sessionStorage.setItem('introShown', 'true');
+            }, 700);
+        }, 2000);
     });
-
-    elements.forEach(el => observer.observe(el));
-
-    // 3. PARALLAX (Throttled)
-    const blobs = document.querySelectorAll('.hero-blob');
-    if (blobs.length > 0 && !prefersReducedMotion) {
-        let ticking = false;
-
-        document.addEventListener('mousemove', (e) => {
-            if (!ticking) {
-                window.requestAnimationFrame(() => {
-                    const x = e.clientX / window.innerWidth;
-                    const y = e.clientY / window.innerHeight;
-
-                    blobs.forEach((blob, index) => {
-                        const speed = (index + 1) * 20;
-                        const xOffset = (x - 0.5) * speed;
-                        const yOffset = (y - 0.5) * speed;
-
-                        blob.style.transform = `translate3d(${xOffset}px, ${yOffset}px, 0)`;
-                    });
-                    ticking = false;
-                });
-                ticking = true;
-            }
-        });
-    }
 });
