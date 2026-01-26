@@ -483,6 +483,23 @@ async def api_admin_delete_phone_number(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+class ReactivatePhoneNumberRequest(BaseModel):
+    user_id: int
+
+@app.post("/api/admin/phone-numbers/{phone_id}/reactivate")
+async def api_admin_reactivate_phone_number(
+    phone_id: int,
+    payload: ReactivatePhoneNumberRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    try:
+        service.reactivate_phone_number(phone_id, payload.user_id, admin.username)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.delete("/api/admin/phone-numbers/{phone_id}/permanent")
 async def api_admin_delete_phone_number_permanent(
     phone_id: int,
@@ -565,6 +582,11 @@ async def api_admin_create_routing(
         phone = db.query(PhoneNumber).filter(PhoneNumber.id == payload.phone_number_id).first()
         if not phone:
             raise HTTPException(status_code=400, detail="Phone number not found")
+
+        # Validation: Must be active
+        if phone.status != 'active' or phone.released_at is not None:
+             logger.warning(f"Admin attempted to bind inactive phone {phone.id} to routing")
+             raise HTTPException(status_code=400, detail="Il numero deve essere attivo per essere assegnato.")
 
     new_routing = AgentRouting(
         user_id=payload.user_id,

@@ -871,6 +871,8 @@ async function loadPhoneNumbersTable() {
                 actions = `<button onclick="releasePhoneNumber(${n.id}, '${n.e164}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors">RILASCIA</button>`;
             } else if (n.status === 'pending_deprovision') {
                 actions = `<button onclick="cancelDeprovision(${n.id}, '${n.e164}')" class="text-green-600 hover:text-green-800 text-xs font-semibold border border-green-200 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition-colors">ANNULLA RILASCIO</button>`;
+            } else if (n.status === 'released') {
+                actions = `<button onclick="openReactivateModal(${n.id}, '${n.e164}')" class="text-blue-600 hover:text-blue-800 text-xs font-semibold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors">RIATTIVA</button>`;
             } else {
                  actions = `<span class="text-xs text-neutral-400">Nessuna azione</span>`;
             }
@@ -882,6 +884,7 @@ async function loadPhoneNumbersTable() {
             const notes = n.notes ? `<span title="${n.notes}" class="truncate max-w-[150px] inline-block cursor-help border-b border-dotted border-neutral-400">${n.notes}</span>` : "-";
 
             tr.innerHTML = `
+                <td class="px-6 py-3 font-mono text-xs text-neutral-500">${n.id}</td>
                 <td class="px-6 py-3 font-mono text-xs text-neutral-900">${n.e164}</td>
                 <td class="px-6 py-3 text-neutral-600">${username}</td>
                 <td class="px-6 py-3">${statusBadge}</td>
@@ -955,7 +958,7 @@ function releasePhoneNumber(id, e164) {
             try {
                 const res = await fetch(`/api/admin/phone-numbers/${id}`, { method: "DELETE" });
                 if (res.ok) {
-                    showToast("Numero rilasciato", "success");
+                    showToast("Numero rilasciato con successo", "success");
                     loadPhoneNumbersTable();
                 } else {
                     const err = await res.json();
@@ -967,6 +970,88 @@ function releasePhoneNumber(id, e164) {
             }
         }
     );
+}
+
+async function openReactivateModal(phoneId, e164) {
+    const modal = document.getElementById("reactivate-phonenumber-modal");
+    const inputId = document.getElementById("reactivate-phone-id");
+    const inputE164 = document.getElementById("reactivate-phone-e164");
+    const select = document.getElementById("reactivate-user-select");
+
+    if (inputId) inputId.value = phoneId;
+    if (inputE164) inputE164.value = e164;
+
+    if (select) {
+        select.innerHTML = '<option value="" disabled selected>Caricamento...</option>';
+        try {
+            // Load users list (limit higher to get all, or implement search if too many)
+            const res = await fetch("/admin/users?limit=1000");
+            if (res.ok) {
+                const data = await res.json();
+                const items = data.items || [];
+                select.innerHTML = '<option value="" disabled selected>Seleziona nuovo utente...</option>';
+                items.forEach(u => {
+                    const opt = document.createElement("option");
+                    opt.value = u.id;
+                    opt.textContent = `${u.username} (ID: ${u.id})`;
+                    select.appendChild(opt);
+                });
+            } else {
+                select.innerHTML = '<option value="" disabled>Errore caricamento utenti</option>';
+            }
+        } catch (e) {
+            console.error(e);
+            select.innerHTML = '<option value="" disabled>Errore caricamento</option>';
+        }
+    }
+
+    if (modal) {
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+    }
+}
+
+function closeReactivateModal() {
+    const modal = document.getElementById("reactivate-phonenumber-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        document.getElementById("reactivate-phonenumber-form").reset();
+    }
+}
+
+async function handleReactivatePhoneNumber(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+
+    const phoneId = formData.get("phone_id");
+    const userId = formData.get("user_id");
+
+    if (!userId) {
+        showToast("Seleziona un utente.", "error");
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/admin/phone-numbers/${phoneId}/reactivate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: parseInt(userId) })
+        });
+
+        if (res.ok) {
+            showToast("Numero riattivato con successo", "success");
+            closeReactivateModal();
+            loadPhoneNumbersTable();
+        } else {
+            const err = await res.json();
+            showToast("Errore: " + (err.detail || "Impossibile riattivare"), "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Errore di rete", "error");
+    }
 }
 
 function deletePhoneNumberPermanent(id, e164) {
@@ -1067,8 +1152,36 @@ async function loadRoutingTable() {
     }
 }
 
-function openAddRoutingModal() {
+async function openAddRoutingModal() {
     const modal = document.getElementById("add-routing-modal");
+    const select = document.getElementById("routing-phone-select");
+
+    if (select) {
+        select.innerHTML = '<option value="" disabled selected>Caricamento...</option>';
+        try {
+            const res = await fetch("/api/admin/phone-numbers");
+            if (res.ok) {
+                const data = await res.json();
+                const items = data.items || [];
+                // Filter active
+                const active = items.filter(n => n.status === 'active' && !n.released_at);
+
+                select.innerHTML = '<option value="" disabled selected>Seleziona un numero...</option>';
+                active.forEach(n => {
+                    const opt = document.createElement("option");
+                    opt.value = n.id;
+                    opt.textContent = `${n.e164} (ID: ${n.id})`;
+                    select.appendChild(opt);
+                });
+            } else {
+                select.innerHTML = '<option value="" disabled>Errore caricamento</option>';
+            }
+        } catch (e) {
+             console.error(e);
+             select.innerHTML = '<option value="" disabled>Errore caricamento</option>';
+        }
+    }
+
     if (modal) {
         modal.classList.remove("hidden");
         modal.classList.add("flex");
@@ -1089,11 +1202,17 @@ async function handleCreateRouting(event) {
     const form = event.target;
     const formData = new FormData(form);
 
+    const phoneIdRaw = formData.get("phone_number_id");
+    if (!phoneIdRaw) {
+        showToast("⚠️ L’ID del numero selezionato non è valido o non esiste.", "error");
+        return;
+    }
+
     // Convert to JSON
     const payload = {
         user_id: parseInt(formData.get("user_id")),
         agent_id: formData.get("agent_id"),
-        phone_number_id: parseInt(formData.get("phone_number_id")),
+        phone_number_id: parseInt(phoneIdRaw),
         is_active: formData.get("is_active") === "on"
     };
 
