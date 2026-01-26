@@ -310,6 +310,9 @@ class StripeService:
             subscription.stripe_subscription_id = stripe_subscription_id
             # subscription.stripe_price_id = ...
 
+        # Sync redundant user fields for quick access
+        user.subscription_plan = plan.code
+        user.plan_expires_at = subscription.cycle_end
         self.db.commit()
 
         # Audit Log
@@ -327,6 +330,26 @@ class StripeService:
             admin_username="stripe_webhook",
             target_str=f"user={user.username} plan={plan_code}"
         )
+
+        # Notify User
+        try:
+            subject = f"Piano attivato: {plan_code.title()}"
+            minutes_included = plan.minutes_per_cycle
+            expiration_date = subscription.cycle_end.strftime("%d/%m/%Y")
+
+            body = f"""
+            <p>Ciao {user.username},</p>
+            <p>Il tuo piano <strong>{plan_code.title()}</strong> è stato attivato con successo.</p>
+            <ul>
+                <li><strong>Minuti inclusi:</strong> {minutes_included}</li>
+                <li><strong>Scadenza:</strong> {expiration_date}</li>
+            </ul>
+            <p>Accedi alla tua dashboard per iniziare ad usare il servizio.</p>
+            """
+            send_email(user.email, subject, "Piano attivato. Vedi HTML.", html_body=body)
+            logger.info(f"User notification sent to {user.email}")
+        except Exception as e:
+            logger.warning(f"Failed to send user notification email: {e}")
 
         # Notify Admin
         if ADMIN_EMAIL:
@@ -410,6 +433,8 @@ class StripeService:
 
         # Restore Subscription
         subscription_id = invoice.get('subscription')
+        cycle_end_dt = None
+
         if subscription_id:
             sub = self.db.query(Subscription).filter_by(stripe_subscription_id=subscription_id).first()
             if sub:
@@ -420,14 +445,28 @@ class StripeService:
                     period_end = lines[0].get('period', {}).get('end')
                     if period_end:
                         sub.cycle_end = datetime.fromtimestamp(period_end)
+                        cycle_end_dt = sub.cycle_end
+
+                # Sync subscription plan code if available in metadata or product
+                # (Optional, but good for consistency)
         else:
             # Fallback: find past_due subscription
             sub = self.db.query(Subscription).filter_by(user_id=user.id, state="past_due").first()
             if sub:
                 sub.state = "active"
-                # Extend simply by 30 days if no period data? Or leave as is if only restoring access.
-                # Assuming simple restoration logic.
+                # Extend simply by 30 days if no period data
                 sub.cycle_end = datetime.utcnow() + timedelta(days=30)
+                cycle_end_dt = sub.cycle_end
+
+        # Sync User Fields
+        if cycle_end_dt:
+            user.plan_expires_at = cycle_end_dt
+
+        # If subscription object found, ensure plan code matches user.subscription_plan?
+        # Only if we are sure. For now, trust the existing logic or update if invoice has plan info.
+        # Invoice usually has lines.data[0].plan.id -> we need to map back to code.
+        # Skipping plan code update here to avoid complexity/mismatch,
+        # assuming checkout or previous setup set it correctly.
 
         self.db.commit()
 

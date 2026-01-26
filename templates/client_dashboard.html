@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Segreteria IA – Dashboard</title>
+    <title>Mr.Automa – Dashboard</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -19,6 +19,7 @@
     </script>
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="/static/logo.png" type="image/png">
     <!-- HeroIcons -->
     <script src="https://unpkg.com/feather-icons"></script>
     <!-- Chart.js -->
@@ -50,11 +51,8 @@
 
     <!-- SIDEBAR -->
     <aside class="sidebar w-64 flex-shrink-0 flex flex-col hidden md:flex h-full bg-white border-r border-neutral-200">
-        <div class="p-6 border-b border-neutral-100">
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 bg-neutral-900 rounded-lg flex items-center justify-center text-white font-bold">S</div>
-                <h1 class="font-semibold text-lg tracking-tight text-neutral-900">Segreteria IA</h1>
-            </div>
+        <div class="p-6 border-b border-neutral-100 flex justify-center">
+            <img src="/static/logo.png" alt="Mr.Automa" class="h-12 w-auto object-contain">
         </div>
 
         <nav class="flex-1 overflow-y-auto p-4 space-y-1">
@@ -104,7 +102,7 @@
 
     <!-- MOBILE HEADER -->
     <div class="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-neutral-200 z-40 flex items-center justify-between px-4">
-        <span class="font-bold text-lg text-neutral-900">Segreteria IA</span>
+        <img src="/static/logo.png" alt="Mr.Automa" class="h-8 w-auto object-contain">
         <button id="mobile-menu-btn" class="p-2 text-neutral-600">
             <i data-feather="menu"></i>
         </button>
@@ -148,6 +146,11 @@
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white text-neutral-600 border border-neutral-200 uppercase shadow-sm">
                             {{ subscription.plan_code }}
                         </span>
+                        {% if plan_expires_formatted %}
+                        <span class="text-xs text-neutral-500 font-medium">
+                            Scade il: {{ plan_expires_formatted }}
+                        </span>
+                        {% endif %}
                     {% endif %}
                 </div>
             </div>

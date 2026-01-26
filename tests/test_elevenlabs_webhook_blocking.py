@@ -109,6 +109,8 @@ def test_user_no_active_plan(mock_env, mock_queue, mock_db_session):
     mock_user.is_active = True
     mock_user.id = 10
     mock_user.username = "no_plan_user"
+    # Essential: Mock the method to return False, otherwise MagicMock returns a truthy Mock
+    mock_user.has_active_plan.return_value = False
 
     def query_side_effect(model):
         query_mock = MagicMock()
