@@ -535,12 +535,22 @@ async function loadUsersTable(offsetOverride = null) {
             const safeUsername = u.username.replace(/'/g, "\\'");
             const deleteBtn = `<button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors ml-2">ELIMINA</button>`;
 
+            // Plan Select
+            const plans = ['NONE', 'starter', 'pro', 'business'];
+            let planOptions = plans.map(p => `<option value="${p}" ${u.subscription_plan === p ? 'selected' : ''}>${p.toUpperCase()}</option>`).join('');
+            const planSelect = u.role === 'client' ? `<select onchange="updateUserPlan(${u.id}, 'subscription_plan', this.value)" class="bg-white border border-neutral-300 rounded text-xs p-1 outline-none focus:ring-2 focus:ring-neutral-900">${planOptions}</select>` : '-';
+
+            // Expiration Date
+            const dateValue = u.plan_expires_at || '';
+            const dateInput = u.role === 'client' ? `<input type="date" value="${dateValue}" onchange="updateUserPlan(${u.id}, 'plan_expires_at', this.value)" class="bg-white border border-neutral-300 rounded text-xs p-1 outline-none focus:ring-2 focus:ring-neutral-900 w-32">` : '-';
+
             tr.innerHTML = `
                 <td class="px-6 py-3 font-mono text-xs text-neutral-500">${u.id}</td>
                 <td class="px-6 py-3 font-medium text-neutral-900">${u.email}</td>
                 <td class="px-6 py-3 text-neutral-500">${u.role}</td>
                 <td class="px-6 py-3">${u.role === 'client' ? toggleSwitch : '-'}</td>
-                <td class="px-6 py-3 text-neutral-500 uppercase text-xs">${u.plan_code}</td>
+                <td class="px-6 py-3 text-neutral-500 uppercase text-xs">${planSelect}</td>
+                <td class="px-6 py-3 text-neutral-500 uppercase text-xs">${dateInput}</td>
                 <td class="px-6 py-3">${subBadge}</td>
                 <td class="px-6 py-3 text-right">
                     ${u.role === 'client' ? deleteBtn : ''}
@@ -598,6 +608,29 @@ async function toggleUserActive(id, username, checkbox) {
         console.error(e);
         // Revert on error
         checkbox.checked = !isActive;
+        showToast("Errore di rete", "error");
+    }
+}
+
+async function updateUserPlan(userId, field, value) {
+    const payload = {};
+    payload[field] = value;
+
+    try {
+        const res = await fetch(`/admin/users/${userId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast("Piano aggiornato con successo", "success");
+        } else {
+            const err = await res.json();
+            showToast("Errore: " + (err.detail || "Impossibile aggiornare"), "error");
+        }
+    } catch (e) {
+        console.error(e);
         showToast("Errore di rete", "error");
     }
 }

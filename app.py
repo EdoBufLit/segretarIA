@@ -958,14 +958,9 @@ async def elevenlabs_webhook(request: Request):
                           logger.warning(f"[WEBHOOK] Blocked: User {user.username} is suspended.")
                           return JSONResponse(status_code=403, content={"error": "Piano scaduto o agente disattivato"})
 
-                     # Check active subscription
-                     active_sub = db.query(Subscription).filter(
-                         Subscription.user_id == user.id,
-                         Subscription.state == "active"
-                     ).first()
-
-                     if not active_sub:
-                          logger.warning(f"[WEBHOOK] Blocked: User {user.username} has no active subscription.")
+                     # Check active plan (Manual or Stripe)
+                     if not user.has_active_plan():
+                          logger.warning(f"[WEBHOOK] Blocked: User {user.username} has no active plan.")
                           log_critical_error(f"Webhook bloccato per user {user.username} (agent {agent_id}) - nessun piano attivo.")
                           return JSONResponse(status_code=403, content={"error": "Piano scaduto o agente disattivato"})
 
@@ -1223,7 +1218,8 @@ async def api_client_phone_numbers(
 class AdminUpdateUserRequest(BaseModel):
     studio_name: Optional[str] = None
     email: Optional[str] = None
-    # Potentially other fields like notification_email if we add it later
+    subscription_plan: Optional[str] = None
+    plan_expires_at: Optional[str] = None # ISO format or YYYY-MM-DD
 
 
 def _apply_admin_user_update(user: User, payload: AdminUpdateUserRequest, db: Session) -> None:
@@ -1236,6 +1232,28 @@ def _apply_admin_user_update(user: User, payload: AdminUpdateUserRequest, db: Se
 
     if payload.studio_name is not None:
         user.studio_name = payload.studio_name
+
+    if payload.subscription_plan is not None:
+        user.subscription_plan = payload.subscription_plan
+
+    if payload.plan_expires_at is not None:
+        if payload.plan_expires_at == "":
+            user.plan_expires_at = None
+        else:
+            try:
+                # Try full ISO first, then date only
+                try:
+                    dt = datetime.fromisoformat(payload.plan_expires_at)
+                except ValueError:
+                    dt = datetime.strptime(payload.plan_expires_at, "%Y-%m-%d")
+                    # Set to end of day if just date provided? Or strictly time?
+                    # Let's assume midnight or specific time if provided.
+                    # If just date, admin probably means "until this date inclusive", so end of day is safer?
+                    # Or just keep it simple.
+                    dt = dt.replace(hour=23, minute=59, second=59)
+                user.plan_expires_at = dt
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format")
 
 @app.get("/admin/users")
 async def admin_list_users(
@@ -1272,6 +1290,8 @@ async def admin_list_users(
             "is_active": u.is_active,
             "subscription_status": sub_status,
             "plan_code": plan_code,
+            "subscription_plan": u.subscription_plan,
+            "plan_expires_at": u.plan_expires_at.strftime("%Y-%m-%d") if u.plan_expires_at else None,
             "created_at": u.created_at.isoformat() if u.created_at else None
         })
 

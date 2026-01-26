@@ -165,8 +165,7 @@ const createField = (field) => {
 
     if (field.type === "select") {
         inputElement = document.createElement("select");
-        inputElement.className = baseInputClasses + " appearance-none"; // appearance-none for custom arrow if needed, but standard is fine
-        // Adding a simple SVG arrow background or just relying on browser default for simplicity
+        inputElement.className = baseInputClasses + " appearance-none";
         inputElement.id = `booking-${field.id}`;
         inputElement.name = field.id;
 
@@ -207,23 +206,43 @@ const createField = (field) => {
     return wrapper;
 };
 
-const renderStep = () => {
-    const step = steps[state.currentStep];
-    errorMessage.textContent = "";
-    stepContainer.innerHTML = "";
-    stepContainer.classList.add("animate-fade-in-up"); // Add simple animation if defined or just default
+const initSteps = () => {
+    if (!stepContainer) return;
+    stepContainer.innerHTML = ""; // Clear initial state
 
-    // Render all fields for this step
-    step.fields.forEach(field => {
-        const fieldEl = createField(field);
-        stepContainer.appendChild(fieldEl);
+    steps.forEach((step, index) => {
+        const wrapper = document.createElement("div");
+        // Hidden by default, with flex layout and gap for spacing (replacing space-y-6 on parent)
+        wrapper.className = "step-wrapper hidden flex flex-col gap-6 w-full will-change-[transform,opacity]";
+
+        step.fields.forEach(field => {
+            const fieldEl = createField(field);
+            wrapper.appendChild(fieldEl);
+        });
+
+        stepContainer.appendChild(wrapper);
     });
+};
 
-    // Auto-focus first input
-    const firstInput = stepContainer.querySelector("input, select, textarea");
-    if (firstInput) {
-        setTimeout(() => firstInput.focus(), 50);
-    }
+const renderStep = () => {
+    errorMessage.textContent = "";
+
+    const stepWrappers = stepContainer.querySelectorAll('.step-wrapper');
+    stepWrappers.forEach((el, index) => {
+        if (index === state.currentStep) {
+            el.classList.remove('hidden');
+            el.classList.add('motion-safe:animate-fade-in-up');
+
+            // Auto-focus first input
+            const firstInput = el.querySelector("input, select, textarea");
+            if (firstInput) {
+                setTimeout(() => firstInput.focus(), 50);
+            }
+        } else {
+            el.classList.add('hidden');
+            el.classList.remove('motion-safe:animate-fade-in-up');
+        }
+    });
 };
 
 const setFieldError = (el, hasError) => {
@@ -258,7 +277,6 @@ const validateStep = () => {
         if (field.type !== "checkbox") {
             setFieldError(el, false);
         } else {
-            // Checkbox container error style could be added to parent
             if (el.parentElement) el.parentElement.classList.remove("border-red-500", "bg-red-50");
         }
 
@@ -296,7 +314,6 @@ const showSuccess = () => {
     form.classList.add("hidden");
     successState.classList.remove("hidden");
 
-    // Hide progress elements
     if (progressText) progressText.parentElement.style.opacity = "0";
     if (progressBar) progressBar.parentElement.style.opacity = "0";
 
@@ -315,6 +332,18 @@ const resetWizard = () => {
 
     if (progressText) progressText.parentElement.style.opacity = "1";
     if (progressBar) progressBar.parentElement.style.opacity = "1";
+
+    // Reset inputs in DOM to ensure clean state
+    const inputs = stepContainer.querySelectorAll("input, select, textarea");
+    inputs.forEach(input => {
+        if (input.type === "checkbox") {
+            input.checked = false;
+            if (input.parentElement) input.parentElement.classList.remove("border-red-500", "bg-red-50");
+        } else {
+            input.value = "";
+            setFieldError(input, false);
+        }
+    });
 
     updateProgress();
     renderStep();
@@ -468,3 +497,6 @@ wizard?.addEventListener("click", (event) => {
         closeWizard();
     }
 });
+
+// Initialize Steps on Load
+initSteps();
