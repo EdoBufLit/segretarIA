@@ -1709,6 +1709,16 @@ async def dashboard(
     minutes_limit = 0
     minutes_used = 0
     minutes_remaining = 0
+    plan_expires_formatted = None
+
+    if user.plan_expires_at:
+        # Italian months mapping
+        months = {
+            1: "gennaio", 2: "febbraio", 3: "marzo", 4: "aprile", 5: "maggio", 6: "giugno",
+            7: "luglio", 8: "agosto", 9: "settembre", 10: "ottobre", 11: "novembre", 12: "dicembre"
+        }
+        d = user.plan_expires_at
+        plan_expires_formatted = f"{d.day} {months[d.month]} {d.year}"
 
     if sub:
         subscription_data = {
@@ -1781,7 +1791,8 @@ async def dashboard(
         "subscription": subscription_data,
         "minutes_limit": minutes_limit,
         "minutes_used": minutes_used,
-        "minutes_remaining": minutes_remaining
+        "minutes_remaining": minutes_remaining,
+        "plan_expires_formatted": plan_expires_formatted
     })
 
 

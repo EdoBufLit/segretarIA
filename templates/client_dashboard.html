@@ -148,6 +148,11 @@
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white text-neutral-600 border border-neutral-200 uppercase shadow-sm">
                             {{ subscription.plan_code }}
                         </span>
+                        {% if plan_expires_formatted %}
+                        <span class="text-xs text-neutral-500 font-medium">
+                            Scade il: {{ plan_expires_formatted }}
+                        </span>
+                        {% endif %}
                     {% endif %}
                 </div>
             </div>
