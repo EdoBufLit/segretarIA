@@ -175,10 +175,10 @@ async def startup_event():
         logger.error(f"Error during database backup on startup: {e}")
 
 # Nome della TUA agency / servizio, non del singolo studio
-STUDIO_NAME = os.getenv("STUDIO_NAME", "Segreteria IA")
+STUDIO_NAME = os.getenv("STUDIO_NAME", "Mr.Automa")
 
 # Email mittente (la tua)
-EMAIL_FROM = os.getenv("EMAIL_FROM")  # es: "Segreteria IA <edo.buffa9898@gmail.com>"
+EMAIL_FROM = os.getenv("EMAIL_FROM")  # es: "Mr.Automa <edo.buffa9898@gmail.com>"
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))

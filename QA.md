@@ -1,10 +1,10 @@
 # QA Checklist: Billing, Emails, & Landing
 
-This document outlines the verification steps for the critical paths of the Segreteria IA application.
+This document outlines the verification steps for the critical paths of the Mr.Automa application.
 
 ## 1. Public Landing Page
 - [ ] **Load**: Access homepage (`/`). Status 200.
-- [ ] **Intro Overlay**: First visit shows "Automa AI" overlay. Reload hides it (sessionStorage).
+- [ ] **Intro Overlay**: First visit shows "Mr.Automa" overlay. Reload hides it (sessionStorage).
 - [ ] **Layout**: No horizontal scroll or broken sections. Dark theme consistent.
 - [ ] **Content**: Terms like "Studio legale" replaced with inclusive business terms.
 

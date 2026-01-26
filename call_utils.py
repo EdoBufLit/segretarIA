@@ -178,7 +178,7 @@ def build_email_body_html(
 
     <div style="max-width: 650px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
 
-      <h2 style="color: #333;">Segreteria IA – Nuova chiamata per <span style="color:#0066cc;">{studio_name}</span></h2>
+      <h2 style="color: #333;">Mr.Automa – Nuova chiamata per <span style="color:#0066cc;">{studio_name}</span></h2>
       <p style="color:#777; font-size:13px; margin-top:4px;">Servizio gestito da {agency_name}</p>
 
       <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
@@ -212,7 +212,7 @@ def build_email_body_html(
       <p>{analysis.get('suggested_followup')}</p>
 
       <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0 15px;">
-      <p style="color:#999; font-size:12px; text-align:center;">Email generata automaticamente dalla Segreteria IA.</p>
+      <p style="color:#999; font-size:12px; text-align:center;">Email generata automaticamente da Mr.Automa.</p>
 
     </div>
   </body>
