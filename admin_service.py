@@ -139,7 +139,41 @@ class AdminService:
 
         phone.status = "released"
         phone.released_at = datetime.utcnow()
+        phone.user_id = None
         self.db.commit()
+        return phone
+
+    def reactivate_phone_number(self, phone_id: int, user_id: int, admin_username: str):
+        """
+        Reactivates a released phone number and assigns it to a user.
+        """
+        phone = self.db.query(PhoneNumber).filter_by(id=phone_id).first()
+        if not phone:
+            raise ValueError("Phone number not found")
+
+        if not phone.released_at:
+            raise ValueError("Phone number is not released")
+
+        user = self.db.query(User).filter_by(id=user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        phone.status = "active"
+        phone.released_at = None
+        phone.user_id = user.id
+        self.db.commit()
+
+        # Audit Log
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
+            action="reactivate_phone_number",
+            entity_type="phone_number",
+            entity_id=str(phone_id),
+            meta={"e164": phone.e164, "new_user_id": user_id},
+            admin_username=admin_username,
+            target_str=f"e164={phone.e164} user={user.username}"
+        )
         return phone
 
     def cancel_phone_number_deprovisioning(self, phone_id: int):

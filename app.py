@@ -483,6 +483,23 @@ async def api_admin_delete_phone_number(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+class ReactivatePhoneNumberRequest(BaseModel):
+    user_id: int
+
+@app.post("/api/admin/phone-numbers/{phone_id}/reactivate")
+async def api_admin_reactivate_phone_number(
+    phone_id: int,
+    payload: ReactivatePhoneNumberRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+    try:
+        service.reactivate_phone_number(phone_id, payload.user_id, admin.username)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.delete("/api/admin/phone-numbers/{phone_id}/permanent")
 async def api_admin_delete_phone_number_permanent(
     phone_id: int,
