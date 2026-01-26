@@ -541,7 +541,10 @@ async function loadUsersTable(offsetOverride = null) {
             const planSelect = u.role === 'client' ? `<select onchange="updateUserPlan(${u.id}, 'subscription_plan', this.value)" class="bg-white border border-neutral-300 rounded text-xs p-1 outline-none focus:ring-2 focus:ring-neutral-900">${planOptions}</select>` : '-';
 
             // Expiration Date
-            const dateValue = u.plan_expires_at || '';
+            let dateValue = '';
+            if (u.plan_expires_at) {
+                dateValue = u.plan_expires_at.split('T')[0];
+            }
             const dateInput = u.role === 'client' ? `<input type="date" value="${dateValue}" onchange="updateUserPlan(${u.id}, 'plan_expires_at', this.value)" class="bg-white border border-neutral-300 rounded text-xs p-1 outline-none focus:ring-2 focus:ring-neutral-900 w-32">` : '-';
 
             tr.innerHTML = `

@@ -13,7 +13,7 @@ from alerting import log_critical_error
 import os
 
 logger = logging.getLogger("eleven_jobs")
-STUDIO_NAME = os.getenv("STUDIO_NAME", "Segreteria IA")
+STUDIO_NAME = os.getenv("STUDIO_NAME", "Mr.Automa")
 
 def process_elevenlabs_event_job(payload: dict):
     """
@@ -286,7 +286,7 @@ def _process_elevenlabs_event_logic(payload: dict):
             agency_name=STUDIO_NAME,
         )
 
-        subject = f"[Segreteria IA] Nuova chiamata per {studio_name} da {caller_number}"
+        subject = f"[Mr.Automa] Nuova chiamata per {studio_name} da {caller_number}"
 
         queue = get_queue()
         queue.enqueue(send_email_job, email_to, subject, email_body)
