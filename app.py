@@ -930,6 +930,50 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
+# ================== WEBHOOK TWILIO ==================
+
+@app.post("/twilio/authorize")
+async def twilio_authorize(
+    To: str = Form(...),
+    From: str = Form(...),
+    CallSid: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Authorize incoming Twilio calls.
+    Returns: { "allowed": true } or { "allowed": false, "reason": "..." }
+    """
+    # Normalize To (remove spaces)
+    normalized_to = To.replace(" ", "").strip()
+
+    # 1. Lookup Phone Number
+    phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
+    if not phone:
+        return {"allowed": False, "reason": "Number not found"}
+
+    # 2. Get User
+    user = phone.user
+    if not user:
+        return {"allowed": False, "reason": "User not found"}
+
+    # 3. Check User Active
+    if not user.is_active:
+        return {"allowed": False, "reason": "User suspended"}
+
+    # 4. Check Plan
+    if not user.has_active_plan():
+        return {"allowed": False, "reason": "No active plan"}
+
+    # 5. Check Agent Routing
+    # If a routing exists for this phone number, verify it is active.
+    routing = db.query(AgentRouting).filter(AgentRouting.phone_number_id == phone.id).first()
+    if routing:
+        if not routing.is_active:
+            return {"allowed": False, "reason": "Agent disabled"}
+
+    return {"allowed": True}
+
+
 # ================== WEBHOOK ELEVENLABS ==================
 
 @app.post("/elevenlabs/webhook")
