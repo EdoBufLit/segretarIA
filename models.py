@@ -67,6 +67,7 @@ class AgentSettings(Base):
     notes = Column(String, nullable=True)
     agent_phone_number_id = Column(String, nullable=True)
     test_phone_number = Column(String, nullable=True)
+    fallback_number = Column(String, nullable=True) # For inactive service fallback
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 

@@ -2193,9 +2193,10 @@ async def login_submit(
         logger.warning(f"LOGIN_FAIL_USER_NOT_FOUND: {normalized_username}")
         return RedirectResponse(url="/login?error=1", status_code=302)
 
-    if not user.is_active:
-        logger.warning(f"LOGIN_FAIL_INACTIVE: {normalized_username} id={user.id}")
-        return RedirectResponse(url="/login?error=1", status_code=302)
+    # Allow login even if inactive, so they can see the "Suspended" dashboard
+    # if not user.is_active:
+    #    logger.warning(f"LOGIN_FAIL_INACTIVE: {normalized_username} id={user.id}")
+    #    return RedirectResponse(url="/login?error=1", status_code=302)
 
     if not verify_password(password, user.password_hash):
         logger.warning(f"LOGIN_FAIL_HASH_MISMATCH: {normalized_username} id={user.id}")
