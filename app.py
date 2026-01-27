@@ -1652,6 +1652,81 @@ async def elevenlabs_webhook(request: Request):
     # 5) Return Immediate Success
     return {"status": "ok"}
 
+
+# Moved _read_logs here to prevent NameError
+def _read_logs(
+    db: Session,
+    agent_ids: List[str],
+    limit: int = 50,
+    offset: int = 0,
+    status: str = "all",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    q: Optional[str] = None
+):
+    """
+    Helper to read, filter, sort and paginate logs from the database.
+    """
+    items = []
+
+    df = datetime.fromisoformat(date_from).date() if date_from else None
+    dt = datetime.fromisoformat(date_to).date() if date_to else None
+
+    query = db.query(CallLog)
+    if agent_ids:
+        query = query.filter(CallLog.agent_id.in_(agent_ids))
+    if df:
+        query = query.filter(CallLog.timestamp >= datetime.combine(df, datetime.min.time()))
+    if dt:
+        query = query.filter(CallLog.timestamp <= datetime.combine(dt, datetime.max.time()))
+    if status in {"success", "failure"}:
+        query = query.filter(CallLog.status == status)
+
+    logs = query.order_by(CallLog.timestamp.desc()).all()
+
+    for log in logs:
+        raw = log.raw_data or {}
+        ts = log.timestamp.isoformat() if log.timestamp else None
+        if not ts:
+            continue
+
+        data = raw.get("data", {}) or {}
+        analysis = data.get("analysis", {}) or {}
+        summary = (
+            analysis.get("transcript_summary")
+            or analysis.get("summary")
+            or data.get("summary")
+            or ""
+        )
+        duration = data.get("duration_secs") or data.get("metadata", {}).get("call_duration_secs")
+        caller = data.get("caller_number") or data.get("user_id") or "unknown"
+        status_value = log.status or data.get("status") or "success"
+
+        item = {
+            "timestamp": ts,
+            "caller": caller,
+            "status": status_value,
+            "summary": str(summary).strip(),
+            "duration_secs": duration,
+            "raw": raw
+        }
+
+        if q:
+            q_low = q.lower()
+            if q_low not in json.dumps(item, ensure_ascii=False).lower():
+                continue
+
+        items.append(item)
+
+    total = len(items)
+    paginated_items = items[offset:offset + limit]
+
+    return {"status": "ok", "total": total, "items": paginated_items}
+
+
+
+
+
 @app.get("/logs/{agent_id}/list")
 async def view_logs_list(
     agent_id: str,
@@ -3012,78 +3087,6 @@ async def admin_debug_users(
         "is_active": user.is_active,
         "hash_prefix": user.password_hash[:10] if user.password_hash else None
     }
-
-
-def _read_logs(
-    db: Session,
-    agent_ids: List[str],
-    limit: int = 50,
-    offset: int = 0,
-    status: str = "all",
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    q: Optional[str] = None
-):
-    """
-    Helper to read, filter, sort and paginate logs from the database.
-    """
-    items = []
-
-    df = datetime.fromisoformat(date_from).date() if date_from else None
-    dt = datetime.fromisoformat(date_to).date() if date_to else None
-
-    query = db.query(CallLog)
-    if agent_ids:
-        query = query.filter(CallLog.agent_id.in_(agent_ids))
-    if df:
-        query = query.filter(CallLog.timestamp >= datetime.combine(df, datetime.min.time()))
-    if dt:
-        query = query.filter(CallLog.timestamp <= datetime.combine(dt, datetime.max.time()))
-    if status in {"success", "failure"}:
-        query = query.filter(CallLog.status == status)
-
-    logs = query.order_by(CallLog.timestamp.desc()).all()
-
-    for log in logs:
-        raw = log.raw_data or {}
-        ts = log.timestamp.isoformat() if log.timestamp else None
-        if not ts:
-            continue
-
-        data = raw.get("data", {}) or {}
-        analysis = data.get("analysis", {}) or {}
-        summary = (
-            analysis.get("transcript_summary")
-            or analysis.get("summary")
-            or data.get("summary")
-            or ""
-        )
-        duration = data.get("duration_secs") or data.get("metadata", {}).get("call_duration_secs")
-        caller = data.get("caller_number") or data.get("user_id") or "unknown"
-        status_value = log.status or data.get("status") or "success"
-
-        item = {
-            "timestamp": ts,
-            "caller": caller,
-            "status": status_value,
-            "summary": str(summary).strip(),
-            "duration_secs": duration,
-            "raw": raw
-        }
-
-        if q:
-            q_low = q.lower()
-            if q_low not in json.dumps(item, ensure_ascii=False).lower():
-                continue
-
-        items.append(item)
-
-    total = len(items)
-    paginated_items = items[offset:offset + limit]
-
-    return {"status": "ok", "total": total, "items": paginated_items}
-
-
 
 
 @app.get("/api/logs")
