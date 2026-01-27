@@ -1293,13 +1293,22 @@ async def twilio_after_dial(
 
 
 @app.websocket("/ws/twilio")
-async def websocket_twilio(websocket: WebSocket, agent_id: str = Query(...), db: Session = Depends(get_db)):
+async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query(None, description="Agent ID"), db: Session = Depends(get_db)):
     """
     WebSocket endpoint for Twilio Media Streams.
     Bridges the audio stream to ElevenLabs Realtime.
     """
+    logger.info("DEBUG: Entrato in websocket_twilio")
     await websocket.accept()
-    logger.info(f"DEBUG: Received agent_id = {agent_id}")
+    logger.info(f"DEBUG: URL richiesta: {websocket.url}")
+    logger.info(f"DEBUG: Query params: {websocket.query_params}")
+    logger.info(f"DEBUG: agent_id ricevuto = {agent_id}")
+
+    if not agent_id:
+        logger.info("DEBUG: agent_id mancante o None")
+        await websocket.close(code=4003)
+        return
+
     for r in db.query(AgentRouting).all():
         logger.info(f"DEBUG: Routing -> agent_id={r.agent_id} is_active={r.is_active}")
 
