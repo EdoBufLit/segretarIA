@@ -1299,6 +1299,10 @@ async def websocket_twilio(websocket: WebSocket, agent_id: str = Query(...), db:
     Bridges the audio stream to ElevenLabs Realtime.
     """
     await websocket.accept()
+    logger.info(f"DEBUG: Received agent_id = {agent_id}")
+    for r in db.query(AgentRouting).all():
+        logger.info(f"DEBUG: Routing -> agent_id={r.agent_id} is_active={r.is_active}")
+
 
     # Validate Agent
     routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id, AgentRouting.is_active == True).first()
