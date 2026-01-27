@@ -17,7 +17,7 @@ import time
 def generate_signature(secret: str, body: bytes, timestamp: str = None) -> dict:
     if timestamp is None:
         timestamp = str(int(time.time()))
-    payload = f"{timestamp}.".encode("utf-8") + body
+    payload = body + timestamp.encode("utf-8")
     signature = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
     return {"elevenlabs-signature": f"t={timestamp},v1={signature}"}
 

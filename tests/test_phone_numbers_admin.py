@@ -7,6 +7,7 @@ from models import User, PhoneNumber
 from auth import hash_password
 from datetime import datetime, timedelta
 from db import SessionLocal, Base, engine
+from unittest.mock import patch
 
 client = TestClient(app)
 
@@ -59,71 +60,72 @@ def test_admin_phone_numbers_crud(db_session: Session):
     admin = create_admin(db_session)
     user = create_client_user(db_session, "phone_owner")
 
-    # Login as admin
-    login_resp = client.post("/login", data={"username": "admin_test", "password": "password"})
-    # TestClient follows redirects by default, so we land on dashboard (200)
-    assert login_resp.status_code == 200
+    with patch("admin_service.send_email"):
+        # Login as admin
+        login_resp = client.post("/login", data={"username": "admin_test", "password": "password"})
+        # TestClient follows redirects by default, so we land on dashboard (200)
+        assert login_resp.status_code == 200
 
-    # 1. Create Phone Number via API
-    payload = {
-        "e164": "+393330000001",
-        "user_id": user.id,
-        "notes": "Test number"
-    }
-    resp = client.post("/api/admin/phone-numbers", json=payload)
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "ok"
-    phone_id = data["id"]
+        # 1. Create Phone Number via API
+        payload = {
+            "e164": "+393330000001",
+            "user_id": user.id,
+            "notes": "Test number"
+        }
+        resp = client.post("/api/admin/phone-numbers", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        phone_id = data["id"]
 
-    # Verify DB
-    phone = db_session.query(PhoneNumber).filter(PhoneNumber.id == phone_id).first()
-    assert phone is not None
-    assert phone.e164 == "+393330000001"
-    assert phone.user_id == user.id
-    assert phone.notes == "Test number"
-    assert phone.status == "active"
+        # Verify DB
+        phone = db_session.query(PhoneNumber).filter(PhoneNumber.id == phone_id).first()
+        assert phone is not None
+        assert phone.e164 == "+393330000001"
+        assert phone.user_id == user.id
+        assert phone.notes == "Test number"
+        assert phone.status == "active"
 
-    # 2. List Phone Numbers
-    resp = client.get("/api/admin/phone-numbers")
-    assert resp.status_code == 200
-    list_data = resp.json()
-    items = list_data["items"]
-    assert len(items) >= 1
-    found = next((i for i in items if i["id"] == phone_id), None)
-    assert found is not None
-    assert found["e164"] == "+393330000001"
-    assert found["username"] == "phone_owner"
+        # 2. List Phone Numbers
+        resp = client.get("/api/admin/phone-numbers")
+        assert resp.status_code == 200
+        list_data = resp.json()
+        items = list_data["items"]
+        assert len(items) >= 1
+        found = next((i for i in items if i["id"] == phone_id), None)
+        assert found is not None
+        assert found["e164"] == "+393330000001"
+        assert found["username"] == "phone_owner"
 
-    # 3. Update Notes
-    resp = client.patch(f"/api/admin/phone-numbers/{phone_id}", json={"notes": "Updated notes"})
-    assert resp.status_code == 200
-    db_session.refresh(phone)
-    assert phone.notes == "Updated notes"
+        # 3. Update Notes
+        resp = client.patch(f"/api/admin/phone-numbers/{phone_id}", json={"notes": "Updated notes"})
+        assert resp.status_code == 200
+        db_session.refresh(phone)
+        assert phone.notes == "Updated notes"
 
-    # 4. Release (Delete logic) -> sets status to released
-    resp = client.delete(f"/api/admin/phone-numbers/{phone_id}")
-    assert resp.status_code == 200
-    db_session.refresh(phone)
-    assert phone.status == "released"
-    assert phone.released_at is not None
+        # 4. Release (Delete logic) -> sets status to released
+        resp = client.delete(f"/api/admin/phone-numbers/{phone_id}")
+        assert resp.status_code == 200
+        db_session.refresh(phone)
+        assert phone.status == "released"
+        assert phone.released_at is not None
 
-    # 5. Cancel Deprovision (Simulate pending_deprovision first)
-    phone.status = "pending_deprovision"
-    phone.deprovision_at = datetime.utcnow() + timedelta(days=30)
-    db_session.commit()
+        # 5. Cancel Deprovision (Simulate pending_deprovision first)
+        phone.status = "pending_deprovision"
+        phone.deprovision_at = datetime.utcnow() + timedelta(days=30)
+        db_session.commit()
 
-    resp = client.post(f"/api/admin/phone-numbers/{phone_id}/cancel-deprovision")
-    assert resp.status_code == 200
-    db_session.refresh(phone)
-    assert phone.status == "active"
-    assert phone.deprovision_at is None
+        resp = client.post(f"/api/admin/phone-numbers/{phone_id}/cancel-deprovision")
+        assert resp.status_code == 200
+        db_session.refresh(phone)
+        assert phone.status == "active"
+        assert phone.deprovision_at is None
 
-    # Cleanup
-    db_session.delete(phone)
-    db_session.delete(user)
-    # db_session.delete(admin) # Keep admin for other tests if needed, or delete.
-    db_session.commit()
+        # Cleanup
+        db_session.delete(phone)
+        db_session.delete(user)
+        # db_session.delete(admin) # Keep admin for other tests if needed, or delete.
+        db_session.commit()
 
 def test_admin_phone_numbers_security(db_session: Session):
     # Setup

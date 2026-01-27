@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import os
 import csv
 import json
+import logging
 from io import StringIO
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -10,6 +11,8 @@ from models import User, Agent, Plan, Subscription, PhoneNumber, UsageEvent
 from auth import hash_password, generate_random_password
 from mailer import send_email
 import audit_logger
+
+logger = logging.getLogger("admin_service")
 
 class AdminService:
     def __init__(self, db: Session):
@@ -109,7 +112,10 @@ class AdminService:
             admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
             subject = f"[REACTIVATE] Disdetta numero annullata per {phone_number.e164}"
             body = f"<p>La disdetta del numero <b>{phone_number.e164}</b> per il cliente {client.studio_name or client.username} è stata annullata a seguito della riattivazione della sottoscrizione.</p>"
-            send_email(admin_email, subject, body)
+            try:
+                send_email(admin_email, subject, body)
+            except Exception as exc:
+                logger.error("Failed to send reactivation email to %s: %s", admin_email, exc)
 
         return subscription
 
@@ -190,7 +196,10 @@ class AdminService:
             admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
             subject = f"[REACTIVATE] Disdetta numero annullata per {phone.e164}"
             body = f"<p>La disdetta del numero <b>{phone.e164}</b> è stata annullata manualmente dall'amministratore.</p>"
-            send_email(admin_email, subject, body)
+            try:
+                send_email(admin_email, subject, body)
+            except Exception as exc:
+                logger.error("Failed to send manual reactivation email to %s: %s", admin_email, exc)
 
         return phone
 
@@ -258,7 +267,7 @@ class AdminService:
         except Exception as e:
             # We log the error but don't fail the transaction, as the PW is already changed.
             # However, the admin needs to know the PW to communicate it manually if email fails.
-            print(f"Failed to send reset email: {e}")
+            logger.error("Failed to send reset email to %s: %s", user.email, e)
 
         return new_password
 

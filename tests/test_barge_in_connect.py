@@ -1,10 +1,15 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from fastapi.testclient import TestClient
 from app import app
 from services.call_session import CallSessionManager, CallStatus
 
 client = TestClient(app)
+
+@pytest.fixture
+def allow_twilio_signature():
+    with patch("app.validate_twilio_signature", new=AsyncMock(return_value=True)):
+        yield
 
 @pytest.fixture
 def mock_redis():
@@ -15,7 +20,7 @@ def mock_redis():
         yield mock_client
 
 class TestBargeInConnect:
-    def test_barge_in_connect_success(self, mock_redis):
+    def test_barge_in_connect_success(self, mock_redis, allow_twilio_signature):
         call_sid = "call_123"
         agent_id = "agent_007"
         office_phone = "+1234567890"
@@ -43,7 +48,7 @@ class TestBargeInConnect:
         # Verify Status Update
         mock_redis.hset.assert_called_with(f"call_session:{call_sid}", "status", "human_connected")
 
-    def test_barge_in_connect_invalid_status(self, mock_redis):
+    def test_barge_in_connect_invalid_status(self, mock_redis, allow_twilio_signature):
         call_sid = "call_123"
 
         mock_redis.hgetall.return_value = {
@@ -61,7 +66,7 @@ class TestBargeInConnect:
         # Ensure status was NOT updated
         mock_redis.hset.assert_not_called()
 
-    def test_barge_in_connect_no_session(self, mock_redis):
+    def test_barge_in_connect_no_session(self, mock_redis, allow_twilio_signature):
         mock_redis.hgetall.return_value = {}
 
         response = client.post(
@@ -71,7 +76,7 @@ class TestBargeInConnect:
         assert response.status_code == 200
         assert "<Hangup/>" in response.text
 
-    def test_barge_in_connect_no_office_phone(self, mock_redis):
+    def test_barge_in_connect_no_office_phone(self, mock_redis, allow_twilio_signature):
         call_sid = "call_123"
 
         mock_redis.hgetall.return_value = {

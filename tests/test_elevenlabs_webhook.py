@@ -16,7 +16,7 @@ def generate_signature(secret: str, body: bytes, timestamp: str = None) -> dict:
     if timestamp is None:
         timestamp = str(int(time.time()))
 
-    payload = f"{timestamp}.".encode("utf-8") + body
+    payload = body + timestamp.encode("utf-8")
     signature = hmac.new(
         secret.encode("utf-8"),
         payload,
@@ -45,13 +45,13 @@ def test_webhook_missing_secret_config():
 def test_webhook_no_header():
     with patch.dict(os.environ, {"ELEVENLABS_WEBHOOK_SECRET": SECRET}):
         response = client.post("/elevenlabs/webhook", json={"type": "ping"})
-        assert response.status_code == 401
+        assert response.status_code == 403
 
 def test_webhook_invalid_signature():
     with patch.dict(os.environ, {"ELEVENLABS_WEBHOOK_SECRET": SECRET}):
         headers = {"elevenlabs-signature": "t=123456,v1=invalid_sig"}
         response = client.post("/elevenlabs/webhook", json={"type": "ping"}, headers=headers)
-        assert response.status_code == 401
+        assert response.status_code == 403
 
 def test_webhook_valid_signature_ignored_type():
     with patch.dict(os.environ, {"ELEVENLABS_WEBHOOK_SECRET": SECRET}):

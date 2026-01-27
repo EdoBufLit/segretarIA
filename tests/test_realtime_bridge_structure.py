@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 import os
 from app import app
 from db import get_db
@@ -8,6 +8,11 @@ from services.realtime_bridge import RealtimeSession
 from models import PhoneNumber, AgentRouting, User
 
 client = TestClient(app)
+
+@pytest.fixture
+def allow_twilio_signature():
+    with patch("app.validate_twilio_signature", new=AsyncMock(return_value=True)):
+        yield
 
 def test_realtime_session_structure():
     """
@@ -19,7 +24,7 @@ def test_realtime_session_structure():
     assert hasattr(session, "handle_twilio_messages")
     assert hasattr(session, "handle_eleven_messages")
 
-def test_twilio_voice_endpoint():
+def test_twilio_voice_endpoint(allow_twilio_signature):
     """
     Verifies that POST /twilio/voice returns correct TwiML when agent is found and user is active/paying.
     """
@@ -57,16 +62,14 @@ def test_twilio_voice_endpoint():
     app.dependency_overrides[get_db] = lambda: mock_db
 
     try:
-        # Mock Signature Check to be false for these logic tests
-        with patch.dict("os.environ", {"TWILIO_SIGNATURE_CHECK": "false"}):
-            response = client.post(
-                "/twilio/voice",
-                data={
-                    "To": "+1234567890",
-                    "From": "+0987654321",
-                    "CallSid": "CA12345"
-                }
-            )
+        response = client.post(
+            "/twilio/voice",
+            data={
+                "To": "+1234567890",
+                "From": "+0987654321",
+                "CallSid": "CA12345"
+            }
+        )
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/xml"
@@ -79,7 +82,7 @@ def test_twilio_voice_endpoint():
     finally:
         app.dependency_overrides = {}
 
-def test_twilio_voice_user_suspended():
+def test_twilio_voice_user_suspended(allow_twilio_signature):
     """
     Verifies that POST /twilio/voice rejects call if user is suspended.
     """
@@ -104,11 +107,10 @@ def test_twilio_voice_user_suspended():
     app.dependency_overrides[get_db] = lambda: mock_db
 
     try:
-        with patch.dict("os.environ", {"TWILIO_SIGNATURE_CHECK": "false"}):
-            response = client.post(
-                "/twilio/voice",
-                data={"To": "+1234567890", "From": "+0987654321", "CallSid": "CA12345"}
-            )
+        response = client.post(
+            "/twilio/voice",
+            data={"To": "+1234567890", "From": "+0987654321", "CallSid": "CA12345"}
+        )
         assert response.status_code == 200
         content = response.text
         assert "<Hangup/>" in content
@@ -116,7 +118,7 @@ def test_twilio_voice_user_suspended():
     finally:
         app.dependency_overrides = {}
 
-def test_twilio_voice_no_plan():
+def test_twilio_voice_no_plan(allow_twilio_signature):
     """
     Verifies that POST /twilio/voice rejects call if user has no active plan.
     """
@@ -141,18 +143,17 @@ def test_twilio_voice_no_plan():
     app.dependency_overrides[get_db] = lambda: mock_db
 
     try:
-        with patch.dict("os.environ", {"TWILIO_SIGNATURE_CHECK": "false"}):
-            response = client.post(
-                "/twilio/voice",
-                data={"To": "+1234567890", "From": "+0987654321", "CallSid": "CA12345"}
-            )
+        response = client.post(
+            "/twilio/voice",
+            data={"To": "+1234567890", "From": "+0987654321", "CallSid": "CA12345"}
+        )
         assert response.status_code == 200
         content = response.text
         assert "<Hangup/>" in content
     finally:
         app.dependency_overrides = {}
 
-def test_twilio_voice_no_agent():
+def test_twilio_voice_no_agent(allow_twilio_signature):
     """
     Verifies fallback when no agent is found (Number not found).
     """
@@ -169,15 +170,14 @@ def test_twilio_voice_no_agent():
     app.dependency_overrides[get_db] = lambda: mock_db
 
     try:
-        with patch.dict("os.environ", {"TWILIO_SIGNATURE_CHECK": "false"}):
-            response = client.post(
-                "/twilio/voice",
-                data={
-                    "To": "+1234567890",
-                    "From": "+0987654321",
-                    "CallSid": "CA12345"
-                }
-            )
+        response = client.post(
+            "/twilio/voice",
+            data={
+                "To": "+1234567890",
+                "From": "+0987654321",
+                "CallSid": "CA12345"
+            }
+        )
 
         assert response.status_code == 200
         content = response.text
@@ -185,16 +185,11 @@ def test_twilio_voice_no_agent():
     finally:
         app.dependency_overrides = {}
 
-@patch("twilio.request_validator.RequestValidator.validate")
-def test_twilio_voice_signature_validation(mock_validate):
+def test_twilio_voice_signature_validation():
     """
     Verifies that POST /twilio/voice rejects requests with invalid signatures.
     """
-    mock_validate.return_value = False # Invalid signature
-
-    # We don't need real DB here as it should fail before DB access
-
-    with patch.dict("os.environ", {"TWILIO_SIGNATURE_CHECK": "true", "TWILIO_AUTH_TOKEN": "mock_token"}):
+    with patch("app.validate_twilio_signature", new=AsyncMock(return_value=False)):
         response = client.post(
             "/twilio/voice",
             data={"To": "+1234567890", "From": "+0987654321", "CallSid": "CA12345"},

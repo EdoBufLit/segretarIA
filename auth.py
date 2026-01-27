@@ -89,9 +89,9 @@ def verify_elevenlabs_signature(raw_body: bytes, headers: dict, secret: str) -> 
     """
     Verifies the ElevenLabs webhook signature.
     Header format: "t=TIMESTAMP,v1=SIGNATURE" (or v0)
-    Signature = HMAC-SHA256(secret, "{timestamp}.{body}")
+    Signature = HMAC-SHA256(secret, "{body}{timestamp}")
     """
-    sig_header = headers.get("elevenlabs-signature")
+    sig_header = headers.get("ElevenLabs-Signature") or headers.get("elevenlabs-signature")
     if not sig_header:
         return False
 
@@ -113,9 +113,8 @@ def verify_elevenlabs_signature(raw_body: bytes, headers: dict, secret: str) -> 
         return False
 
     # Construct payload
-    # timestamp + "." + body
     try:
-        payload = f"{timestamp}.".encode("utf-8") + raw_body
+        payload = raw_body + timestamp.encode("utf-8")
 
         expected_signature = hmac.new(
             secret.encode("utf-8"),
