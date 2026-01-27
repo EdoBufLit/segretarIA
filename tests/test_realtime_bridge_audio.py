@@ -28,7 +28,7 @@ async def test_twilio_audio_forwarded_as_mulaw_chunk():
     session.eleven_ws = AsyncMock()
 
     with patch.object(session, "_to_mulaw_8k", return_value=b"mulaw") as mock_convert, \
-        patch("services.realtime_bridge.CallSessionManager") as mock_mgr:
+        patch("realtime.session.CallSessionManager") as mock_mgr:
         mock_mgr.return_value.update_stream_sid = MagicMock()
         mock_mgr.return_value.update_status = MagicMock()
 

@@ -13,6 +13,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from pydub import AudioSegment
 
 from services.call_session import CallSessionManager, CallStatus
+from services.timing import log_duration
 
 logger = logging.getLogger("app.services.realtime_bridge")
 
@@ -192,6 +193,25 @@ class RealtimeSession:
                     msg = {
                         "user_audio_chunk": out_b64
                     }
+                    # We log the *start* of the request to ElevenLabs
+                    # Since this is a stream, "request" is just sending a chunk.
+                    # Logging every chunk might spam, but the user requirement implies detailed tracking.
+                    # However, "Inizio richiesta a ElevenLabs (invio testo)" suggests they think of it as turn-based.
+                    # We will log it but maybe only for the first one or significant events?
+                    # The user example logs "Inizio richiesta..." then "Risposta...".
+                    # In streaming, we send many chunks.
+                    # Let's stick to logging important latency markers or maybe sample it?
+                    # Or just wrap the send.
+                    # To avoid spamming thousands of lines per second, I'll log only if it's the first few or spaced out?
+                    # The prompt says: "Ricezione del primo pacchetto audio, inizio richiesta a ElevenLabs..."
+                    # It implies the start of the interaction.
+
+                    # For now, I will NOT wrap every single audio chunk with log_duration as it will generate 50 logs/sec.
+                    # But I will log the *first* send if desired, or relying on _maybe_log_first_twilio_media covers the "start of reception".
+
+                    # The requirement says: "Inizio richiesta a ElevenLabs (invio testo)".
+                    # Since this is Audio-to-Audio, I will skip logging "invio testo" for every frame.
+
                     await self.eleven_ws.send(json.dumps(msg))
 
         elif event_type == "stop":
@@ -240,7 +260,10 @@ class RealtimeSession:
                                 "payload": out_b64
                             }
                         }
-                        await self.twilio_ws.send_text(json.dumps(response))
+
+                        # Logging audio send latency
+                        with log_duration("Audio inviato via WebSocket"):
+                            await self.twilio_ws.send_text(json.dumps(response))
 
                 elif msg_type == "interruption":
                     if self.stream_sid:
@@ -263,28 +286,24 @@ class RealtimeSession:
         if self.first_twilio_media_ts is not None:
             return
         self.first_twilio_media_ts = time.monotonic()
-        logger.info(json.dumps({
-            "event": "twilio_first_media",
-            "callSid": self.call_sid,
-            "streamSid": self.stream_sid,
-            "timestamp": time.time()
-        }))
+
+        # DIAGNOSIS LOG
+        logging.info("Ricezione primo pacchetto audio via WebSocket | duration: 0ms")
+
         self._schedule_eleven_response_warning()
 
     def _maybe_log_first_eleven_audio(self):
         if self.first_eleven_audio_ts is not None:
             return
         self.first_eleven_audio_ts = time.monotonic()
-        delay_ms = None
+
+        # Calculate Latency
         if self.first_twilio_media_ts is not None:
             delay_ms = int((self.first_eleven_audio_ts - self.first_twilio_media_ts) * 1000)
-        logger.info(json.dumps({
-            "event": "elevenlabs_first_audio",
-            "callSid": self.call_sid,
-            "streamSid": self.stream_sid,
-            "timestamp": time.time(),
-            "delay_ms": delay_ms
-        }))
+            logging.info(f"Latenza totale audio (audio_in→audio_out) | duration: {delay_ms}ms")
+        else:
+            logging.info("Risposta ElevenLabs ricevuta (primo audio) | duration: 0ms")
+
         if self.eleven_response_warning_task and not self.eleven_response_warning_task.done():
             self.eleven_response_warning_task.cancel()
 
