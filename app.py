@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import secrets
+import hashlib
 import sentry_sdk
 import re
 import asyncio
@@ -1555,23 +1556,45 @@ async def elevenlabs_webhook(request: Request):
     # Read RAW body for signature verification
     raw_body = await request.body()
 
-    if not verify_elevenlabs_signature(raw_body, request.headers, secret):
-        # Enhanced Logging for debugging signature failures
-        headers_safe = {k: v for k, v in request.headers.items() if k.lower() not in ["authorization", "cookie", "xi-api-key"]}
-        body_truncated = raw_body[:200].decode("utf-8", errors="replace")
-        used_header = request.headers.get("ElevenLabs-Signature") or request.headers.get("elevenlabs-signature")
+    verification_result = verify_elevenlabs_signature(raw_body, request.headers, secret)
 
-        logger.debug(
-            f"[WEBHOOK] Invalid signature details:\n"
-            f"Path: {request.url.path}\n"
-            f"Headers: {headers_safe}\n"
-            f"Body (first 200 bytes): {body_truncated}\n"
-            f"Used Signature Header: {used_header}"
+    if verification_result is False:
+        # Failure
+        used_header = None
+        for k in ["ElevenLabs-Signature", "elevenlabs-signature", "X-Elevenlabs-Signature", "x-elevenlabs-signature"]:
+            if k in request.headers:
+                used_header = request.headers[k]
+                break
+
+        # Calculate SHA256 of body for debug
+        body_hash = hashlib.sha256(raw_body).hexdigest()
+
+        # Extract timestamp from header if possible
+        timestamp = "unknown"
+        if used_header:
+            try:
+                parts = [p.strip() for p in used_header.split(",")]
+                for p in parts:
+                    if p.startswith("t="):
+                        timestamp = p[2:]
+            except:
+                pass
+
+        logger.error(
+            f"[WEBHOOK] Invalid ElevenLabs signature.\n"
+            f"Header used: {used_header}\n"
+            f"Timestamp: {timestamp}\n"
+            f"Signature length: {len(used_header) if used_header else 0}\n"
+            f"Body SHA256: {body_hash}"
         )
 
         # ALERTING: Invalid Signature
         log_critical_error("Webhook ElevenLabs - firma non valida!", context={"action": "webhook_signature_check"})
         return Response(status_code=403, content="Invalid signature")
+
+    elif verification_result is None:
+        # Missing Header
+        logger.warning("[WEBHOOK] ElevenLabs signature header missing, skipping verification.")
 
     # 1) Parse
     try:
