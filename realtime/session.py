@@ -12,6 +12,7 @@ try:
 except ImportError:
     import audioop_lts as audioop
 import websockets
+from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 from fastapi import WebSocket, WebSocketDisconnect
 from pydub import AudioSegment
 
@@ -273,6 +274,10 @@ class RealtimeSession:
                 elif msg_type == "ping":
                     pass
 
+        except ConnectionClosedOK:
+            logger.info("ElevenLabs WebSocket closed normally.")
+        except ConnectionClosedError as exc:
+            logger.warning(f"ElevenLabs WebSocket closed with error: code={exc.code} reason={exc.reason}")
         except asyncio.CancelledError:
             # Expected during shutdown
             raise
@@ -376,10 +381,17 @@ class RealtimeSession:
             except Exception as e:
                 logger.error(f"Failed to end session for {self.call_sid}: {e}")
 
-        # Cancel all running tasks
+        # Cancel all running tasks and await them to avoid unhandled exceptions
+        pending_tasks = []
         for task in self.tasks:
             if not task.done():
                 task.cancel()
+                pending_tasks.append(task)
+        if pending_tasks:
+            try:
+                await asyncio.gather(*pending_tasks, return_exceptions=True)
+            except Exception as exc:
+                logger.debug(f"Error while awaiting cancelled tasks: {exc}")
 
         # Explicitly close WebSockets
         if self.eleven_ws:

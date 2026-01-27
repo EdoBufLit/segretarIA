@@ -84,6 +84,17 @@ def _log_step_duration(message: str, start_time: float) -> None:
     lag = " (LAG!)" if duration_ms > 500 else ""
     logger.info(f"{message} | duration: {duration_ms:.0f}ms{lag}")
 
+
+def _redact_headers(headers: dict) -> dict:
+    redacted = {}
+    for key, value in headers.items():
+        lowered = key.lower()
+        if any(token in lowered for token in ("authorization", "token", "signature", "cookie", "secret", "apikey")):
+            redacted[key] = "***redacted***"
+        else:
+            redacted[key] = value
+    return redacted
+
 # Sentry
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if SENTRY_DSN:
@@ -116,26 +127,39 @@ if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
 async def validate_twilio_signature(request: Request) -> bool:
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
     if not auth_token:
-        logger.error("TWILIO_AUTH_TOKEN not set; rejecting Twilio webhook.")
-        return False
+        logger.error("TWILIO_AUTH_TOKEN not set; cannot verify Twilio webhook.")
+        raise HTTPException(status_code=500, detail="TWILIO_AUTH_TOKEN not configured")
 
     signature = request.headers.get("X-Twilio-Signature", "")
     url = str(request.url)
     validator = RequestValidator(auth_token)
+    raw_body = await request.body()
+    signature_header_used = "X-Twilio-Signature" if signature else None
 
     if request.method in ("POST", "PUT", "PATCH"):
         content_type = request.headers.get("content-type", "")
         if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
-            form_data = await request.form()
-            params = {k: v for k, v in form_data.items()}
-            return validator.validate(url, params, signature)
+            body_str = raw_body.decode("utf-8", errors="replace")
+            is_valid = validator.validate(url, body_str, signature)
+        else:
+            body_str = raw_body.decode("utf-8", errors="replace")
+            is_valid = validator.validate(url, body_str, signature)
+    else:
+        params = dict(request.query_params)
+        is_valid = validator.validate(url, params, signature)
 
-        body = await request.body()
-        body_str = body.decode("utf-8") if isinstance(body, (bytes, bytearray)) else str(body)
-        return validator.validate(url, body_str, signature)
+    if not is_valid:
+        logger.debug(
+            "Twilio signature invalid",
+            extra={
+                "path": request.url.path,
+                "headers": _redact_headers(dict(request.headers)),
+                "raw_body_preview": raw_body[:200].decode("utf-8", errors="replace"),
+                "signature_header_used": signature_header_used,
+            },
+        )
 
-    params = dict(request.query_params)
-    return validator.validate(url, params, signature)
+    return is_valid
 
 app = FastAPI()
 app.add_middleware(
@@ -1553,12 +1577,31 @@ async def elevenlabs_webhook(request: Request):
     secret = os.getenv("ELEVENLABS_WEBHOOK_SECRET")
     raw_body = await request.body()
 
-    if secret:
-        if not verify_elevenlabs_signature(raw_body, request.headers, secret):
-            # ALERTING: Invalid Signature
-            log_critical_error("Webhook ElevenLabs - firma non valida!", context={"action": "webhook_signature_check"})
-            logger.warning("[WEBHOOK] Invalid signature")
-            return Response(status_code=403)
+    if not secret:
+        logger.error("ELEVENLABS_WEBHOOK_SECRET not set; cannot verify ElevenLabs webhook.")
+        raise HTTPException(status_code=500, detail="ELEVENLABS_WEBHOOK_SECRET not configured")
+
+    if not verify_elevenlabs_signature(raw_body, request.headers, secret):
+        signature_header_used = None
+        if request.headers.get("ElevenLabs-Signature"):
+            signature_header_used = "ElevenLabs-Signature"
+        elif request.headers.get("elevenlabs-signature"):
+            signature_header_used = "elevenlabs-signature"
+
+        logger.debug(
+            "ElevenLabs signature invalid",
+            extra={
+                "path": request.url.path,
+                "headers": _redact_headers(dict(request.headers)),
+                "raw_body_preview": raw_body[:200].decode("utf-8", errors="replace"),
+                "signature_header_used": signature_header_used,
+            },
+        )
+
+        # ALERTING: Invalid Signature
+        log_critical_error("Webhook ElevenLabs - firma non valida!", context={"action": "webhook_signature_check"})
+        logger.warning("[WEBHOOK] Invalid signature")
+        return Response(status_code=403)
 
     # 1) Parse
     try:
