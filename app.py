@@ -1114,10 +1114,10 @@ async def twilio_voice(
     Looks up the agent associated with the called number (To) and connects via WebSocket.
     Enforces Twilio Signature validation.
     """
-    TEST_MODE = True
     # 0. Signature Validation
-    if not (TEST_MODE or await validate_twilio_signature(request)):
-        logger.warning(f"Invalid Twilio Signature for call {CallSid}")
+    logger.info(f"DEBUG: In twilio_voice route")
+    if not await validate_twilio_signature(request):
+        logger.warning("DEBUG: Twilio signature invalid")
         return Response(status_code=403, content="Invalid Signature")
 
     # Normalize To
