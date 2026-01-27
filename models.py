@@ -162,6 +162,9 @@ class PhoneNumber(Base):
     monthly_cost_cents = Column(Integer, nullable=False, default=200)
     status = Column(String, nullable=False, default="active") # active, pending_deprovision, released
     notes = Column(String, nullable=True)
+    office_phone_e164 = Column(String, nullable=True)
+    timezone = Column(String, nullable=False, default="Europe/Rome")
+    open_hours_json = Column(JSON, nullable=False, default={"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "hours": ["09:00", "17:00"]})
     deprovision_at = Column(DateTime, nullable=True)
     released_at = Column(DateTime, nullable=True)
     notified_at = Column(DateTime, nullable=True)

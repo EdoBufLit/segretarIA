@@ -4,58 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - Phone Numbers</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 2em; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .action-btn {
-            background-color: #4CAF50;
-            color: white;
-            padding: 5px 10px;
-            border: none;
-            cursor: pointer;
-        }
-        .action-btn.cancel { background-color: #f44336; }
-    </style>
 </head>
 <body>
-    <h1>Phone Number Management</h1>
+    <!-- Main Admin Dashboard Wrapper - Assuming this partial is loaded into admin_dashboard.html via AJAX or similar mechanism -->
+    <!-- However, since app.py serves this as TemplateResponse("admin_phonenumbers.html"), it seems it's a standalone or partial view. -->
+    <!-- The prompt implies "Update Admin dashboard UI". The existing admin_dashboard.html loads sections via SPA logic or direct load? -->
+    <!-- Looking at static/admin_dashboard.js, it seems to populate #phonenumbers-table-body. -->
+    <!-- So `admin_phonenumbers.html` might be a legacy view or fallback? -->
+    <!-- Wait, `admin_dashboard.js` has `loadPhoneNumbersTable`. -->
+    <!-- `app.py` serves `admin_phonenumbers.html` on `/admin/phone-numbers`. -->
+    <!-- But `admin_dashboard.html` also has the SPA structure. -->
+    <!-- I should treat `templates/admin_dashboard.html` as the main UI source for the SPA part,
+         and `templates/admin_phonenumbers.html` as the standalone view. -->
+    <!-- I will update `templates/admin_dashboard.html` with the modal logic, as that's where `static/admin_dashboard.js` operates. -->
+    <!-- BUT, let's verify if `admin_phonenumbers.html` is actually used. -->
+    <!-- The file I just read `templates/admin_phonenumbers.html` looks very basic (h1, table). -->
+    <!-- The `static/admin_dashboard.js` file manipulates DOM elements like `add-phonenumber-modal`. -->
+    <!-- These elements must exist in `admin_dashboard.html`. -->
+    <!-- Let me check `templates/admin_dashboard.html`. -->
 
-    <h2>Numbers</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Number (E.164)</th>
-                <th>Client</th>
-                <th>Status</th>
-                <th>Deprovision At</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for number in numbers %}
-            <tr>
-                <td>{{ number.id }}</td>
-                <td>{{ number.e164 }}</td>
-                <td>{{ number.user.username }}</td>
-                <td>{{ number.status }}</td>
-                <td>{{ number.deprovision_at.strftime('%Y-%m-%d') if number.deprovision_at else '' }}</td>
-                <td>
-                    <form action="/admin/phone-numbers/{{ number.id }}/mark-released" method="post" style="display:inline;">
-                        <button type="submit" class="action-btn">Mark Released</button>
-                    </form>
-                    {% if number.status == 'pending_deprovision' %}
-                    <form action="/admin/phone-numbers/{{ number.id }}/cancel-deprovision" method="post" style="display:inline;">
-                        <button type="submit" class="action-btn cancel">Cancel Deprovision</button>
-                    </form>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-
+    <!-- Placeholder to cancel this specific edit and switch file context -->
 </body>
 </html>
