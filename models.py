@@ -11,8 +11,9 @@ from sqlalchemy import (
     JSON,
     Text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from db import Base
+from services.validators import normalize_phone_number
 
 # Association Table for User <-> Agent many-to-many relationship
 UserAgentAccess = Table(
@@ -95,6 +96,10 @@ class AgentSettings(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
+    @validates("fallback_number", "test_phone_number")
+    def validate_phone(self, key, value):
+        return normalize_phone_number(value)
+
 class CallLog(Base):
     __tablename__ = "call_logs"
 
@@ -173,6 +178,10 @@ class PhoneNumber(Base):
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="phone_numbers")
+
+    @validates("e164", "office_phone_e164")
+    def validate_phone(self, key, value):
+        return normalize_phone_number(value)
 
 class AuditEvent(Base):
     __tablename__ = "audit_events"
