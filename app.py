@@ -1299,22 +1299,56 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
     """
     WebSocket endpoint for Twilio Media Streams.
     Bridges the audio stream to ElevenLabs Realtime.
-    Note: agent_id is mandatory logic-wise. We use Query(None) to manually return 4003 if missing.
+    Note: agent_id is mandatory. If not in query params (Twilio Media Streams constraint),
+    we parse it from the initial 'start' event.
     """
     logger.info("DEBUG: Entrato in websocket_twilio")
     await websocket.accept()
     logger.info(f"DEBUG: URL richiesta: {websocket.url}")
     logger.info(f"DEBUG: Query params: {websocket.query_params}")
-    logger.info(f"DEBUG: agent_id = {agent_id}")
+    logger.info(f"DEBUG: agent_id initial = {agent_id}")
+
+    start_message = None
+
+    # If agent_id is missing, wait for the first message (start event) to find it
+    if not agent_id:
+        try:
+            # Wait for the first message
+            raw_msg = await websocket.receive_text()
+            data = json.loads(raw_msg)
+
+            if data.get("event") == "start":
+                start_message = data # Save it to pass to session
+                call_sid = data.get("start", {}).get("callSid")
+
+                # Attempt 1: Resolve from Redis Session (Server-side truth)
+                if call_sid:
+                    try:
+                        mgr = CallSessionManager()
+                        session_data = mgr.get_session(call_sid)
+                        if session_data and session_data.get("agent_id"):
+                            agent_id = session_data.get("agent_id")
+                            logger.info(f"DEBUG: agent_id resolved from Redis for call {call_sid}: {agent_id}")
+                    except Exception as redis_err:
+                        logger.error(f"Redis lookup failed: {redis_err}")
+
+                # Attempt 2: Fallback to customParameters (Client-side)
+                if not agent_id:
+                    params = data.get("start", {}).get("customParameters", {})
+                    agent_id = params.get("agent_id")
+                    logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
+
+            else:
+                logger.warning(f"DEBUG: First message was not 'start': {data.get('event')}")
+        except Exception as e:
+            logger.error(f"Error receiving start event: {e}")
+            await websocket.close()
+            return
 
     if not agent_id:
-        logger.info("DEBUG: agent_id mancante o vuoto")
-        await websocket.close(code=4003)
-        return
-
-    for r in db.query(AgentRouting).all():
-        logger.info(f"DEBUG: Routing -> agent_id={r.agent_id} is_active={r.is_active}")
-
+         logger.info("DEBUG: agent_id mancante o vuoto dopo check start event")
+         await websocket.close(code=4003)
+         return
 
     # Validate Agent
     routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id, AgentRouting.is_active == True).first()
@@ -1323,7 +1357,8 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
         await websocket.close(code=4003) # Forbidden
         return
 
-    session = RealtimeSession(websocket, agent_id)
+    # Initialize Session, passing the initial start message if we consumed it
+    session = RealtimeSession(websocket, agent_id, initial_start_message=start_message)
     await session.start()
 
 
