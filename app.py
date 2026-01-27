@@ -1298,10 +1298,10 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
     await websocket.accept()
     logger.info(f"DEBUG: URL richiesta: {websocket.url}")
     logger.info(f"DEBUG: Query params: {websocket.query_params}")
-    logger.info(f"DEBUG: agent_id ricevuto = {agent_id}")
+    logger.info(f"DEBUG: agent_id = {agent_id}")
 
     if not agent_id:
-        logger.info("DEBUG: agent_id mancante o None")
+        logger.info("DEBUG: agent_id mancante o vuoto")
         await websocket.close(code=4003)
         return
 
