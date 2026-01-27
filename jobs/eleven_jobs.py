@@ -7,7 +7,7 @@ from db import SessionLocal
 from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription
 from billing_service import BillingService
 from jobs.email_jobs import send_email_job
-from call_utils import log_call, summarize_call, build_email_body_html, extract_transcript_text
+from call_utils import upsert_call_log, summarize_call, build_email_body_html, extract_transcript_text
 from queue_utils import get_queue
 from alerting import log_critical_error
 import os
@@ -64,7 +64,11 @@ def _process_elevenlabs_event_logic(payload: dict):
         or "N/D"
     )
 
-    call_id = phone_call_meta.get("call_sid") or data.get("conversation_id")
+    # Correlate via dynamic_variables (matching app.py logic)
+    dyn = ((data.get("conversation_initiation_client_data") or {}).get("dynamic_variables") or {})
+    twilio_sid = dyn.get("call_sid") or dyn.get("twilio_call_sid")
+
+    call_id = twilio_sid or phone_call_meta.get("call_sid") or data.get("conversation_id")
 
     # Calculate Timestamps early for UsageEvent
     started_at = None
@@ -247,7 +251,7 @@ def _process_elevenlabs_event_logic(payload: dict):
         status = "failure"
 
     # LOG CALL
-    log_call(agent_id, {
+    upsert_call_log(agent_id, {
         "transcript_text": transcript_text,
         "analysis": analysis_structured,
         "caller_number": caller_number,
