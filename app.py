@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Request, Body, Query, Response
+from fastapi import FastAPI, HTTPException, Request, Body, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from dotenv import load_dotenv
 from mailer import send_email
@@ -53,6 +53,7 @@ from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
+from services.realtime_bridge import RealtimeSession
 from alerting import (
     log_critical_error,
     track_webhook_success,
@@ -972,6 +973,82 @@ async def twilio_authorize(
             return {"allowed": False, "reason": "Agent disabled"}
 
     return {"allowed": True}
+
+
+@app.post("/twilio/voice")
+async def twilio_voice(
+    request: Request,
+    To: str = Form(...),
+    From: str = Form(...),
+    CallSid: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Twilio Voice Webhook (TwiML).
+    Looks up the agent associated with the called number (To) and connects via WebSocket.
+    """
+    # Normalize To
+    normalized_to = To.replace(" ", "").strip()
+
+    # 1. Lookup Phone & Routing
+    phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
+
+    agent_id = None
+    if phone:
+        routing = db.query(AgentRouting).filter(
+            AgentRouting.phone_number_id == phone.id,
+            AgentRouting.is_active == True
+        ).first()
+        if routing:
+            agent_id = routing.agent_id
+
+    # 2. Handle missing/blocked agent
+    if not agent_id:
+        # Fallback or Reject
+        xml = """
+        <Response>
+            <Say>Il numero chiamato non è configurato correttamente.</Say>
+            <Hangup/>
+        </Response>
+        """
+        return Response(content=xml, media_type="application/xml")
+
+    # 3. Construct WebSocket URL
+    # Replace http/https with ws/wss
+    base_url = get_public_base_url(request)
+    ws_base = base_url.replace("http://", "ws://").replace("https://", "wss://")
+    stream_url = f"{ws_base}/ws/twilio?agent_id={agent_id}"
+
+    # 4. Return TwiML
+    xml = f"""
+    <Response>
+        <Connect>
+            <Stream url="{stream_url}">
+                 <Parameter name="agent_id" value="{agent_id}" />
+            </Stream>
+        </Connect>
+    </Response>
+    """
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.websocket("/ws/twilio")
+async def websocket_twilio(websocket: WebSocket, agent_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    WebSocket endpoint for Twilio Media Streams.
+    Bridges the audio stream to ElevenLabs Realtime.
+    """
+    await websocket.accept()
+
+    # Validate Agent
+    routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id, AgentRouting.is_active == True).first()
+    if not routing:
+        logger.warning(f"WebSocket rejected: Invalid or inactive agent {agent_id}")
+        await websocket.close(code=4003) # Forbidden
+        return
+
+    session = RealtimeSession(websocket, agent_id)
+    await session.start()
 
 
 # ================== WEBHOOK ELEVENLABS ==================
