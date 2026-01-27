@@ -4,7 +4,10 @@ import asyncio
 import logging
 import websockets
 import os
-import audioop
+try:
+    import audioop
+except ImportError:
+    import audioop_lts as audioop
 import time
 from fastapi import WebSocket, WebSocketDisconnect
 
