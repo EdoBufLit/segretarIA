@@ -20,27 +20,28 @@ def test_realtime_session_structure():
 
 def test_twilio_voice_endpoint():
     """
-    Verifies that POST /twilio/voice returns correct TwiML when agent is found.
+    Verifies that POST /twilio/voice returns correct TwiML when agent is found and user is active/paying.
     """
     # Mock DB Session
     mock_db = MagicMock()
 
-    # Mock Data
+    # Mock User
+    mock_user = MagicMock(spec=User)
+    mock_user.is_active = True
+    mock_user.has_active_plan.return_value = True
+
+    # Mock Phone
     mock_phone = MagicMock(spec=PhoneNumber)
     mock_phone.id = 1
     mock_phone.e164 = "+1234567890"
+    mock_phone.user = mock_user
 
+    # Mock Routing
     mock_routing = MagicMock(spec=AgentRouting)
     mock_routing.agent_id = "agent_abc123"
     mock_routing.is_active = True
 
     # Setup Query Chain
-    # We need to handle chained calls: db.query().filter().first()
-    # 1. db.query(PhoneNumber) -> returns query_obj_1
-    # 2. query_obj_1.filter(...) -> returns query_obj_2
-    # 3. query_obj_2.first() -> returns mock_phone
-
-    # Since side_effect is tricky with different args to query(), we can use a side_effect function
     def query_side_effect(model):
         query_mock = MagicMock()
         if model == PhoneNumber:
@@ -75,9 +76,80 @@ def test_twilio_voice_endpoint():
     finally:
         app.dependency_overrides = {}
 
+def test_twilio_voice_user_suspended():
+    """
+    Verifies that POST /twilio/voice rejects call if user is suspended.
+    """
+    mock_db = MagicMock()
+
+    mock_user = MagicMock(spec=User)
+    mock_user.is_active = False # Suspended
+    mock_user.has_active_plan.return_value = True
+
+    mock_phone = MagicMock(spec=PhoneNumber)
+    mock_phone.id = 1
+    mock_phone.e164 = "+1234567890"
+    mock_phone.user = mock_user
+
+    def query_side_effect(model):
+        query_mock = MagicMock()
+        if model == PhoneNumber:
+            query_mock.filter.return_value.first.return_value = mock_phone
+        return query_mock
+
+    mock_db.query.side_effect = query_side_effect
+    app.dependency_overrides[get_db] = lambda: mock_db
+
+    try:
+        response = client.post(
+            "/twilio/voice",
+            data={"To": "+1234567890", "From": "+0987654321", "CallSid": "CA12345"}
+        )
+        assert response.status_code == 200
+        content = response.text
+        assert "<Hangup/>" in content
+        assert "Servizio" in content # Generic message
+    finally:
+        app.dependency_overrides = {}
+
+def test_twilio_voice_no_plan():
+    """
+    Verifies that POST /twilio/voice rejects call if user has no active plan.
+    """
+    mock_db = MagicMock()
+
+    mock_user = MagicMock(spec=User)
+    mock_user.is_active = True
+    mock_user.has_active_plan.return_value = False # No Plan
+
+    mock_phone = MagicMock(spec=PhoneNumber)
+    mock_phone.id = 1
+    mock_phone.e164 = "+1234567890"
+    mock_phone.user = mock_user
+
+    def query_side_effect(model):
+        query_mock = MagicMock()
+        if model == PhoneNumber:
+            query_mock.filter.return_value.first.return_value = mock_phone
+        return query_mock
+
+    mock_db.query.side_effect = query_side_effect
+    app.dependency_overrides[get_db] = lambda: mock_db
+
+    try:
+        response = client.post(
+            "/twilio/voice",
+            data={"To": "+1234567890", "From": "+0987654321", "CallSid": "CA12345"}
+        )
+        assert response.status_code == 200
+        content = response.text
+        assert "<Hangup/>" in content
+    finally:
+        app.dependency_overrides = {}
+
 def test_twilio_voice_no_agent():
     """
-    Verifies fallback when no agent is found.
+    Verifies fallback when no agent is found (Number not found).
     """
     mock_db = MagicMock()
 

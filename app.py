@@ -990,24 +990,55 @@ async def twilio_voice(
     # Normalize To
     normalized_to = To.replace(" ", "").strip()
 
-    # 1. Lookup Phone & Routing
+    # 1. Lookup Phone
     phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
 
+    allowed = False
+    reason = None
     agent_id = None
-    if phone:
-        routing = db.query(AgentRouting).filter(
-            AgentRouting.phone_number_id == phone.id,
-            AgentRouting.is_active == True
-        ).first()
-        if routing:
-            agent_id = routing.agent_id
+
+    if not phone:
+        reason = "Number not found"
+    else:
+        user = phone.user
+        if not user:
+            reason = "User not found"
+        elif not user.is_active:
+            reason = "User suspended"
+        elif not user.has_active_plan():
+            reason = "No active plan"
+        else:
+            # Check Routing
+            routing = db.query(AgentRouting).filter(
+                AgentRouting.phone_number_id == phone.id,
+                AgentRouting.is_active == True
+            ).first()
+            if routing:
+                agent_id = routing.agent_id
+                allowed = True
+            else:
+                reason = "Agent disabled"
+
+    # Log structured info
+    logger.info(json.dumps({
+        "event": "twilio_voice_webhook",
+        "CallSid": CallSid,
+        "From": From,
+        "To": To,
+        "allowed": allowed,
+        "reason": reason
+    }))
 
     # 2. Handle missing/blocked agent
-    if not agent_id:
+    if not allowed:
         # Fallback or Reject
-        xml = """
+        message = "Il numero chiamato non è configurato correttamente."
+        if reason in ("User suspended", "No active plan"):
+             message = "Servizio non attivo. Contattare l'amministrazione."
+
+        xml = f"""
         <Response>
-            <Say>Il numero chiamato non è configurato correttamente.</Say>
+            <Say language="it-IT">{message}</Say>
             <Hangup/>
         </Response>
         """
