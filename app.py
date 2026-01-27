@@ -6,7 +6,7 @@ import sentry_sdk
 import re
 from datetime import datetime
 from typing import Any, Dict, Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from fastapi import FastAPI, HTTPException, Request, Body, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from dotenv import load_dotenv
@@ -56,7 +56,7 @@ from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
 from services.realtime_bridge import RealtimeSession, terminate_session
 from services.business_hours import is_open_now
-from services.validators import validate_open_hours_schema
+from services.validators import validate_open_hours_schema, normalize_phone_number
 from services.call_session import CallSessionManager, CallStatus
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client as TwilioClient
@@ -309,6 +309,15 @@ class AgentSettingsUpdate(BaseModel):
     agent_phone_number_id: str | None = None
     test_phone_number: str | None = None
 
+    @field_validator("test_phone_number", mode="before")
+    @classmethod
+    def normalize_phones(cls, v):
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return v
+        return normalize_phone_number(v)
+
 # ================== HEALTH ENDPOINTS ==================
 
 @app.get("/health")
@@ -449,11 +458,29 @@ class CreatePhoneNumberRequest(BaseModel):
     timezone: Optional[str] = "Europe/Rome"
     open_hours_json: Optional[Dict[str, Any]] = None
 
+    @field_validator("e164", "office_phone_e164", mode="before")
+    @classmethod
+    def normalize_phones(cls, v):
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return v
+        return normalize_phone_number(v)
+
 class UpdatePhoneNumberRequest(BaseModel):
     notes: Optional[str] = None
     office_phone_e164: Optional[str] = None
     timezone: Optional[str] = None
     open_hours_json: Optional[Dict[str, Any]] = None
+
+    @field_validator("office_phone_e164", mode="before")
+    @classmethod
+    def normalize_phones(cls, v):
+        if v is None:
+            return v
+        if not isinstance(v, str):
+            return v
+        return normalize_phone_number(v)
 
 @app.get("/api/admin/phone-numbers")
 async def api_admin_get_phone_numbers(
@@ -512,7 +539,7 @@ async def api_admin_create_phone_number(
             phone.notes = payload.notes
 
         if payload.office_phone_e164:
-            phone.office_phone_e164 = normalize_phone_e164(payload.office_phone_e164)
+            phone.office_phone_e164 = normalize_phone_number(payload.office_phone_e164)
 
         if payload.timezone:
             phone.timezone = payload.timezone
@@ -554,7 +581,7 @@ async def api_admin_update_phone_number(
         if payload.office_phone_e164 == "":
              phone.office_phone_e164 = None
         else:
-             phone.office_phone_e164 = normalize_phone_e164(payload.office_phone_e164)
+             phone.office_phone_e164 = normalize_phone_number(payload.office_phone_e164)
 
     if payload.timezone is not None:
         phone.timezone = payload.timezone
@@ -1044,7 +1071,7 @@ async def twilio_authorize(
         return Response(status_code=403, content="Invalid Signature")
 
     # Normalize To (remove spaces)
-    normalized_to = To.replace(" ", "").strip()
+    normalized_to = normalize_phone_number(To)
 
     # 1. Lookup Phone Number
     phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
@@ -1094,7 +1121,7 @@ async def twilio_voice(
         return Response(status_code=403, content="Invalid Signature")
 
     # Normalize To
-    normalized_to = To.replace(" ", "").strip()
+    normalized_to = normalize_phone_number(To)
 
     # 1. Lookup Phone
     phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
@@ -2579,20 +2606,6 @@ def _get_client_ip(request: Request) -> str:
 
 def _is_valid_phone(phone: str) -> bool:
     return re.match(r"^[0-9+()\\s.-]{6,}$", phone) is not None
-
-
-def normalize_phone_e164(phone: str) -> str:
-    """
-    Normalizes phone number to E.164 format.
-    Strips spaces, dashes, parentheses. Ensures leading +.
-    """
-    if not phone:
-        return ""
-    # Strip spaces, dashes, parentheses
-    cleaned = re.sub(r"[\s\-\(\)]", "", phone)
-    if not cleaned.startswith("+"):
-        cleaned = "+" + cleaned
-    return cleaned
 
 
 def _check_rate_limit(ip_address: str) -> bool:

@@ -1,4 +1,23 @@
+import re
 from typing import Dict, Any, List, Optional
+
+def normalize_phone_number(phone: Optional[str]) -> Optional[str]:
+    """
+    Normalizes phone number to E.164 format.
+    Strips spaces, dashes, parentheses. Ensures leading +.
+    Returns None if input is None.
+    """
+    if phone is None:
+        return None
+    if not phone:
+        return ""
+    # Strip spaces, dashes, parentheses
+    cleaned = re.sub(r"[\s\-\(\)]", "", phone)
+    if not cleaned:
+        return ""
+    if not cleaned.startswith("+"):
+        cleaned = "+" + cleaned
+    return cleaned
 
 def validate_open_hours_schema(data: Any) -> bool:
     """
@@ -51,7 +70,6 @@ def _validate_hours_pair(hours: Any) -> bool:
     if not isinstance(start, str) or not isinstance(end, str):
         return False
     # Simple regex for HH:MM
-    import re
     time_fmt = re.compile(r"^\d{2}:\d{2}$")
     if not time_fmt.match(start) or not time_fmt.match(end):
         return False
