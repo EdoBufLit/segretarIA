@@ -58,6 +58,110 @@ function openSection(name) {
 async function initDashboard() {
     openSection('dashboard');
     startStatusPolling();
+    startActiveCallPolling();
+}
+
+// =========================
+// ACTIVE CALL LOGIC
+// =========================
+
+let activeCallInterval = null;
+
+function startActiveCallPolling() {
+    checkActiveCall();
+    activeCallInterval = setInterval(checkActiveCall, 3000);
+}
+
+async function checkActiveCall() {
+    try {
+        const res = await fetch("/api/client/active-call");
+        if (!res.ok) return; // Silent fail
+        const data = await res.json();
+
+        renderActiveCallBanner(data.active_call);
+    } catch(e) {
+        // Silent
+    }
+}
+
+function renderActiveCallBanner(call) {
+    const banner = document.getElementById("active-call-banner");
+    const info = document.getElementById("active-call-info");
+    const actions = document.getElementById("active-call-actions");
+
+    if (!call || !['ai_active', 'human_requested'].includes(call.status)) {
+        if (banner) banner.classList.add("hidden");
+        return;
+    }
+
+    if (banner) banner.classList.remove("hidden");
+    if (info) info.innerHTML = `Da: <span class="font-mono font-medium text-neutral-900">${call.caller_number || 'Sconosciuto'}</span>`;
+
+    if (!actions) return;
+
+    // Render Button Logic
+    if (call.status === 'human_requested') {
+        actions.innerHTML = `
+            <div class="flex items-center gap-2 text-green-600 bg-green-50 px-4 py-2 rounded-lg border border-green-100">
+                <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span class="text-sm font-medium">Trasferimento in corso...</span>
+            </div>
+        `;
+    } else if (call.status === 'ai_active') {
+        if (call.office_phone_e164) {
+            actions.innerHTML = `
+                <button onclick="bargeInCall('${call.call_sid}')" id="btn-barge-${call.call_sid}" class="w-full sm:w-auto flex items-center justify-center gap-2 bg-neutral-900 hover:bg-neutral-800 text-white px-5 py-2.5 rounded-lg shadow-sm transition-all active:scale-95 group" title="Interrompe l'IA e collega la chiamata allo studio">
+                    <i data-feather="phone-forwarded" class="w-4 h-4 group-hover:translate-x-0.5 transition-transform"></i>
+                    <div class="text-left">
+                        <div class="text-sm font-semibold">Rispondi ora</div>
+                        <div class="text-[10px] opacity-80 leading-none">Trasferisci allo studio</div>
+                    </div>
+                </button>
+            `;
+            feather.replace();
+        } else {
+            actions.innerHTML = `
+                <span class="text-xs text-neutral-400 bg-neutral-50 px-3 py-2 rounded border border-neutral-100">
+                    Per trasferire serve un numero studio.
+                </span>
+            `;
+        }
+    }
+}
+
+async function bargeInCall(callSid) {
+    const btn = document.getElementById(`btn-barge-${callSid}`);
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="loader w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span><span class="text-sm ml-2">Trasferimento...</span>`;
+    }
+
+    try {
+        const res = await fetch(`/calls/${callSid}/barge-in`, { method: "POST" });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Errore");
+        }
+
+        // Optimistic UI update
+        const actions = document.getElementById("active-call-actions");
+        if(actions) {
+            actions.innerHTML = `
+                <div class="flex items-center gap-2 text-green-600 bg-green-50 px-4 py-2 rounded-lg border border-green-100">
+                    <i data-feather="check" class="w-4 h-4"></i>
+                    <span class="text-sm font-medium">Richiesta inviata</span>
+                </div>
+            `;
+            feather.replace();
+        }
+
+        // Force immediate check
+        setTimeout(checkActiveCall, 1000);
+
+    } catch (e) {
+        alert("Impossibile trasferire: " + e.message);
+        checkActiveCall(); // Re-render state
+    }
 }
 
 // =========================

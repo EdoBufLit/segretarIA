@@ -122,6 +122,23 @@
             {% endif %}
 
             <!-- TOP HEADER -->
+            <!-- Active Call Banner (Injected dynamically) -->
+            <div id="active-call-banner" class="hidden mb-6 bg-white border border-blue-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in-up">
+                <div class="flex items-center gap-4">
+                    <div class="relative w-12 h-12 flex items-center justify-center bg-blue-50 rounded-full text-blue-600">
+                        <span class="absolute top-0 right-0 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse"></span>
+                        <i data-feather="phone-call" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-neutral-900">Chiamata in corso</h3>
+                        <p id="active-call-info" class="text-sm text-neutral-600">Da: <span class="font-mono">...</span></p>
+                    </div>
+                </div>
+                <div id="active-call-actions" class="w-full sm:w-auto">
+                    <!-- Button injected by JS -->
+                </div>
+            </div>
+
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div>
                     <h2 id="page-title" class="text-2xl font-bold text-neutral-900 tracking-tight">Panoramica</h2>

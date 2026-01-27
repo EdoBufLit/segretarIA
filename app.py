@@ -1154,7 +1154,9 @@ async def twilio_voice(
                 agent_id=agent_id,
                 phone_number_id=phone.id,
                 status=CallStatus.HUMAN_REQUESTED,
-                office_phone_e164=phone.office_phone_e164
+                office_phone_e164=phone.office_phone_e164,
+                user_id=user.id,
+                caller_number=From
             )
         except Exception as e:
             logger.error(f"Failed to start call session {CallSid}: {e}")
@@ -1180,7 +1182,9 @@ async def twilio_voice(
             agent_id=agent_id,
             phone_number_id=phone.id,
             status=CallStatus.AI_ACTIVE,
-            office_phone_e164=phone.office_phone_e164
+            office_phone_e164=phone.office_phone_e164,
+            user_id=user.id,
+            caller_number=From
         )
     except Exception as e:
         logger.error(f"Failed to start call session {CallSid}: {e}")
@@ -1715,6 +1719,31 @@ async def api_client_phone_numbers(
         })
 
     return {"status": "ok", "items": items}
+
+@app.get("/api/client/active-call")
+async def api_client_active_call(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the current active call for the user, if any.
+    """
+    mgr = CallSessionManager()
+    session = mgr.get_active_call_for_user(current_user.id)
+
+    if not session:
+        return {"status": "ok", "active_call": None}
+
+    return {
+        "status": "ok",
+        "active_call": {
+            "call_sid": session.get("call_sid"),
+            "status": session.get("status"),
+            "office_phone_e164": session.get("office_phone_e164"),
+            "caller_number": session.get("caller_number"),
+            "agent_id": session.get("agent_id")
+        }
+    }
 
 
 class AdminUpdateUserRequest(BaseModel):

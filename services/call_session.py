@@ -20,7 +20,11 @@ class CallSessionManager:
     def _key(self, call_sid: str) -> str:
         return f"call_session:{call_sid}"
 
-    def start_session(self, call_sid: str, agent_id: str, phone_number_id: int, status: CallStatus, office_phone_e164: Optional[str] = None):
+    def _key_user_active(self, user_id: int) -> str:
+        return f"active_call_user:{user_id}"
+
+    def start_session(self, call_sid: str, agent_id: str, phone_number_id: int, status: CallStatus,
+                      office_phone_e164: Optional[str] = None, user_id: Optional[int] = None, caller_number: Optional[str] = None):
         key = self._key(call_sid)
 
         mapping = {
@@ -32,9 +36,21 @@ class CallSessionManager:
         if office_phone_e164:
             mapping["office_phone_e164"] = office_phone_e164
 
+        if user_id:
+            mapping["user_id"] = str(user_id)
+
+        if caller_number:
+            mapping["caller_number"] = caller_number
+
         try:
             self.redis.hset(key, mapping=mapping)
             self.redis.expire(key, self.ttl)
+
+            # Map user to call_sid for dashboard visibility
+            if user_id:
+                user_key = self._key_user_active(user_id)
+                self.redis.setex(user_key, 3600, call_sid) # 1 hour TTL for active mapping
+
             logger.info(f"Started call session {call_sid} for agent {agent_id} status={status.value}")
         except Exception as e:
             logger.error(f"Failed to start session {call_sid}: {e}")
@@ -63,9 +79,36 @@ class CallSessionManager:
         self.update_status(call_sid, CallStatus.ENDED)
         key = self._key(call_sid)
         try:
+            # Clean up user mapping
+            session = self.get_session(call_sid)
+            if session and "user_id" in session:
+                user_key = self._key_user_active(session["user_id"])
+                self.redis.delete(user_key)
+
             self.redis.expire(key, 3600) # Keep for 1 hour after end
         except Exception as e:
             logger.error(f"Failed to set expire for {call_sid}: {e}")
+
+    def get_active_call_for_user(self, user_id: int) -> Optional[dict]:
+        """
+        Returns the current active session for a user, if any.
+        """
+        user_key = self._key_user_active(user_id)
+        try:
+            call_sid_bytes = self.redis.get(user_key)
+            if not call_sid_bytes:
+                return None
+            call_sid = call_sid_bytes.decode()
+            session = self.get_session(call_sid)
+
+            # Verify it's actually active
+            if session and session.get("status") in [CallStatus.AI_ACTIVE, CallStatus.HUMAN_REQUESTED]:
+                session["call_sid"] = call_sid # Attach key
+                return session
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get active call for user {user_id}: {e}")
+            return None
 
     def get_session(self, call_sid: str) -> Optional[dict]:
         key = self._key(call_sid)
