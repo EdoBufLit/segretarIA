@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Request, Body, Query, Response
+from fastapi import FastAPI, HTTPException, Request, Body, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from dotenv import load_dotenv
 from mailer import send_email
@@ -53,6 +53,8 @@ from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
+from services.realtime_bridge import RealtimeSession
+from twilio.request_validator import RequestValidator
 from alerting import (
     log_critical_error,
     track_webhook_success,
@@ -972,6 +974,145 @@ async def twilio_authorize(
             return {"allowed": False, "reason": "Agent disabled"}
 
     return {"allowed": True}
+
+
+@app.post("/twilio/voice")
+async def twilio_voice(
+    request: Request,
+    To: str = Form(...),
+    From: str = Form(...),
+    CallSid: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Twilio Voice Webhook (TwiML).
+    Looks up the agent associated with the called number (To) and connects via WebSocket.
+    Enforces Twilio Signature validation.
+    """
+    # 0. Signature Validation
+    check_signature = os.getenv("TWILIO_SIGNATURE_CHECK", "true").lower() == "true"
+    if check_signature:
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        if not auth_token:
+            logger.warning("TWILIO_AUTH_TOKEN not set, skipping signature check but strictly required.")
+        else:
+            validator = RequestValidator(auth_token)
+            signature = request.headers.get("X-Twilio-Signature", "")
+            # Construct full URL (including scheme/host/params if any)
+            # Twilio signs the exact URL they sent.
+            # If behind proxy, standard headers usually help request.url match original.
+            # request.url is a URL object, convert to str
+            url = str(request.url)
+
+            # Form params dict
+            form_data = await request.form()
+            params = {k: v for k, v in form_data.items()}
+
+            if not validator.validate(url, params, signature):
+                logger.warning(f"Invalid Twilio Signature for call {CallSid}")
+                return Response(status_code=403, content="Invalid Signature")
+
+    # Normalize To
+    normalized_to = To.replace(" ", "").strip()
+
+    # 1. Lookup Phone
+    phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
+
+    allowed = False
+    reason = None
+    agent_id = None
+
+    if not phone:
+        reason = "Number not found"
+    else:
+        user = phone.user
+        if not user:
+            reason = "User not found"
+        elif not user.is_active:
+            reason = "User suspended"
+        elif not user.has_active_plan():
+            reason = "No active plan"
+        else:
+            # Check Routing
+            routing = db.query(AgentRouting).filter(
+                AgentRouting.phone_number_id == phone.id,
+                AgentRouting.is_active == True
+            ).first()
+            if routing:
+                agent_id = routing.agent_id
+                allowed = True
+            else:
+                reason = "Agent disabled"
+
+    # Log structured info
+    logger.info(json.dumps({
+        "event": "twilio_voice_webhook",
+        "CallSid": CallSid,
+        "From": From,
+        "To": To,
+        "agent_id": agent_id,
+        "allowed": allowed,
+        "reason": reason
+    }))
+
+    # 2. Handle missing/blocked agent
+    if not allowed:
+        # Fallback or Reject
+        message = "Il numero chiamato non è configurato correttamente."
+        if reason in ("User suspended", "No active plan"):
+             message = "Servizio non attivo. Contattare l'amministrazione."
+
+        xml = f"""
+        <Response>
+            <Say language="it-IT">{message}</Say>
+            <Hangup/>
+        </Response>
+        """
+        return Response(content=xml, media_type="application/xml")
+
+    # 3. Construct WebSocket URL
+    # Replace http/https with ws/wss
+    base_url = str(request.base_url).rstrip("/")
+    # Force HTTPS/WSS if we are behind a proxy that terminates SSL (common in production)
+    # or rely on request.url.scheme.
+    # To follow the pattern of get_public_base_url but simpler for this context:
+    if "https" in base_url:
+        ws_base = base_url.replace("https://", "wss://")
+    else:
+        ws_base = base_url.replace("http://", "ws://")
+
+    stream_url = f"{ws_base}/ws/twilio?agent_id={agent_id}"
+
+    # 4. Return TwiML
+    xml = f"""
+    <Response>
+        <Connect>
+            <Stream url="{stream_url}">
+                 <Parameter name="agent_id" value="{agent_id}" />
+            </Stream>
+        </Connect>
+    </Response>
+    """
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.websocket("/ws/twilio")
+async def websocket_twilio(websocket: WebSocket, agent_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    WebSocket endpoint for Twilio Media Streams.
+    Bridges the audio stream to ElevenLabs Realtime.
+    """
+    await websocket.accept()
+
+    # Validate Agent
+    routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id, AgentRouting.is_active == True).first()
+    if not routing:
+        logger.warning(f"WebSocket rejected: Invalid or inactive agent {agent_id}")
+        await websocket.close(code=4003) # Forbidden
+        return
+
+    session = RealtimeSession(websocket, agent_id)
+    await session.start()
 
 
 # ================== WEBHOOK ELEVENLABS ==================
