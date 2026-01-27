@@ -81,7 +81,7 @@ class RealtimeSession:
 
             logger.info(f"Connecting to ElevenLabs agent {self.agent_id}...")
 
-            async with websockets.connect(url, extra_headers=headers) as eleven_ws:
+            async with websockets.connect(url, additional_headers=headers) as eleven_ws:
                 self.eleven_ws = eleven_ws
                 logger.info("Connected to ElevenLabs.")
 
