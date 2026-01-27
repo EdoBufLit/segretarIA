@@ -1310,36 +1310,54 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
 
     start_message = None
 
-    # If agent_id is missing, wait for the first message (start event) to find it
+    # If agent_id is missing, wait for the 'start' event to find it.
+    # Twilio sends a 'connected' event first, which we must ignore.
     if not agent_id:
         try:
-            # Wait for the first message
-            raw_msg = await websocket.receive_text()
-            data = json.loads(raw_msg)
+            # Loop until we find 'start' or fail
+            while not agent_id:
+                raw_msg = await websocket.receive_text()
+                logger.info(f"DEBUG: WebSocket received raw: {raw_msg}")
+                data = json.loads(raw_msg)
+                event_type = data.get("event")
 
-            if data.get("event") == "start":
-                start_message = data # Save it to pass to session
-                call_sid = data.get("start", {}).get("callSid")
+                if event_type == "connected":
+                    logger.info("DEBUG: Ignoring 'connected' event during handshake.")
+                    continue
 
-                # Attempt 1: Resolve from Redis Session (Server-side truth)
-                if call_sid:
-                    try:
-                        mgr = CallSessionManager()
-                        session_data = mgr.get_session(call_sid)
-                        if session_data and session_data.get("agent_id"):
-                            agent_id = session_data.get("agent_id")
-                            logger.info(f"DEBUG: agent_id resolved from Redis for call {call_sid}: {agent_id}")
-                    except Exception as redis_err:
-                        logger.error(f"Redis lookup failed: {redis_err}")
+                if event_type == "start":
+                    start_message = data # Save it to pass to session
+                    call_sid = data.get("start", {}).get("callSid")
+                    logger.info(f"DEBUG: Extracted call_sid: {call_sid}")
 
-                # Attempt 2: Fallback to customParameters (Client-side)
-                if not agent_id:
-                    params = data.get("start", {}).get("customParameters", {})
-                    agent_id = params.get("agent_id")
-                    logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
+                    # Attempt 1: Resolve from Redis Session (Server-side truth)
+                    if call_sid:
+                        try:
+                            mgr = CallSessionManager()
+                            session_data = mgr.get_session(call_sid)
+                            logger.info(f"DEBUG: Redis session data: {session_data}")
+                            if session_data and session_data.get("agent_id"):
+                                agent_id = session_data.get("agent_id")
+                                logger.info(f"DEBUG: agent_id resolved from Redis for call {call_sid}: {agent_id}")
+                        except Exception as redis_err:
+                            logger.error(f"Redis lookup failed: {redis_err}")
 
-            else:
-                logger.warning(f"DEBUG: First message was not 'start': {data.get('event')}")
+                    # Attempt 2: Fallback to customParameters (Client-side)
+                    if not agent_id:
+                        params = data.get("start", {}).get("customParameters", {})
+                        logger.info(f"DEBUG: customParameters: {params}")
+                        agent_id = params.get("agent_id")
+                        logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
+
+                    # Break loop once 'start' is processed, regardless of outcome (we validate agent_id next)
+                    break
+
+                else:
+                    logger.warning(f"DEBUG: Received unexpected event during handshake: {event_type}")
+                    # If we get media or other events before start, something is wrong or we missed it.
+                    # We should probably stop to avoid infinite loop on bad stream.
+                    break
+
         except Exception as e:
             logger.error(f"Error receiving start event: {e}")
             await websocket.close()
