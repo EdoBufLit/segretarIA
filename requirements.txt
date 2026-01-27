@@ -20,3 +20,4 @@ httpx
 twilio
 pydub
 audioop-lts; python_version >= "3.13"
+pytest-asyncio
