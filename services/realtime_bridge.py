@@ -45,9 +45,10 @@ class RealtimeSession:
     Manages the bi-directional audio bridge between Twilio Media Streams and ElevenLabs Realtime (ConvAI).
     Handles transcoding between Twilio (G.711 mulaw, 8000Hz) and ElevenLabs (mulaw, 8000Hz).
     """
-    def __init__(self, twilio_ws: WebSocket, agent_id: str):
+    def __init__(self, twilio_ws: WebSocket, agent_id: str, initial_start_message: Dict = None):
         self.twilio_ws = twilio_ws
         self.agent_id = agent_id
+        self.initial_start_message = initial_start_message
         self.stream_sid = None
         self.call_sid = None
         self.eleven_ws = None
@@ -119,52 +120,14 @@ class RealtimeSession:
         Twilio: mulaw 8000Hz -> ElevenLabs: mulaw 8000Hz
         """
         try:
+            # Process initial message if provided (consumed before session start)
+            if self.initial_start_message:
+                if await self._process_twilio_message(self.initial_start_message):
+                    return
+
             async for message in self.twilio_ws.iter_text():
                 data = json.loads(message)
-                event_type = data.get("event")
-
-                if event_type == "start":
-                    self.stream_sid = data.get("start", {}).get("streamSid")
-                    call_sid = data.get("start", {}).get("callSid")
-                    self.call_sid = call_sid
-
-                    # Register session
-                    active_sessions[call_sid] = self
-
-                    # Update Call Session
-                    try:
-                        mgr = CallSessionManager()
-                        mgr.update_stream_sid(call_sid, self.stream_sid)
-                        mgr.update_status(call_sid, CallStatus.AI_ACTIVE)
-                    except Exception as e:
-                        logger.error(f"Failed to update call session for {call_sid}: {e}")
-
-                    logger.info(json.dumps({
-                        "event": "twilio_stream_start",
-                        "streamSid": self.stream_sid,
-                        "callSid": call_sid,
-                        "agent_id": self.agent_id
-                    }))
-
-                elif event_type == "media":
-                    if self.eleven_ws:
-                        payload_b64 = data.get("media", {}).get("payload")
-                        if payload_b64:
-                            self.frames_in += 1
-                            # 1. Decode base64
-                            chunk = base64.b64decode(payload_b64)
-
-                            # 2. Ensure mulaw 8k encoding for ElevenLabs
-                            out_b64 = base64.b64encode(self._to_mulaw_8k(chunk)).decode('utf-8')
-
-                            # 3. Send to ElevenLabs
-                            msg = {
-                                "user_audio_chunk": out_b64
-                            }
-                            await self.eleven_ws.send(json.dumps(msg))
-
-                elif event_type == "stop":
-                    logger.info("Twilio stream stopped.")
+                if await self._process_twilio_message(data):
                     break
 
         except WebSocketDisconnect:
@@ -175,6 +138,59 @@ class RealtimeSession:
         except Exception as e:
             logger.error(f"Error handling Twilio messages: {e}")
             raise
+
+    async def _process_twilio_message(self, data: Dict) -> bool:
+        """
+        Internal handler for a single Twilio message.
+        Returns True if the stream should stop (e.g. 'stop' event).
+        """
+        event_type = data.get("event")
+
+        if event_type == "start":
+            self.stream_sid = data.get("start", {}).get("streamSid")
+            call_sid = data.get("start", {}).get("callSid")
+            self.call_sid = call_sid
+
+            # Register session
+            active_sessions[call_sid] = self
+
+            # Update Call Session
+            try:
+                mgr = CallSessionManager()
+                mgr.update_stream_sid(call_sid, self.stream_sid)
+                mgr.update_status(call_sid, CallStatus.AI_ACTIVE)
+            except Exception as e:
+                logger.error(f"Failed to update call session for {call_sid}: {e}")
+
+            logger.info(json.dumps({
+                "event": "twilio_stream_start",
+                "streamSid": self.stream_sid,
+                "callSid": call_sid,
+                "agent_id": self.agent_id
+            }))
+
+        elif event_type == "media":
+            if self.eleven_ws:
+                payload_b64 = data.get("media", {}).get("payload")
+                if payload_b64:
+                    self.frames_in += 1
+                    # 1. Decode base64
+                    chunk = base64.b64decode(payload_b64)
+
+                    # 2. Ensure mulaw 8k encoding for ElevenLabs
+                    out_b64 = base64.b64encode(self._to_mulaw_8k(chunk)).decode('utf-8')
+
+                    # 3. Send to ElevenLabs
+                    msg = {
+                        "user_audio_chunk": out_b64
+                    }
+                    await self.eleven_ws.send(json.dumps(msg))
+
+        elif event_type == "stop":
+            logger.info("Twilio stream stopped.")
+            return True
+
+        return False
 
     async def handle_eleven_messages(self):
         """
