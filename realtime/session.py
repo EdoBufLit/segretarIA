@@ -11,7 +11,6 @@ import audioop
 import websockets
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 from fastapi import WebSocket, WebSocketDisconnect
-from pydub import AudioSegment
 
 from services.call_session import CallSessionManager, CallStatus
 from services.timing import log_duration
@@ -79,6 +78,12 @@ class RealtimeSession:
         self.first_audio_sent_to_eleven_ts: Optional[float] = None
         self.first_audio_from_eleven_ts: Optional[float] = None
 
+        # Latency Debug Timings
+        self.t_ws_eleven_open: Optional[float] = None
+        self.t_first_chunk_sent_to_eleven: Optional[float] = None
+        self.t_first_msg_from_eleven: Optional[float] = None
+        self.t_first_audio_from_eleven: Optional[float] = None
+
     async def start(self):
         """
         Starts the bridge session.
@@ -102,7 +107,8 @@ class RealtimeSession:
 
             async with websockets.connect(url, additional_headers=headers) as eleven_ws:
                 self.eleven_ws = eleven_ws
-                logger.info("Connected to ElevenLabs.")
+                self.t_ws_eleven_open = time.time()
+                logger.info(f"Connected to ElevenLabs. t_ws_eleven_open={self.t_ws_eleven_open}")
 
                 # 2. Start concurrent tasks for reading from both sides
                 twilio_task = asyncio.create_task(self.handle_twilio_messages())
@@ -199,11 +205,13 @@ class RealtimeSession:
                     self.frames_in += 1
                     self._maybe_log_first_twilio_media()
 
-                    # 1. Decode base64
+                    # 1. Decode base64 to bytes chunk
                     chunk = base64.b64decode(payload_b64)
 
-                    # 2. Ensure mulaw 8k encoding for ElevenLabs
-                    out_b64 = base64.b64encode(self._to_mulaw_8k(chunk)).decode("utf-8")
+                    # 2. DO NOT TRANSCODE. Re-encode chunk directly.
+                    # Twilio sends mulaw 8k. ElevenLabs expects mulaw 8k.
+                    # Previous logic using pydub/ffmpeg was converting to WAV which adds header overhead and latency.
+                    out_b64 = base64.b64encode(chunk).decode("utf-8")
 
                     # 3. Send to ElevenLabs
                     msg = {
@@ -213,7 +221,9 @@ class RealtimeSession:
                     # [LATENCY] 2. First audio forwarded to ElevenLabs
                     if self.first_audio_sent_to_eleven_ts is None:
                         self.first_audio_sent_to_eleven_ts = time.monotonic() * 1000
+                        self.t_first_chunk_sent_to_eleven = time.time()
                         logger.info(f"[LATENCY] t1 first_audio_sent_to_eleven = {self.first_audio_sent_to_eleven_ts:.2f}ms")
+                        logger.info(f"t_first_chunk_sent_to_eleven={self.t_first_chunk_sent_to_eleven}")
 
                     await self.eleven_ws.send(json.dumps(msg))
 
@@ -230,10 +240,18 @@ class RealtimeSession:
         """
         try:
             async for message in self.eleven_ws:
+                if self.t_first_msg_from_eleven is None:
+                    self.t_first_msg_from_eleven = time.time()
+                    logger.info(f"t_first_msg_from_eleven={self.t_first_msg_from_eleven}")
+
                 data = json.loads(message)
                 msg_type = data.get("type")
 
                 if msg_type == "audio":
+                    if self.t_first_audio_from_eleven is None:
+                        self.t_first_audio_from_eleven = time.time()
+                        logger.info(f"t_first_audio_from_eleven={self.t_first_audio_from_eleven}")
+
                     audio_event = data.get("audio_event", {})
                     payload_b64 = audio_event.get("audio_base_64")
 
@@ -353,25 +371,7 @@ class RealtimeSession:
         except asyncio.CancelledError:
             return
 
-    def _to_mulaw_8k(self, mulaw_8k: bytes) -> bytes:
-        """
-        Ensures audio bytes are encoded as 8-bit mu-law at 8000 Hz using pydub/ffmpeg.
-        """
-        try:
-            pcm_8k = audioop.ulaw2lin(mulaw_8k, 2)
-            segment = AudioSegment(
-                data=pcm_8k,
-                sample_width=2,
-                frame_rate=8000,
-                channels=1,
-            )
-            segment = segment.set_frame_rate(8000).set_sample_width(1).set_channels(1)
-            buffer = io.BytesIO()
-            segment.export(buffer, format="wav", codec="pcm_mulaw")
-            return buffer.getvalue()
-        except Exception as exc:
-            logger.error("Failed to convert audio to mulaw 8k: %s", exc)
-            return mulaw_8k
+    # _to_mulaw_8k removed as per optimization request
 
     async def close(self):
         """
