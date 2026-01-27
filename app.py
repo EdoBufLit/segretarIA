@@ -1557,11 +1557,11 @@ async def elevenlabs_webhook(request: Request):
 
     if not verify_elevenlabs_signature(raw_body, request.headers, secret):
         # Enhanced Logging for debugging signature failures
-        headers_safe = {k: v for k, v in request.headers.items() if k.lower() not in ["authorization", "cookie"]}
+        headers_safe = {k: v for k, v in request.headers.items() if k.lower() not in ["authorization", "cookie", "xi-api-key"]}
         body_truncated = raw_body[:200].decode("utf-8", errors="replace")
         used_header = request.headers.get("ElevenLabs-Signature") or request.headers.get("elevenlabs-signature")
 
-        logger.warning(
+        logger.debug(
             f"[WEBHOOK] Invalid signature details:\n"
             f"Path: {request.url.path}\n"
             f"Headers: {headers_safe}\n"
@@ -1571,7 +1571,7 @@ async def elevenlabs_webhook(request: Request):
 
         # ALERTING: Invalid Signature
         log_critical_error("Webhook ElevenLabs - firma non valida!", context={"action": "webhook_signature_check"})
-        return Response(status_code=403)
+        return Response(status_code=403, content="Invalid signature")
 
     # 1) Parse
     try:

@@ -117,9 +117,8 @@ class RealtimeSession:
                 self.tasks.add(twilio_task)
                 self.tasks.add(eleven_task)
 
-                # Clean up task references when done
-                twilio_task.add_done_callback(self.tasks.discard)
-                eleven_task.add_done_callback(self.tasks.discard)
+                # DO NOT remove from self.tasks on completion immediately
+                # to allow close() to await them and retrieve exceptions.
 
                 # Wait for either to finish (likely due to close/error)
                 try:
@@ -414,7 +413,7 @@ class RealtimeSession:
                 logger.error(f"Failed to end session for {self.call_sid}: {e}")
 
         # Cancel all running tasks
-        for task in self.tasks:
+        for task in list(self.tasks):
             if not task.done():
                 task.cancel()
 
@@ -424,6 +423,8 @@ class RealtimeSession:
                 await asyncio.gather(*self.tasks, return_exceptions=True)
             except Exception as e:
                 logger.warning(f"Error awaiting cancelled tasks: {e}")
+            finally:
+                self.tasks.clear()
 
         # Explicitly close WebSockets
         if self.eleven_ws:
