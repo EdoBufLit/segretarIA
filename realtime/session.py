@@ -66,15 +66,24 @@ class RealtimeSession:
         self.frames_out = 0
         self.start_time = time.time()
 
-        # Latency tracking
+        # Latency tracking (legacy)
         self.first_twilio_media_ts: Optional[float] = None
         self.first_eleven_audio_ts: Optional[float] = None
         self.eleven_response_warning_task: Optional[asyncio.Task] = None
+
+        # Precise Latency Instrumentation (ms)
+        self.call_start_ts: Optional[float] = None
+        self.first_twilio_audio_ts: Optional[float] = None
+        self.first_audio_sent_to_eleven_ts: Optional[float] = None
+        self.first_audio_from_eleven_ts: Optional[float] = None
 
     async def start(self):
         """
         Starts the bridge session.
         """
+        # Record start timestamp for latency calculation
+        self.call_start_ts = time.monotonic() * 1000
+
         api_key = os.getenv("ELEVEN_API_KEY")
         if not api_key:
             logger.error("ELEVEN_API_KEY not configured.")
@@ -178,6 +187,11 @@ class RealtimeSession:
 
         elif event_type == "media":
             if self.eleven_ws:
+                # [LATENCY] 1. First audio received from Twilio
+                if self.first_twilio_audio_ts is None:
+                    self.first_twilio_audio_ts = time.monotonic() * 1000
+                    logger.info(f"[LATENCY] t0 first_audio_from_twilio = {self.first_twilio_audio_ts:.2f}ms")
+
                 payload_b64 = data.get("media", {}).get("payload")
                 if payload_b64:
                     self.frames_in += 1
@@ -193,24 +207,11 @@ class RealtimeSession:
                     msg = {
                         "user_audio_chunk": out_b64
                     }
-                    # We log the *start* of the request to ElevenLabs
-                    # Since this is a stream, "request" is just sending a chunk.
-                    # Logging every chunk might spam, but the user requirement implies detailed tracking.
-                    # However, "Inizio richiesta a ElevenLabs (invio testo)" suggests they think of it as turn-based.
-                    # We will log it but maybe only for the first one or significant events?
-                    # The user example logs "Inizio richiesta..." then "Risposta...".
-                    # In streaming, we send many chunks.
-                    # Let's stick to logging important latency markers or maybe sample it?
-                    # Or just wrap the send.
-                    # To avoid spamming thousands of lines per second, I'll log only if it's the first few or spaced out?
-                    # The prompt says: "Ricezione del primo pacchetto audio, inizio richiesta a ElevenLabs..."
-                    # It implies the start of the interaction.
 
-                    # For now, I will NOT wrap every single audio chunk with log_duration as it will generate 50 logs/sec.
-                    # But I will log the *first* send if desired, or relying on _maybe_log_first_twilio_media covers the "start of reception".
-
-                    # The requirement says: "Inizio richiesta a ElevenLabs (invio testo)".
-                    # Since this is Audio-to-Audio, I will skip logging "invio testo" for every frame.
+                    # [LATENCY] 2. First audio forwarded to ElevenLabs
+                    if self.first_audio_sent_to_eleven_ts is None:
+                        self.first_audio_sent_to_eleven_ts = time.monotonic() * 1000
+                        logger.info(f"[LATENCY] t1 first_audio_sent_to_eleven = {self.first_audio_sent_to_eleven_ts:.2f}ms")
 
                     await self.eleven_ws.send(json.dumps(msg))
 
@@ -236,6 +237,24 @@ class RealtimeSession:
 
                     if payload_b64 and self.stream_sid:
                         self.frames_out += 1
+
+                        # [LATENCY] 3. First audio received from ElevenLabs
+                        if self.first_audio_from_eleven_ts is None:
+                            self.first_audio_from_eleven_ts = time.monotonic() * 1000
+                            logger.info(f"[LATENCY] t2 first_audio_from_eleven = {self.first_audio_from_eleven_ts:.2f}ms")
+
+                            # [LATENCY] 4. Compute and log latencies
+                            if self.call_start_ts and self.first_twilio_audio_ts and self.first_audio_sent_to_eleven_ts:
+                                t0_delta = self.first_twilio_audio_ts - self.call_start_ts
+                                t1_delta = self.first_audio_sent_to_eleven_ts - self.first_twilio_audio_ts
+                                t2_delta = self.first_audio_from_eleven_ts - self.first_audio_sent_to_eleven_ts
+                                total_latency = self.first_audio_from_eleven_ts - self.first_twilio_audio_ts
+
+                                logger.info(f"[LATENCY] Twilio→Server: {t0_delta:.2f}ms")
+                                logger.info(f"[LATENCY] Server→Eleven: {t1_delta:.2f}ms")
+                                logger.info(f"[LATENCY] Eleven processing: {t2_delta:.2f}ms")
+                                logger.info(f"[LATENCY] End-to-end audio latency: {total_latency:.2f}ms")
+
                         self._maybe_log_first_eleven_audio()
 
                         # 1. Decode base64
