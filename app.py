@@ -67,6 +67,7 @@ from alerting import (
     get_monitoring_stats,
     notify_chat_message,
 )
+from services.timing import log_duration
 
 # ================== CONFIG BASE ==================
 
@@ -1125,7 +1126,8 @@ async def twilio_voice(
     normalized_to = normalize_phone_number(To)
 
     # 1. Lookup Phone
-    phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
+    with log_duration("DB query PhoneNumber"):
+        phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
 
     allowed = False
     reason = None
@@ -1143,10 +1145,11 @@ async def twilio_voice(
             reason = "No active plan"
         else:
             # Check Routing
-            routing = db.query(AgentRouting).filter(
-                AgentRouting.phone_number_id == phone.id,
-                AgentRouting.is_active == True
-            ).first()
+            with log_duration("DB query AgentRouting"):
+                routing = db.query(AgentRouting).filter(
+                    AgentRouting.phone_number_id == phone.id,
+                    AgentRouting.is_active == True
+                ).first()
             if routing:
                 if routing.agent_id:
                     agent_id = routing.agent_id
@@ -1303,93 +1306,106 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
     Note: agent_id is mandatory. If not in query params (Twilio Media Streams constraint),
     we parse it from the initial 'start' event.
     """
-    logger.info("DEBUG: Entrato in websocket_twilio")
     await websocket.accept()
+    start_conn = datetime.now()
+    logging.info("WebSocket accettato (nuova chiamata Twilio)")
+
+    logger.info("DEBUG: Entrato in websocket_twilio")
     logger.info(f"DEBUG: URL richiesta: {websocket.url}")
     logger.info(f"DEBUG: Query params: {websocket.query_params}")
     logger.info(f"DEBUG: agent_id initial = {agent_id}")
 
     start_message = None
 
-    # If agent_id is missing, wait for the start event to find it
-    if not agent_id:
-        try:
-            deadline = time.monotonic() + 5
-            while True:
-                timeout = deadline - time.monotonic()
-                if timeout <= 0:
-                    logger.warning("DEBUG: Timed out waiting for start event with agent_id.")
+    try:
+        # If agent_id is missing, wait for the start event to find it
+        if not agent_id:
+            try:
+                deadline = time.monotonic() + 5
+                while True:
+                    timeout = deadline - time.monotonic()
+                    if timeout <= 0:
+                        logger.warning("DEBUG: Timed out waiting for start event with agent_id.")
+                        break
+
+                    raw_msg = await asyncio.wait_for(websocket.receive_text(), timeout=timeout)
+                    data = json.loads(raw_msg)
+                    event_type = data.get("event")
+
+                    if event_type != "start":
+                        logger.warning(f"DEBUG: Ignoring non-start event while waiting for agent_id: {event_type}")
+                        continue
+
+                    start_message = data  # Save it to pass to session
+                    call_sid = data.get("start", {}).get("callSid")
+
+                    # Attempt 1: Resolve from Redis Session (Server-side truth)
+                    if call_sid:
+                        try:
+                            mgr = CallSessionManager()
+                            session_data = mgr.get_session(call_sid)
+                            if session_data and session_data.get("agent_id"):
+                                agent_id = session_data.get("agent_id")
+                                logger.info(f"DEBUG: agent_id resolved from Redis for call {call_sid}: {agent_id}")
+                        except Exception as redis_err:
+                            logger.error(f"Redis lookup failed: {redis_err}")
+
+                    # Attempt 2: Fallback to customParameters (Client-side)
+                    if not agent_id:
+                        params = data.get("start", {}).get("customParameters", {})
+                        agent_id = params.get("agent_id")
+                        if agent_id:
+                            logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
+
+                    # Attempt 3: Fallback to phone number in start payload ("to")
+                    if not agent_id:
+                        to_number = data.get("start", {}).get("to") or data.get("start", {}).get("To")
+                        if to_number:
+                            normalized_to = normalize_phone_number(to_number)
+                            with log_duration("DB query PhoneNumber fallback"):
+                                phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
+                            if phone:
+                                with log_duration("DB query AgentRouting fallback"):
+                                    routing = db.query(AgentRouting).filter(
+                                        AgentRouting.phone_number_id == phone.id,
+                                        AgentRouting.is_active == True
+                                    ).first()
+                                if routing and routing.agent_id:
+                                    agent_id = routing.agent_id
+                                    logger.info(f"DEBUG: agent_id resolved from To={normalized_to}: {agent_id}")
+                            if not agent_id:
+                                logger.warning(f"DEBUG: No agent routing found for To={normalized_to}")
+
                     break
+            except asyncio.TimeoutError:
+                logger.warning("DEBUG: Timed out waiting for start event with agent_id.")
+            except Exception as e:
+                logger.error(f"Error receiving start event: {e}")
+                await websocket.close()
+                return
 
-                raw_msg = await asyncio.wait_for(websocket.receive_text(), timeout=timeout)
-                data = json.loads(raw_msg)
-                event_type = data.get("event")
-
-                if event_type != "start":
-                    logger.warning(f"DEBUG: Ignoring non-start event while waiting for agent_id: {event_type}")
-                    continue
-
-                start_message = data  # Save it to pass to session
-                call_sid = data.get("start", {}).get("callSid")
-
-                # Attempt 1: Resolve from Redis Session (Server-side truth)
-                if call_sid:
-                    try:
-                        mgr = CallSessionManager()
-                        session_data = mgr.get_session(call_sid)
-                        if session_data and session_data.get("agent_id"):
-                            agent_id = session_data.get("agent_id")
-                            logger.info(f"DEBUG: agent_id resolved from Redis for call {call_sid}: {agent_id}")
-                    except Exception as redis_err:
-                        logger.error(f"Redis lookup failed: {redis_err}")
-
-                # Attempt 2: Fallback to customParameters (Client-side)
-                if not agent_id:
-                    params = data.get("start", {}).get("customParameters", {})
-                    agent_id = params.get("agent_id")
-                    if agent_id:
-                        logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
-
-                # Attempt 3: Fallback to phone number in start payload ("to")
-                if not agent_id:
-                    to_number = data.get("start", {}).get("to") or data.get("start", {}).get("To")
-                    if to_number:
-                        normalized_to = normalize_phone_number(to_number)
-                        phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
-                        if phone:
-                            routing = db.query(AgentRouting).filter(
-                                AgentRouting.phone_number_id == phone.id,
-                                AgentRouting.is_active == True
-                            ).first()
-                            if routing and routing.agent_id:
-                                agent_id = routing.agent_id
-                                logger.info(f"DEBUG: agent_id resolved from To={normalized_to}: {agent_id}")
-                        if not agent_id:
-                            logger.warning(f"DEBUG: No agent routing found for To={normalized_to}")
-
-                break
-        except asyncio.TimeoutError:
-            logger.warning("DEBUG: Timed out waiting for start event with agent_id.")
-        except Exception as e:
-            logger.error(f"Error receiving start event: {e}")
-            await websocket.close()
+        if not agent_id:
+            logger.info("DEBUG: agent_id mancante o vuoto dopo check start event")
+            await websocket.close(code=4003)
             return
 
-    if not agent_id:
-        logger.info("DEBUG: agent_id mancante o vuoto dopo check start event")
-        await websocket.close(code=4003)
-        return
+        # Validate Agent
+        with log_duration("DB query AgentRouting validate"):
+            routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id, AgentRouting.is_active == True).first()
+        if not routing:
+            logger.warning(f"WebSocket rejected: Invalid or inactive agent {agent_id}")
+            await websocket.close(code=4003) # Forbidden
+            return
 
-    # Validate Agent
-    routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id, AgentRouting.is_active == True).first()
-    if not routing:
-        logger.warning(f"WebSocket rejected: Invalid or inactive agent {agent_id}")
-        await websocket.close(code=4003) # Forbidden
-        return
-
-    # Initialize Session, passing the initial start message if we consumed it
-    session = RealtimeSession(websocket, agent_id, initial_start_message=start_message)
-    await session.start()
+        # Initialize Session, passing the initial start message if we consumed it
+        session = RealtimeSession(websocket, agent_id, initial_start_message=start_message)
+        await session.start()
+    except WebSocketDisconnect:
+        logging.error("Connessione WebSocket chiusa inaspettatamente da Twilio")
+    finally:
+        end_conn = datetime.now()
+        total_conn_ms = (end_conn - start_conn).total_seconds() * 1000
+        logging.info(f"Durata connessione WebSocket (accept→close) | duration: {total_conn_ms:.0f}ms")
 
 
 @app.post("/calls/{call_sid}/barge-in")
@@ -2979,372 +2995,3 @@ async def admin_debug_users(
         "is_active": user.is_active,
         "hash_prefix": user.password_hash[:10] if user.password_hash else None
     }
-
-
-def _read_logs(
-    db: Session,
-    agent_ids: List[str],
-    limit: int = 50,
-    offset: int = 0,
-    status: str = "all",
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    q: Optional[str] = None
-):
-    """
-    Helper to read, filter, sort and paginate logs from the database.
-    """
-    items = []
-
-    df = datetime.fromisoformat(date_from).date() if date_from else None
-    dt = datetime.fromisoformat(date_to).date() if date_to else None
-
-    query = db.query(CallLog)
-    if agent_ids:
-        query = query.filter(CallLog.agent_id.in_(agent_ids))
-    if df:
-        query = query.filter(CallLog.timestamp >= datetime.combine(df, datetime.min.time()))
-    if dt:
-        query = query.filter(CallLog.timestamp <= datetime.combine(dt, datetime.max.time()))
-    if status in {"success", "failure"}:
-        query = query.filter(CallLog.status == status)
-
-    logs = query.order_by(CallLog.timestamp.desc()).all()
-
-    for log in logs:
-        raw = log.raw_data or {}
-        ts = log.timestamp.isoformat() if log.timestamp else None
-        if not ts:
-            continue
-
-        data = raw.get("data", {}) or {}
-        analysis = data.get("analysis", {}) or {}
-        summary = (
-            analysis.get("transcript_summary")
-            or analysis.get("summary")
-            or data.get("summary")
-            or ""
-        )
-        duration = data.get("duration_secs") or data.get("metadata", {}).get("call_duration_secs")
-        caller = data.get("caller_number") or data.get("user_id") or "unknown"
-        status_value = log.status or data.get("status") or "success"
-
-        item = {
-            "timestamp": ts,
-            "caller": caller,
-            "status": status_value,
-            "summary": str(summary).strip(),
-            "duration_secs": duration,
-            "raw": raw
-        }
-
-        if q:
-            q_low = q.lower()
-            if q_low not in json.dumps(item, ensure_ascii=False).lower():
-                continue
-
-        items.append(item)
-
-    total = len(items)
-    paginated_items = items[offset:offset + limit]
-
-    return {"status": "ok", "total": total, "items": paginated_items}
-
-
-
-
-@app.get("/api/logs")
-async def get_my_logs(
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    status: str = Query("all"),
-    date_from: str = Query(None),
-    date_to: str = Query(None),
-    q: str = Query(None),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Ritorna i log dell'utente corrente (Client-scoped).
-    Recupera gli agent_id associati all'utente.
-    """
-    # Force reload user to ensure relationships are loaded
-    # Actually, current_user from get_current_user might not have relationships loaded depending on how it was queried
-    # But lazy loading should work if session is active.
-    # However, get_current_user closes session? No, it depends.
-    # Let's re-query to be safe or ensure eager loading.
-
-    user = db.query(User).filter(User.id == current_user.id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    agent_ids = [a.agent_id for a in user.agents]
-
-    if not agent_ids:
-        return {"status": "ok", "total": 0, "items": []}
-
-    return _read_logs(db, agent_ids, limit, offset, status, date_from, date_to, q)
-
-
-# ================== CHAT SUPPORT ==================
-
-class ChatMessageCreate(BaseModel):
-    message: str
-    user_id: Optional[int] = None # Required for Admin sender
-
-@app.get("/api/chat/messages")
-async def get_chat_messages(
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    user_id: Optional[int] = None, # Admin can specify which user thread
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_page) # Can be client or admin
-):
-    target_user_id = current_user.id
-
-    # If Admin, allow viewing other users' chats
-    if current_user.role == 'admin':
-        if user_id:
-            target_user_id = user_id
-    elif user_id and user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Cannot view other users' chats")
-
-    total = db.query(ChatMessage).filter(ChatMessage.user_id == target_user_id).count()
-
-    messages = (
-        db.query(ChatMessage)
-        .filter(ChatMessage.user_id == target_user_id)
-        .order_by(ChatMessage.created_at.asc()) # History order
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-
-    return {
-        "status": "ok",
-        "total": total,
-        "items": [
-            {
-                "id": m.id,
-                "sender": m.sender_type, # 'client' | 'admin'
-                "message": m.message,
-                "created_at": m.created_at.isoformat() if m.created_at else None,
-                "read": m.read
-            } for m in messages
-        ]
-    }
-
-@app.post("/api/chat/messages")
-async def send_chat_message(
-    payload: ChatMessageCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    sender_type = "client"
-    target_user_id = current_user.id
-
-    # Admin logic
-    if current_user.role == 'admin':
-        sender_type = "admin"
-        if not payload.user_id:
-            raise HTTPException(status_code=400, detail="Admin must specify user_id")
-        target_user_id = payload.user_id
-
-    # Create Message
-    msg = ChatMessage(
-        user_id=target_user_id,
-        sender_type=sender_type,
-        message=payload.message,
-        read=False
-    )
-    db.add(msg)
-    db.commit()
-    db.refresh(msg)
-
-    # Notifications
-    if sender_type == "client":
-        # Notify Admin via Telegram
-        user = db.query(User).filter(User.id == target_user_id).first()
-        notify_chat_message(user, payload.message)
-
-    return {"status": "ok", "id": msg.id}
-
-@app.post("/api/chat/read")
-async def mark_chat_read(
-    payload: Dict[str, Any] = Body(...), # {user_id: ...} optional
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    target_user_id = current_user.id
-    target_sender_type = "admin" # Client reads admin messages
-
-    if current_user.role == 'admin':
-        if not payload.get("user_id"):
-             raise HTTPException(status_code=400, detail="Admin must specify user_id")
-        target_user_id = payload["user_id"]
-        target_sender_type = "client" # Admin reads client messages
-
-    # Update
-    db.query(ChatMessage).filter(
-        ChatMessage.user_id == target_user_id,
-        ChatMessage.sender_type == target_sender_type,
-        ChatMessage.read == False
-    ).update({"read": True})
-
-    db.commit()
-    return {"status": "ok"}
-
-@app.get("/api/admin/chat/conversations")
-async def get_admin_conversations(
-    db: Session = Depends(get_db),
-    admin: User = Depends(get_current_admin_user)
-):
-    # List distinct user_ids from ChatMessages
-    # And count unread messages (sender_type='client', read=False)
-
-    # Simplified logic using python aggregation
-    # Fetch all users who have at least one message
-
-    chat_users_ids = db.query(ChatMessage.user_id).distinct().all()
-    ids = [r[0] for r in chat_users_ids]
-
-    if not ids:
-        return {"status": "ok", "conversations": []}
-
-    users = db.query(User).filter(User.id.in_(ids)).all()
-
-    conversations = []
-    for u in users:
-        # Get unread count
-        unread = db.query(ChatMessage).filter(
-            ChatMessage.user_id == u.id,
-            ChatMessage.sender_type == 'client',
-            ChatMessage.read == False
-        ).count()
-
-        # Get last message
-        last_msg = db.query(ChatMessage).filter(ChatMessage.user_id == u.id).order_by(ChatMessage.created_at.desc()).first()
-
-        conversations.append({
-            "user_id": u.id,
-            "username": u.username,
-            "studio_name": u.studio_name,
-            "email": u.email,
-            "unread_count": unread,
-            "last_message": last_msg.message[:50] if last_msg else "",
-            "last_active": last_msg.created_at.isoformat() if last_msg else None
-        })
-
-    # Sort by last_active desc
-    conversations.sort(key=lambda x: x['last_active'] or "", reverse=True)
-
-    return {"status": "ok", "conversations": conversations}
-
-@app.get("/api/chat/unread-count")
-async def get_unread_count(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    if current_user.role == 'admin':
-        # Total unread messages from clients
-        count = db.query(ChatMessage).filter(
-            ChatMessage.sender_type == 'client',
-            ChatMessage.read == False
-        ).count()
-    else:
-        # Unread messages from admin for this client
-        count = db.query(ChatMessage).filter(
-            ChatMessage.user_id == current_user.id,
-            ChatMessage.sender_type == 'admin',
-            ChatMessage.read == False
-        ).count()
-
-    return {"status": "ok", "count": count}
-
-
-
-
-
-    # …qui il tuo log_call(entry, agent_id) o simile…
-    # …e la parte di email che già hai…
-@app.post("/api/admin/agents/{agent_id}/test-call")
-async def test_call(agent_id: str, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    """
-    Avvia una chiamata di test tramite ElevenLabs/Twilio verso il numero di test
-    configurato per questo cliente.
-    """
-    # ENFORCEMENT: Check suspension
-    agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
-    if agent_obj:
-        user = db.query(User).filter(User.agents.contains(agent_obj)).first()
-        if user and not user.is_active:
-             raise HTTPException(status_code=403, detail="Service suspended due to payment failure.")
-
-        # Check subscription
-        if user:
-            active_sub = db.query(Subscription).filter(
-                Subscription.user_id == user.id,
-                Subscription.state == "active"
-            ).first()
-            if not active_sub:
-                 raise HTTPException(status_code=403, detail="No active subscription.")
-
-    settings = db.query(AgentSettings).filter(AgentSettings.agent_id == agent_id).first()
-    if not settings:
-        raise HTTPException(status_code=404, detail="Cliente non trovato")
-
-    if not ELEVEN_API_KEY:
-        raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY non configurata")
-
-    # agent_id di ElevenLabs = agent_id delle nostre config (stiamo usando lo stesso)
-    eleven_agent_id = agent_id
-    phone_id = settings.agent_phone_number_id
-    to_number = settings.test_phone_number
-
-    if not phone_id or not to_number:
-        raise HTTPException(
-            status_code=400,
-            detail="Config incompleta: serve agent_phone_number_id e test_phone_number nelle impostazioni del cliente"
-        )
-
-    url = "https://api.elevenlabs.io/v1/convai/twilio/outbound-call"
-    headers = {
-        "xi-api-key": ELEVEN_API_KEY,
-        "Content-Type": "application/json",
-    }
-    body = {
-        "agent_id": eleven_agent_id,
-        "agent_phone_number_id": phone_id,
-        "to_number": to_number,
-        # opzionale: puoi passare variabili dinamiche
-        "conversation_initiation_client_data": {
-            "type": "conversation_initiation_client_data",
-            "dynamic_variables": {
-                "caller_name": "Test Edo",
-                "test_call": True,
-            }
-        }
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(url, headers=headers, json=body)
-        if resp.status_code >= 400:
-            logger.error("Test call error: %s %s", resp.status_code, resp.text)
-            raise HTTPException(
-                status_code=resp.status_code,
-                detail=f"Errore ElevenLabs: {resp.text}"
-            )
-
-        data = resp.json()
-        # es: {'success': True, 'message': '...', 'conversation_id': '...', 'callSid': '...'}
-        return {"status": "ok", "elevenlabs_response": data}
-
-    except HTTPException:
-        raise
-    except (httpx.HTTPError, TimeoutError) as e:
-        logger.error("Test call network error: %s", e)
-        raise HTTPException(status_code=502, detail="Errore servizio esterno")
-    except Exception as e:
-        logger.error("Test call exception: %s", e)
-        raise HTTPException(status_code=500, detail="Errore interno nella chiamata di test")
