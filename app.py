@@ -405,9 +405,15 @@ class CreatePhoneNumberRequest(BaseModel):
     e164: str
     user_id: int
     notes: Optional[str] = None
+    office_phone_e164: Optional[str] = None
+    timezone: Optional[str] = "Europe/Rome"
+    open_hours_json: Optional[Dict[str, Any]] = None
 
 class UpdatePhoneNumberRequest(BaseModel):
     notes: Optional[str] = None
+    office_phone_e164: Optional[str] = None
+    timezone: Optional[str] = None
+    open_hours_json: Optional[Dict[str, Any]] = None
 
 @app.get("/api/admin/phone-numbers")
 async def api_admin_get_phone_numbers(
@@ -426,7 +432,10 @@ async def api_admin_get_phone_numbers(
             "status": n.status,
             "created_at": n.created_at.isoformat() if n.created_at else None,
             "released_at": n.released_at.isoformat() if n.released_at else None,
-            "notes": n.notes
+            "notes": n.notes,
+            "office_phone_e164": n.office_phone_e164,
+            "timezone": n.timezone,
+            "open_hours_json": n.open_hours_json
         })
     return {
         "status": "ok",
@@ -447,9 +456,21 @@ async def api_admin_create_phone_number(
     service = AdminService(db)
     try:
         phone = service.create_phone_number(payload.e164, payload.user_id)
+
+        # Apply optional fields
         if payload.notes:
             phone.notes = payload.notes
-            db.commit()
+
+        if payload.office_phone_e164:
+            phone.office_phone_e164 = normalize_phone_e164(payload.office_phone_e164)
+
+        if payload.timezone:
+            phone.timezone = payload.timezone
+
+        if payload.open_hours_json:
+            phone.open_hours_json = payload.open_hours_json
+
+        db.commit()
 
         return {"status": "ok", "id": phone.id, "e164": phone.e164}
     except ValueError as e:
@@ -468,6 +489,18 @@ async def api_admin_update_phone_number(
 
     if payload.notes is not None:
         phone.notes = payload.notes
+
+    if payload.office_phone_e164 is not None:
+        if payload.office_phone_e164 == "":
+             phone.office_phone_e164 = None
+        else:
+             phone.office_phone_e164 = normalize_phone_e164(payload.office_phone_e164)
+
+    if payload.timezone is not None:
+        phone.timezone = payload.timezone
+
+    if payload.open_hours_json is not None:
+        phone.open_hours_json = payload.open_hours_json
 
     db.commit()
     return {"status": "ok"}
@@ -2260,6 +2293,20 @@ def _get_client_ip(request: Request) -> str:
 
 def _is_valid_phone(phone: str) -> bool:
     return re.match(r"^[0-9+()\\s.-]{6,}$", phone) is not None
+
+
+def normalize_phone_e164(phone: str) -> str:
+    """
+    Normalizes phone number to E.164 format.
+    Strips spaces, dashes, parentheses. Ensures leading +.
+    """
+    if not phone:
+        return ""
+    # Strip spaces, dashes, parentheses
+    cleaned = re.sub(r"[\s\-\(\)]", "", phone)
+    if not cleaned.startswith("+"):
+        cleaned = "+" + cleaned
+    return cleaned
 
 
 def _check_rate_limit(ip_address: str) -> bool:
