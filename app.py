@@ -1025,6 +1025,7 @@ async def twilio_voice(
         "CallSid": CallSid,
         "From": From,
         "To": To,
+        "agent_id": agent_id,
         "allowed": allowed,
         "reason": reason
     }))

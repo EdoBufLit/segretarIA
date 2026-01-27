@@ -96,7 +96,13 @@ class RealtimeSession:
 
                 if event_type == "start":
                     self.stream_sid = data.get("start", {}).get("streamSid")
-                    logger.info(f"Twilio stream started: {self.stream_sid}")
+                    call_sid = data.get("start", {}).get("callSid")
+                    logger.info(json.dumps({
+                        "event": "twilio_stream_start",
+                        "streamSid": self.stream_sid,
+                        "callSid": call_sid,
+                        "agent_id": self.agent_id
+                    }))
 
                 elif event_type == "media":
                     if self.eleven_ws:
