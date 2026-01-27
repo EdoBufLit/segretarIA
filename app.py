@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from db import get_db, SessionLocal
 from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken, AgentSettings, CallLog, ChatMessage, Agent
+import pytz
 from auth import (
     hash_password,
     verify_password,
@@ -54,6 +55,8 @@ from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
 from services.realtime_bridge import RealtimeSession
+from services.business_hours import is_open_now
+from services.validators import validate_open_hours_schema
 from twilio.request_validator import RequestValidator
 from alerting import (
     log_critical_error,
@@ -405,9 +408,15 @@ class CreatePhoneNumberRequest(BaseModel):
     e164: str
     user_id: int
     notes: Optional[str] = None
+    office_phone_e164: Optional[str] = None
+    timezone: Optional[str] = "Europe/Rome"
+    open_hours_json: Optional[Dict[str, Any]] = None
 
 class UpdatePhoneNumberRequest(BaseModel):
     notes: Optional[str] = None
+    office_phone_e164: Optional[str] = None
+    timezone: Optional[str] = None
+    open_hours_json: Optional[Dict[str, Any]] = None
 
 @app.get("/api/admin/phone-numbers")
 async def api_admin_get_phone_numbers(
@@ -426,7 +435,10 @@ async def api_admin_get_phone_numbers(
             "status": n.status,
             "created_at": n.created_at.isoformat() if n.created_at else None,
             "released_at": n.released_at.isoformat() if n.released_at else None,
-            "notes": n.notes
+            "notes": n.notes,
+            "office_phone_e164": n.office_phone_e164,
+            "timezone": n.timezone,
+            "open_hours_json": n.open_hours_json
         })
     return {
         "status": "ok",
@@ -444,12 +456,34 @@ async def api_admin_create_phone_number(
     if existing:
         raise HTTPException(status_code=400, detail="Il numero è già presente nel sistema.")
 
+    # Validate Timezone
+    if payload.timezone:
+        if payload.timezone not in pytz.all_timezones:
+             raise HTTPException(status_code=400, detail="Timezone non valida.")
+
+    # Validate Open Hours Schema
+    if payload.open_hours_json:
+        if not validate_open_hours_schema(payload.open_hours_json):
+             raise HTTPException(status_code=400, detail="Formato orari non valido.")
+
     service = AdminService(db)
     try:
         phone = service.create_phone_number(payload.e164, payload.user_id)
+
+        # Apply optional fields
         if payload.notes:
             phone.notes = payload.notes
-            db.commit()
+
+        if payload.office_phone_e164:
+            phone.office_phone_e164 = normalize_phone_e164(payload.office_phone_e164)
+
+        if payload.timezone:
+            phone.timezone = payload.timezone
+
+        if payload.open_hours_json:
+            phone.open_hours_json = payload.open_hours_json
+
+        db.commit()
 
         return {"status": "ok", "id": phone.id, "e164": phone.e164}
     except ValueError as e:
@@ -466,8 +500,30 @@ async def api_admin_update_phone_number(
     if not phone:
         raise HTTPException(status_code=404, detail="Number not found")
 
+    # Validate Timezone
+    if payload.timezone:
+        if payload.timezone not in pytz.all_timezones:
+             raise HTTPException(status_code=400, detail="Timezone non valida.")
+
+    # Validate Open Hours Schema
+    if payload.open_hours_json is not None:
+        if not validate_open_hours_schema(payload.open_hours_json):
+             raise HTTPException(status_code=400, detail="Formato orari non valido.")
+
     if payload.notes is not None:
         phone.notes = payload.notes
+
+    if payload.office_phone_e164 is not None:
+        if payload.office_phone_e164 == "":
+             phone.office_phone_e164 = None
+        else:
+             phone.office_phone_e164 = normalize_phone_e164(payload.office_phone_e164)
+
+    if payload.timezone is not None:
+        phone.timezone = payload.timezone
+
+    if payload.open_hours_json is not None:
+        phone.open_hours_json = payload.open_hours_json
 
     db.commit()
     return {"status": "ok"}
@@ -1070,12 +1126,34 @@ async def twilio_voice(
         """
         return Response(content=xml, media_type="application/xml")
 
-    # 3. Construct WebSocket URL
+    # 3. Business Logic: Office Forwarding (if allowed)
+    is_open = False
+    if phone.open_hours_json and phone.timezone:
+        is_open = is_open_now(phone.open_hours_json, phone.timezone)
+
+    # If Open AND Office Phone set -> Forward
+    if is_open and phone.office_phone_e164:
+        logger.info(f"Forwarding call {CallSid} to office {phone.office_phone_e164} (Open in {phone.timezone})")
+        # Construct action URL
+        base_url = str(request.base_url).rstrip("/")
+        action_url = f"{base_url}/twilio/after_dial?agent_id={agent_id}"
+
+        xml = f"""
+        <Response>
+            <Dial timeout="15" action="{action_url}">
+                {phone.office_phone_e164}
+            </Dial>
+        </Response>
+        """
+        return Response(content=xml, media_type="application/xml")
+
+    # 4. Fallback: Start AI (Closed or No forwarding)
+    return _build_ai_connect_twiml(request, agent_id)
+
+
+def _build_ai_connect_twiml(request: Request, agent_id: str) -> Response:
     # Replace http/https with ws/wss
     base_url = str(request.base_url).rstrip("/")
-    # Force HTTPS/WSS if we are behind a proxy that terminates SSL (common in production)
-    # or rely on request.url.scheme.
-    # To follow the pattern of get_public_base_url but simpler for this context:
     if "https" in base_url:
         ws_base = base_url.replace("https://", "wss://")
     else:
@@ -1083,7 +1161,6 @@ async def twilio_voice(
 
     stream_url = f"{ws_base}/ws/twilio?agent_id={agent_id}"
 
-    # 4. Return TwiML
     xml = f"""
     <Response>
         <Connect>
@@ -1094,6 +1171,26 @@ async def twilio_voice(
     </Response>
     """
     return Response(content=xml, media_type="application/xml")
+
+
+@app.post("/twilio/after_dial")
+async def twilio_after_dial(
+    request: Request,
+    DialCallStatus: str = Form(...),
+    agent_id: str = Query(...)
+):
+    """
+    Callback after <Dial> completes.
+    If 'completed', we hangup.
+    If 'busy', 'no-answer', 'failed', 'canceled', we fallback to AI.
+    """
+    logger.info(f"After Dial: status={DialCallStatus} agent={agent_id}")
+
+    if DialCallStatus == "completed":
+        return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+
+    # Fallback to AI
+    return _build_ai_connect_twiml(request, agent_id)
 
 
 @app.websocket("/ws/twilio")
@@ -2260,6 +2357,20 @@ def _get_client_ip(request: Request) -> str:
 
 def _is_valid_phone(phone: str) -> bool:
     return re.match(r"^[0-9+()\\s.-]{6,}$", phone) is not None
+
+
+def normalize_phone_e164(phone: str) -> str:
+    """
+    Normalizes phone number to E.164 format.
+    Strips spaces, dashes, parentheses. Ensures leading +.
+    """
+    if not phone:
+        return ""
+    # Strip spaces, dashes, parentheses
+    cleaned = re.sub(r"[\s\-\(\)]", "", phone)
+    if not cleaned.startswith("+"):
+        cleaned = "+" + cleaned
+    return cleaned
 
 
 def _check_rate_limit(ip_address: str) -> bool:

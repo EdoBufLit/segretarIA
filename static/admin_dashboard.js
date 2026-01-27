@@ -855,7 +855,7 @@ async function loadPhoneNumbersTable() {
         tbody.innerHTML = "";
 
         if (items.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-[var(--muted)]">Nessun numero trovato.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-[var(--muted)]">Nessun numero trovato.</td></tr>`;
             return;
         }
 
@@ -871,20 +871,31 @@ async function loadPhoneNumbersTable() {
 
             let actions = "";
             if (n.status === 'active') {
-                actions = `<button onclick="releasePhoneNumber(${n.id}, '${n.e164}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors">RILASCIA</button>`;
+                actions = `<button onclick="releasePhoneNumber(${n.id}, '${n.e164}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors mr-1">RILASCIA</button>`;
             } else if (n.status === 'pending_deprovision') {
-                actions = `<button onclick="cancelDeprovision(${n.id}, '${n.e164}')" class="text-green-600 hover:text-green-800 text-xs font-semibold border border-green-200 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition-colors">ANNULLA RILASCIO</button>`;
+                actions = `<button onclick="cancelDeprovision(${n.id}, '${n.e164}')" class="text-green-600 hover:text-green-800 text-xs font-semibold border border-green-200 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition-colors mr-1">ANNULLA</button>`;
             } else if (n.status === 'released') {
-                actions = `<button onclick="openReactivateModal(${n.id}, '${n.e164}')" class="text-blue-600 hover:text-blue-800 text-xs font-semibold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors">RIATTIVA</button>`;
-            } else {
-                 actions = `<span class="text-xs text-neutral-400">Nessuna azione</span>`;
+                actions = `<button onclick="openReactivateModal(${n.id}, '${n.e164}')" class="text-blue-600 hover:text-blue-800 text-xs font-semibold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors mr-1">RIATTIVA</button>`;
             }
+
+            // Add Edit Button
+            actions += `<button onclick='openEditPhoneNumberModal(${JSON.stringify(n)})' class="text-neutral-600 hover:text-neutral-900 text-xs font-semibold border border-neutral-200 bg-white hover:bg-neutral-50 px-2 py-1 rounded transition-colors mr-1">MODIFICA</button>`;
+
             // Aggiungi bottone ELIMINA a tutti
-            actions += `<button onclick="deletePhoneNumberPermanent(${n.id}, '${n.e164}')" class="ml-2 text-neutral-600 hover:text-red-800 text-xs font-semibold border border-neutral-200 bg-neutral-50 hover:bg-red-50 px-2 py-1 rounded transition-colors">ELIMINA</button>`;
+            actions += `<button onclick="deletePhoneNumberPermanent(${n.id}, '${n.e164}')" class="text-neutral-600 hover:text-red-800 text-xs font-semibold border border-neutral-200 bg-neutral-50 hover:bg-red-50 px-2 py-1 rounded transition-colors">ELIMINA</button>`;
 
             const username = n.username ? `${n.username} (ID: ${n.user_id})` : `<span class="text-yellow-600 font-medium">Non assegnato</span>`;
             const created = n.created_at ? n.created_at.split('T')[0] : "-";
             const notes = n.notes ? `<span title="${n.notes}" class="truncate max-w-[150px] inline-block cursor-help border-b border-dotted border-neutral-400">${n.notes}</span>` : "-";
+
+            // Office/Timezone summary
+            let officeSummary = "-";
+            if (n.office_phone_e164) {
+                officeSummary = `<div class="flex flex-col text-[10px] text-neutral-500">
+                    <span>${n.office_phone_e164}</span>
+                    <span class="text-[9px] opacity-75">${n.timezone}</span>
+                </div>`;
+            }
 
             tr.innerHTML = `
                 <td class="px-6 py-3 font-mono text-xs text-neutral-500">${n.id}</td>
@@ -892,8 +903,9 @@ async function loadPhoneNumbersTable() {
                 <td class="px-6 py-3 text-neutral-600">${username}</td>
                 <td class="px-6 py-3">${statusBadge}</td>
                 <td class="px-6 py-3 text-neutral-500">${notes}</td>
+                <td class="px-6 py-3">${officeSummary}</td>
                 <td class="px-6 py-3 text-neutral-500">${created}</td>
-                <td class="px-6 py-3 text-right">${actions}</td>
+                <td class="px-6 py-3 text-right flex justify-end gap-1">${actions}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -906,6 +918,21 @@ async function loadPhoneNumbersTable() {
 function openAddPhoneNumberModal() {
     const modal = document.getElementById("add-phonenumber-modal");
     if (modal) {
+        const container = document.getElementById("add-business-hours-container");
+        // Default hours
+        const defaultHours = {
+            "days": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+            "hours": ["09:00", "17:00"]
+        };
+        // Convert to detailed for editor
+        const detailed = {};
+        const allDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        allDays.forEach(d => {
+            if (defaultHours.days.includes(d)) detailed[d] = [...defaultHours.hours];
+        });
+
+        renderBusinessHoursEditor(container, detailed, "add");
+
         modal.classList.remove("hidden");
         modal.classList.add("flex");
     }
@@ -925,11 +952,22 @@ async function handleCreatePhoneNumber(event) {
     const form = event.target;
     const formData = new FormData(form);
 
+    const officePhone = formData.get("office_phone_e164");
+    if (officePhone && !officePhone.startsWith("+")) {
+        alert("Il numero ufficio deve iniziare con + (Formato E.164)");
+        return;
+    }
+
+    const openHours = collectBusinessHoursData("add");
+
     // Convert to JSON
     const payload = {
         e164: formData.get("e164"),
         user_id: parseInt(formData.get("user_id")),
-        notes: formData.get("notes")
+        notes: formData.get("notes"),
+        office_phone_e164: officePhone || null,
+        timezone: formData.get("timezone"),
+        open_hours_json: openHours
     };
 
     try {
@@ -951,6 +989,162 @@ async function handleCreatePhoneNumber(event) {
         console.error(e);
         showToast("Errore di rete", "error");
     }
+}
+
+function openEditPhoneNumberModal(phone) {
+    const modal = document.getElementById("edit-phonenumber-modal");
+    if (!modal) return;
+
+    document.getElementById("edit-phone-id").value = phone.id;
+    document.getElementById("edit-e164").value = phone.e164;
+    document.getElementById("edit-notes").value = phone.notes || "";
+    document.getElementById("edit-office-phone").value = phone.office_phone_e164 || "";
+    document.getElementById("edit-timezone").value = phone.timezone || "Europe/Rome";
+
+    const container = document.getElementById("edit-business-hours-container");
+
+    // Parse current hours
+    let currentHours = phone.open_hours_json;
+    // Normalize to detailed format for editor
+    let detailed = {};
+    const allDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    if (currentHours && currentHours.days && currentHours.hours) {
+        // Compact -> Detailed
+        allDays.forEach(d => {
+            if (currentHours.days.includes(d)) detailed[d] = [...currentHours.hours];
+        });
+    } else if (currentHours) {
+        // Detailed -> Detailed (copy valid ones)
+        allDays.forEach(d => {
+            if (currentHours[d]) detailed[d] = [...currentHours[d]];
+        });
+    } else {
+        // Default fallback if null
+        allDays.forEach(d => {
+            if (["Mon", "Tue", "Wed", "Thu", "Fri"].includes(d)) detailed[d] = ["09:00", "17:00"];
+        });
+    }
+
+    renderBusinessHoursEditor(container, detailed, "edit");
+
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+}
+
+function closeEditPhoneNumberModal() {
+    const modal = document.getElementById("edit-phonenumber-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        document.getElementById("edit-phonenumber-form").reset();
+    }
+}
+
+async function handleEditPhoneNumber(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    const id = formData.get("phone_id");
+
+    const officePhone = formData.get("office_phone_e164");
+    if (officePhone && !officePhone.startsWith("+")) {
+        alert("Il numero ufficio deve iniziare con + (Formato E.164)");
+        return;
+    }
+
+    const openHours = collectBusinessHoursData("edit");
+
+    const payload = {
+        notes: formData.get("notes"),
+        office_phone_e164: officePhone || "", // Send empty string to clear if user deleted it? Backend handles empty string -> None
+        timezone: formData.get("timezone"),
+        open_hours_json: openHours
+    };
+
+    try {
+        const res = await fetch(`/api/admin/phone-numbers/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            showToast("Numero aggiornato correttamente", "success");
+            closeEditPhoneNumberModal();
+            loadPhoneNumbersTable();
+        } else {
+            const err = await res.json();
+            showToast("Errore: " + (err.detail || "Impossibile aggiornare"), "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Errore di rete", "error");
+    }
+}
+
+// Helper to render business hours inputs
+function renderBusinessHoursEditor(container, data, prefix) {
+    container.innerHTML = "";
+    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const labels = {
+        "Mon": "Lun", "Tue": "Mar", "Wed": "Mer", "Thu": "Gio", "Fri": "Ven", "Sat": "Sab", "Sun": "Dom"
+    };
+
+    days.forEach(day => {
+        const isOpen = !!data[day];
+        const start = isOpen ? data[day][0] : "09:00";
+        const end = isOpen ? data[day][1] : "17:00";
+
+        const row = document.createElement("div");
+        row.className = "flex items-center gap-2 py-1";
+
+        row.innerHTML = `
+            <div class="w-8 font-mono font-bold text-neutral-500">${labels[day]}</div>
+            <label for="${prefix}-open-${day}" class="flex items-center cursor-pointer">
+                <input type="checkbox" class="sr-only peer" id="${prefix}-open-${day}" ${isOpen ? "checked" : ""} onchange="toggleHoursRow('${prefix}', '${day}')">
+                <div class="relative w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+            </label>
+            <div id="${prefix}-hours-${day}" class="flex items-center gap-1 ${isOpen ? "" : "opacity-30 pointer-events-none"}">
+                <input type="time" id="${prefix}-start-${day}" value="${start}" class="border border-neutral-300 rounded px-1 py-0.5 text-xs w-16 text-center">
+                <span class="text-neutral-400">-</span>
+                <input type="time" id="${prefix}-end-${day}" value="${end}" class="border border-neutral-300 rounded px-1 py-0.5 text-xs w-16 text-center">
+            </div>
+        `;
+        container.appendChild(row);
+    });
+}
+
+function toggleHoursRow(prefix, day) {
+    const checkbox = document.getElementById(`${prefix}-open-${day}`);
+    const container = document.getElementById(`${prefix}-hours-${day}`);
+    if (checkbox.checked) {
+        container.classList.remove("opacity-30", "pointer-events-none");
+    } else {
+        container.classList.add("opacity-30", "pointer-events-none");
+    }
+}
+
+function collectBusinessHoursData(prefix) {
+    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const result = {};
+    let hasOpenDays = false;
+
+    days.forEach(day => {
+        const checkbox = document.getElementById(`${prefix}-open-${day}`);
+        if (checkbox && checkbox.checked) {
+            const start = document.getElementById(`${prefix}-start-${day}`).value;
+            const end = document.getElementById(`${prefix}-end-${day}`).value;
+            if (start && end) {
+                result[day] = [start, end];
+                hasOpenDays = true;
+            }
+        }
+    });
+
+    // If empty result but we want to be explicit, return empty dict (means closed 24/7)
+    // If creating new, we might want default? No, explicit is better.
+    return result;
 }
 
 function releasePhoneNumber(id, e164) {
