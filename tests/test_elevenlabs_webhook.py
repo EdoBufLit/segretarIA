@@ -38,9 +38,9 @@ def test_webhook_missing_secret_config():
         # So patch.dict should work.
 
         response = client.post("/elevenlabs/webhook", json={"type": "ping"})
-        # Should NOT be 401. Likely 200 (ignored) or 200 (ok).
-        assert response.status_code == 200
-        assert response.json().get("status") == "ignored"
+        # Requirement: If required secret env var is missing, log a clear error and return 500.
+        assert response.status_code == 500
+        assert response.json().get("detail") == "Server misconfiguration"
 
 def test_webhook_no_header():
     with patch.dict(os.environ, {"ELEVENLABS_WEBHOOK_SECRET": SECRET}):
