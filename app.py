@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from db import get_db, SessionLocal
 from models import User, Subscription, Plan, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, PasswordResetToken, AgentSettings, CallLog, ChatMessage, Agent
+import pytz
 from auth import (
     hash_password,
     verify_password,
@@ -453,6 +454,11 @@ async def api_admin_create_phone_number(
     if existing:
         raise HTTPException(status_code=400, detail="Il numero è già presente nel sistema.")
 
+    # Validate Timezone
+    if payload.timezone:
+        if payload.timezone not in pytz.all_timezones:
+             raise HTTPException(status_code=400, detail="Timezone non valida.")
+
     service = AdminService(db)
     try:
         phone = service.create_phone_number(payload.e164, payload.user_id)
@@ -486,6 +492,11 @@ async def api_admin_update_phone_number(
     phone = db.query(PhoneNumber).filter(PhoneNumber.id == phone_id).first()
     if not phone:
         raise HTTPException(status_code=404, detail="Number not found")
+
+    # Validate Timezone
+    if payload.timezone:
+        if payload.timezone not in pytz.all_timezones:
+             raise HTTPException(status_code=400, detail="Timezone non valida.")
 
     if payload.notes is not None:
         phone.notes = payload.notes

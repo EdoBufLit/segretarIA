@@ -24,6 +24,15 @@ def upgrade() -> None:
     op.add_column('phone_numbers', sa.Column('timezone', sa.String(), nullable=False, server_default='Europe/Rome'))
     op.add_column('phone_numbers', sa.Column('open_hours_json', sa.JSON(), nullable=False, server_default='{"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "hours": ["09:00", "17:00"]}'))
 
+    # Ensure index on e164 exists (it should from previous migrations, but requested explicitly)
+    # Using batch_alter_table for SQLite compatibility if we needed to add constraints,
+    # but create_index is standalone.
+    # We check first to avoid error if it exists.
+    # Note: Alembic doesn't have native "if_not_exists" for indexes in all dialects.
+    # The previous migration bf6c473695ec already added 'ix_phone_numbers_e164'.
+    # We will just pass here as it is redundant and safer not to duplicate.
+    pass
+
 
 def downgrade() -> None:
     """Downgrade schema."""
