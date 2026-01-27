@@ -21,8 +21,19 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
     op.add_column('phone_numbers', sa.Column('office_phone_e164', sa.String(), nullable=True))
-    op.add_column('phone_numbers', sa.Column('timezone', sa.String(), nullable=False, server_default="'Europe/Rome'"))
-    op.add_column('phone_numbers', sa.Column('open_hours_json', sa.JSON(), nullable=False, server_default="'{\"days\": [\"Mon\", \"Tue\", \"Wed\", \"Thu\", \"Fri\"], \"hours\": [\"09:00\", \"17:00\"]}'"))
+
+    # Use sa.text for timezone default to ensure consistent quoting
+    op.add_column('phone_numbers', sa.Column('timezone', sa.String(), nullable=False, server_default=sa.text("'Europe/Rome'")))
+
+    # Use sa.text for JSON default to ensure correct raw SQL generation on Postgres
+    # This prevents Alembic from adding double quotes or misinterpreting the JSON string.
+    # The string inside sa.text() is the raw SQL value: '{"key": "value"}'
+    op.add_column('phone_numbers', sa.Column(
+        'open_hours_json',
+        sa.JSON(),
+        nullable=False,
+        server_default=sa.text('\'{"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "hours": ["09:00", "17:00"]}\'')
+    ))
 
     # Ensure index on e164 exists (it should from previous migrations, but requested explicitly)
     # Using batch_alter_table for SQLite compatibility if we needed to add constraints,
