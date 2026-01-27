@@ -38,6 +38,8 @@ def send_telegram_alert(message: str, parse_mode: str = None):
             resp = client.post(url, data=payload)
             if resp.status_code != 200:
                 logger.error(f"[Telegram] Failed to send alert: {resp.text}")
+    except (httpx.HTTPError, TimeoutError) as e:
+        logger.error(f"[Telegram] Network error sending alert: {e}")
     except Exception as e:
         logger.error(f"[Telegram] Error sending alert: {e}")
 

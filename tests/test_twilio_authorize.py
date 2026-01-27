@@ -1,10 +1,15 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock, patch
 from fastapi.testclient import TestClient
 from app import app, get_db
 from models import PhoneNumber, User, AgentRouting
 
 client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def allow_twilio_signature():
+    with patch("app.validate_twilio_signature", new=AsyncMock(return_value=True)):
+        yield
 
 @pytest.fixture
 def mock_db_session():

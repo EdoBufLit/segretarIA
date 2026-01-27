@@ -105,13 +105,13 @@ class AuthRedirectsTests(unittest.TestCase):
         self.login_as("admin")
         response = self.client.get("/dashboard", follow_redirects=False)
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Segreteria", response.content)
+        self.assertIn(b"Mr.Automa", response.content)
 
     def test_client_can_access_dashboard(self):
         self.login_as("client")
         response = self.client.get("/dashboard", follow_redirects=False)
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Segreteria", response.content)
+        self.assertIn(b"Mr.Automa", response.content)
 
     def test_client_accessing_client_dashboard_redirects_to_dashboard(self):
         self.login_as("client")

@@ -18,4 +18,6 @@ itsdangerous==2.2.0
 python-multipart==0.0.21
 httpx
 twilio
-audioop-lts
+pydub
+audioop-lts; python_version >= "3.13"
+pytest-asyncio

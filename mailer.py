@@ -1,9 +1,12 @@
 import os
 import smtplib
+import logging
 from email.message import EmailMessage
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger("mailer")
 
 EMAIL_FROM = os.getenv("EMAIL_FROM")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -55,11 +58,15 @@ def send_email(to_addr: str, subject: str, body: str, html_body: str = None, rep
 
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.ehlo()
             server.starttls()
+            server.ehlo()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.send_message(msg)
-        print(f"Email sent to {to_addr} with subject: '{subject}'")
+        logger.info("Email sent to %s with subject: %s", to_addr, subject)
+    except (smtplib.SMTPException, TimeoutError, OSError) as e:
+        logger.error("Failed to send email to %s: %s", to_addr, e)
+        raise
     except Exception as e:
-        print(f"Failed to send email to {to_addr}: {e}")
-        # In a real app, you'd want more robust error handling/logging here
+        logger.error("Unexpected error sending email to %s: %s", to_addr, e)
         raise

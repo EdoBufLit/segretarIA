@@ -1,7 +1,10 @@
-from unittest.mock import MagicMock, patch
-from auth import generate_reset_token, verify_reset_token, get_token_serializer
+from datetime import datetime, timedelta
+from unittest.mock import patch
+from auth import generate_reset_token, verify_reset_token, hash_password
 from app import app
 from fastapi.testclient import TestClient
+from db import SessionLocal
+from models import User, PasswordResetToken
 
 client = TestClient(app)
 
@@ -21,47 +24,88 @@ def test_reset_token_expiration():
     assert verified is None
 
 @patch("app.send_email")
-@patch("app.SessionLocal") # Mock DB for User query
-def test_forgot_password_flow(mock_session, mock_send_email):
-    # Mock User
-    mock_db = MagicMock()
-    mock_user = MagicMock()
-    mock_user.email = "test@example.com"
-    mock_user.username = "TestUser"
+def test_forgot_password_flow(mock_send_email):
+    email = "test@example.com"
 
-    mock_db.query.return_value.filter.return_value.first.return_value = mock_user
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(
+                username="testuser",
+                email=email,
+                password_hash=hash_password("password"),
+                role="client",
+                is_active=True,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
 
-    # We need to override get_db dependency or just rely on app.py logic which uses 'db' dependency
-    # The test client uses the app, so we should override_dependency
-    from db import get_db
-    app.dependency_overrides[get_db] = lambda: mock_db
-
-    response = client.post("/forgot-password", data={"email": "test@example.com"})
+    response = client.post("/forgot-password", data={"email": email})
 
     assert response.status_code == 200
-    # The message should be in the response, likely inside the HTML div we added
-    # "Se l'email esiste, riceverai un link per il reset della password."
     assert "Se l&#39;email esiste" in response.text or "Se l'email esiste" in response.text
 
-    # Verify email sent
-    # We used send_email(to, subject, body, from)
     mock_send_email.assert_called_once()
-    args, _ = mock_send_email.call_args
-    # args: (to, subject, body, from)
-    assert args[0] == "test@example.com"
-    assert "Reset Password" in args[1]
-    assert "/reset-password?token=" in args[2]
+    args, kwargs = mock_send_email.call_args
+    assert args[0] == email
+    assert args[1] == "Reimposta la tua password"
+
+    with SessionLocal() as db:
+        saved = db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).first()
+        assert saved is not None
+        assert saved.used_at is None
+        assert saved.expires_at is not None
+        assert saved.token_hash is not None
 
 def test_reset_password_page_valid_token():
-    email = "test@example.com"
-    token = generate_reset_token(email)
+    email = "reset_valid@example.com"
+    raw_token = "raw-reset-token"
 
-    response = client.get(f"/reset-password?token={token}")
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(
+                username="reset_valid_user",
+                email=email,
+                password_hash=hash_password("password"),
+                role="client",
+                is_active=True,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+        db_token = PasswordResetToken(
+            user_id=user.id,
+            token_hash=hash_password(raw_token),
+            expires_at=datetime.utcnow() + timedelta(minutes=30),
+        )
+        db.add(db_token)
+        db.commit()
+        user_id = user.id
+
+    response = client.get(f"/reset-password?token={raw_token}&uid={user_id}")
     assert response.status_code == 200
-    assert 'Imposta Nuova Password' in response.text
+    assert "Nuova Password" in response.text
     assert email in response.text
 
 def test_reset_password_page_invalid_token():
-    response = client.get("/reset-password?token=invalid_token")
+    email = "reset_invalid@example.com"
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(
+                username="reset_invalid_user",
+                email=email,
+                password_hash=hash_password("password"),
+                role="client",
+                is_active=True,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+    response = client.get(f"/reset-password?token=invalid_token&uid={user.id}")
     assert response.status_code == 200
     assert "Link scaduto o non valido" in response.text

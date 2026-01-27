@@ -1,5 +1,6 @@
 import os
 import json
+import httpx
 from typing import Any, Dict, Optional, List
 from openai import OpenAI
 from db import SessionLocal
@@ -101,10 +102,17 @@ Transcript:
 \"\"\"{combined_text}\"\"\"
 """
 
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": instructions}],
-    )
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": instructions}],
+        )
+    except (httpx.HTTPError, TimeoutError) as exc:
+        logger.error("[OPENAI] Network error during summarization: %s", exc)
+        raise
+    except Exception as exc:
+        logger.error("[OPENAI] Unexpected error during summarization: %s", exc)
+        raise
 
     raw = resp.choices[0].message.content
 

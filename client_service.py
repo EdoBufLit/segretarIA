@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import math
+import logging
 from sqlalchemy.orm import Session
 from models import User, Subscription, UsageEvent, PhoneNumber, Plan
 from mailer import send_email
@@ -127,7 +128,12 @@ class ClientService:
             admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
             subject = f"[CANCEL] Cliente {self.user.studio_name or self.user.username} ha annullato. Numero in disdetta tra 30gg: {phone_number.e164}"
             body = f"<p>Il cliente {self.user.studio_name or self.user.username} (ID: {self.user.id}) ha annullato la sua sottoscrizione.</p><p>Il suo numero <b>{phone_number.e164}</b> è stato schedulato per la disdetta manuale tra 30 giorni.</p>"
-            send_email(admin_email, subject, body)
+            try:
+                send_email(admin_email, subject, body)
+            except Exception as exc:
+                logging.getLogger("client_service").error(
+                    "Failed to send cancellation email to %s: %s", admin_email, exc
+                )
 
         self.db.commit()
 

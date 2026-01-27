@@ -4,6 +4,7 @@ import asyncio
 import logging
 import websockets
 import os
+import io
 try:
     import audioop
 except ImportError:
@@ -12,6 +13,7 @@ import time
 from fastapi import WebSocket, WebSocketDisconnect
 from services.call_session import CallSessionManager, CallStatus
 from typing import Dict
+from pydub import AudioSegment
 
 logger = logging.getLogger("app.services.realtime_bridge")
 
@@ -41,7 +43,7 @@ async def terminate_session(call_sid: str):
 class RealtimeSession:
     """
     Manages the bi-directional audio bridge between Twilio Media Streams and ElevenLabs Realtime (ConvAI).
-    Handles transcoding between Twilio (G.711 mulaw, 8000Hz) and ElevenLabs (PCM, 16000Hz).
+    Handles transcoding between Twilio (G.711 mulaw, 8000Hz) and ElevenLabs (mulaw, 8000Hz).
     """
     def __init__(self, twilio_ws: WebSocket, agent_id: str):
         self.twilio_ws = twilio_ws
@@ -53,8 +55,6 @@ class RealtimeSession:
         self.tasks = set()
 
         # Audio Transcoding State
-        # Twilio (8k) -> EL (16k)
-        self.in_rate_state = None
         # EL (16k) -> Twilio (8k)
         self.out_rate_state = None
 
@@ -116,7 +116,7 @@ class RealtimeSession:
     async def handle_twilio_messages(self):
         """
         Reads messages from Twilio WebSocket, transcodes audio, and forwards to ElevenLabs.
-        Twilio: mulaw 8000Hz -> ElevenLabs: PCM 16000Hz
+        Twilio: mulaw 8000Hz -> ElevenLabs: mulaw 8000Hz
         """
         try:
             async for message in self.twilio_ws.iter_text():
@@ -154,19 +154,10 @@ class RealtimeSession:
                             # 1. Decode base64
                             chunk = base64.b64decode(payload_b64)
 
-                            # 2. Transcode: mulaw 8k -> PCM 16-bit 8k
-                            # width=2 means 16-bit
-                            pcm_8k = audioop.ulaw2lin(chunk, 2)
+                            # 2. Ensure mulaw 8k encoding for ElevenLabs
+                            out_b64 = base64.b64encode(self._to_mulaw_8k(chunk)).decode('utf-8')
 
-                            # 3. Resample: 8k -> 16k
-                            pcm_16k, self.in_rate_state = audioop.ratecv(
-                                pcm_8k, 2, 1, 8000, 16000, self.in_rate_state
-                            )
-
-                            # 4. Encode base64
-                            out_b64 = base64.b64encode(pcm_16k).decode('utf-8')
-
-                            # 5. Send to ElevenLabs
+                            # 3. Send to ElevenLabs
                             msg = {
                                 "user_audio_chunk": out_b64
                             }
@@ -241,6 +232,26 @@ class RealtimeSession:
         except Exception as e:
             logger.error(f"Error handling ElevenLabs messages: {e}")
             raise
+
+    def _to_mulaw_8k(self, mulaw_8k: bytes) -> bytes:
+        """
+        Ensures audio bytes are encoded as 8-bit mu-law at 8000 Hz using pydub/ffmpeg.
+        """
+        try:
+            pcm_8k = audioop.ulaw2lin(mulaw_8k, 2)
+            segment = AudioSegment(
+                data=pcm_8k,
+                sample_width=2,
+                frame_rate=8000,
+                channels=1,
+            )
+            segment = segment.set_frame_rate(8000).set_sample_width(1).set_channels(1)
+            buffer = io.BytesIO()
+            segment.export(buffer, format="wav", codec="pcm_mulaw")
+            return buffer.getvalue()
+        except Exception as exc:
+            logger.error("Failed to convert audio to mulaw 8k: %s", exc)
+            return mulaw_8k
 
     async def close(self):
         """

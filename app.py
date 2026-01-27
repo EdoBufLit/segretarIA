@@ -105,6 +105,31 @@ if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
     except Exception as e:
         logger.error(f"Failed to initialize Twilio Client: {e}")
 
+
+async def validate_twilio_signature(request: Request) -> bool:
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    if not auth_token:
+        logger.error("TWILIO_AUTH_TOKEN not set; rejecting Twilio webhook.")
+        return False
+
+    signature = request.headers.get("X-Twilio-Signature", "")
+    url = str(request.url)
+    validator = RequestValidator(auth_token)
+
+    if request.method in ("POST", "PUT", "PATCH"):
+        content_type = request.headers.get("content-type", "")
+        if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+            form_data = await request.form()
+            params = {k: v for k, v in form_data.items()}
+            return validator.validate(url, params, signature)
+
+        body = await request.body()
+        body_str = body.decode("utf-8") if isinstance(body, (bytes, bytearray)) else str(body)
+        return validator.validate(url, body_str, signature)
+
+    params = dict(request.query_params)
+    return validator.validate(url, params, signature)
+
 app = FastAPI()
 app.add_middleware(
     SessionMiddleware,
@@ -1004,6 +1029,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/twilio/authorize")
 async def twilio_authorize(
+    request: Request,
     To: str = Form(...),
     From: str = Form(...),
     CallSid: str = Form(...),
@@ -1013,6 +1039,10 @@ async def twilio_authorize(
     Authorize incoming Twilio calls.
     Returns: { "allowed": true } or { "allowed": false, "reason": "..." }
     """
+    if not await validate_twilio_signature(request):
+        logger.warning(f"Invalid Twilio Signature for authorize {CallSid}")
+        return Response(status_code=403, content="Invalid Signature")
+
     # Normalize To (remove spaces)
     normalized_to = To.replace(" ", "").strip()
 
@@ -1058,27 +1088,9 @@ async def twilio_voice(
     Enforces Twilio Signature validation.
     """
     # 0. Signature Validation
-    check_signature = os.getenv("TWILIO_SIGNATURE_CHECK", "true").lower() == "true"
-    if check_signature:
-        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        if not auth_token:
-            logger.warning("TWILIO_AUTH_TOKEN not set, skipping signature check but strictly required.")
-        else:
-            validator = RequestValidator(auth_token)
-            signature = request.headers.get("X-Twilio-Signature", "")
-            # Construct full URL (including scheme/host/params if any)
-            # Twilio signs the exact URL they sent.
-            # If behind proxy, standard headers usually help request.url match original.
-            # request.url is a URL object, convert to str
-            url = str(request.url)
-
-            # Form params dict
-            form_data = await request.form()
-            params = {k: v for k, v in form_data.items()}
-
-            if not validator.validate(url, params, signature):
-                logger.warning(f"Invalid Twilio Signature for call {CallSid}")
-                return Response(status_code=403, content="Invalid Signature")
+    if not await validate_twilio_signature(request):
+        logger.warning(f"Invalid Twilio Signature for call {CallSid}")
+        return Response(status_code=403, content="Invalid Signature")
 
     # Normalize To
     normalized_to = To.replace(" ", "").strip()
@@ -1226,6 +1238,10 @@ async def twilio_after_dial(
     If 'completed', we hangup.
     If 'busy', 'no-answer', 'failed', 'canceled', we fallback to AI.
     """
+    if not await validate_twilio_signature(request):
+        logger.warning(f"Invalid Twilio Signature for after_dial {CallSid}")
+        return Response(status_code=403, content="Invalid Signature")
+
     logger.info(f"After Dial: status={DialCallStatus} agent={agent_id}")
 
     if DialCallStatus == "completed":
@@ -1346,6 +1362,10 @@ async def twilio_barge_in_connect(
     TwiML endpoint for barge-in connection.
     Verifies that the human was actually requested before dialing.
     """
+    if not await validate_twilio_signature(request):
+        logger.warning(f"Invalid Twilio Signature for barge-in connect {CallSid}")
+        return Response(status_code=403, content="Invalid Signature")
+
     mgr = CallSessionManager()
     session = mgr.get_session(CallSid)
 
@@ -1409,7 +1429,7 @@ async def elevenlabs_webhook(request: Request):
             # ALERTING: Invalid Signature
             log_critical_error("Webhook ElevenLabs - firma non valida!", context={"action": "webhook_signature_check"})
             logger.warning("[WEBHOOK] Invalid signature")
-            return Response(status_code=401)
+            return Response(status_code=403)
 
     # 1) Parse
     try:
@@ -3215,7 +3235,7 @@ async def test_call(agent_id: str, db: Session = Depends(get_db), admin: User = 
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(url, headers=headers, json=body)
         if resp.status_code >= 400:
-            print("Test call error:", resp.status_code, resp.text)
+            logger.error("Test call error: %s %s", resp.status_code, resp.text)
             raise HTTPException(
                 status_code=resp.status_code,
                 detail=f"Errore ElevenLabs: {resp.text}"
@@ -3227,6 +3247,9 @@ async def test_call(agent_id: str, db: Session = Depends(get_db), admin: User = 
 
     except HTTPException:
         raise
+    except (httpx.HTTPError, TimeoutError) as e:
+        logger.error("Test call network error: %s", e)
+        raise HTTPException(status_code=502, detail="Errore servizio esterno")
     except Exception as e:
-        print("Test call exception:", e)
+        logger.error("Test call exception: %s", e)
         raise HTTPException(status_code=500, detail="Errore interno nella chiamata di test")

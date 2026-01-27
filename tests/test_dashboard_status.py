@@ -17,6 +17,9 @@ def create_mock_user(role="client", is_active=True, id=1):
     user.role = role
     user.studio_name = "Test Studio"
     user.is_active = is_active
+    user.plan_expires_at = None
+    user.subscription_plan = "NONE"
+    user.has_active_plan.return_value = False
     # Mock agents list
     user.agents = []
     return user
