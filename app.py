@@ -54,11 +54,12 @@ from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
-from services.realtime_bridge import RealtimeSession
+from services.realtime_bridge import RealtimeSession, terminate_session
 from services.business_hours import is_open_now
 from services.validators import validate_open_hours_schema
 from services.call_session import CallSessionManager, CallStatus
 from twilio.request_validator import RequestValidator
+from twilio.rest import Client as TwilioClient
 from alerting import (
     log_critical_error,
     track_webhook_success,
@@ -93,6 +94,16 @@ if not SECRET_KEY:
 
 if len(SECRET_KEY) < 32:
     logger.warning("SECRET_KEY is too short (less than 32 chars). Please use a stronger key in production.")
+
+# Twilio Client (for outbound calls / modifications)
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+twilio_client = None
+if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+    try:
+        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    except Exception as e:
+        logger.error(f"Failed to initialize Twilio Client: {e}")
 
 app = FastAPI()
 app.add_middleware(
@@ -1250,6 +1261,77 @@ async def websocket_twilio(websocket: WebSocket, agent_id: str = Query(...), db:
 
     session = RealtimeSession(websocket, agent_id)
     await session.start()
+
+
+@app.post("/calls/{call_sid}/barge-in")
+async def calls_barge_in(
+    call_sid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Endpoints to request human barge-in.
+    Stops AI, updates status, and redirects call to office number.
+    """
+    mgr = CallSessionManager()
+    session = mgr.get_session(call_sid)
+
+    # 1. Verify Session
+    if not session:
+        raise HTTPException(status_code=404, detail="Call session not found")
+
+    if session.get("status") != CallStatus.AI_ACTIVE:
+        raise HTTPException(status_code=400, detail=f"Call not eligible for barge-in (status: {session.get('status')})")
+
+    agent_id = session.get("agent_id")
+
+    # 2. Authorization
+    if current_user.role != "admin":
+        # Check if user owns this agent
+        # We check if any of the user's agents match the session agent_id
+        has_access = any(a.agent_id == agent_id for a in current_user.agents)
+        if not has_access:
+            # Fallback: Check AgentRouting directly if user_agents might be stale/lazy
+            routing = db.query(AgentRouting).filter(
+                AgentRouting.agent_id == agent_id,
+                AgentRouting.user_id == current_user.id
+            ).first()
+            if not routing:
+                raise HTTPException(status_code=403, detail="Access denied")
+
+    # 3. Update Status
+    try:
+        mgr.update_status(call_sid, CallStatus.HUMAN_REQUESTED)
+    except Exception as e:
+        logger.error(f"Barge-in: Failed to update Redis for {call_sid}: {e}")
+
+    # 4. Terminate WebSocket (Stop AI)
+    await terminate_session(call_sid)
+
+    # 5. Redirect Call (Connect Human)
+    office_phone = session.get("office_phone_e164")
+    if office_phone and twilio_client:
+        try:
+            # Construct Action URL for the Dial (so we know when it ends)
+            base_url = get_public_base_url()
+            action_url = f"{base_url}/twilio/after_dial?agent_id={agent_id}"
+
+            # Simple TwiML to Dial
+            twiml = f'<Response><Dial timeout="15" action="{action_url}">{office_phone}</Dial></Response>'
+
+            twilio_client.calls(call_sid).update(twiml=twiml)
+            logger.info(f"Barge-in: Redirected {call_sid} to {office_phone}")
+        except Exception as e:
+            logger.error(f"Barge-in: Twilio redirect failed for {call_sid}: {e}")
+            # We don't fail the request because the AI is at least stopped
+    else:
+        logger.warning(f"Barge-in: No office phone or Twilio client configured for {call_sid}")
+
+    return {
+        "status": "ok",
+        "call_status": CallStatus.HUMAN_REQUESTED,
+        "office_phone": office_phone
+    }
 
 
 # ================== WEBHOOK ELEVENLABS ==================

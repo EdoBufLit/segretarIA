@@ -30,7 +30,7 @@ class CallSessionManager:
             "started_at": str(self.redis.time()[0])
         }
         if office_phone_e164:
-             mapping["office_phone_e164"] = office_phone_e164
+            mapping["office_phone_e164"] = office_phone_e164
 
         try:
             self.redis.hset(key, mapping=mapping)

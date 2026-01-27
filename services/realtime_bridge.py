@@ -11,8 +11,23 @@ except ImportError:
 import time
 from fastapi import WebSocket, WebSocketDisconnect
 from services.call_session import CallSessionManager, CallStatus
+from typing import Dict
 
 logger = logging.getLogger("app.services.realtime_bridge")
+
+# Registry of active sessions by CallSid
+active_sessions: Dict[str, "RealtimeSession"] = {}
+
+async def terminate_session(call_sid: str):
+    """
+    Terminates the WebSocket session for a given CallSid.
+    """
+    session = active_sessions.get(call_sid)
+    if session:
+        logger.info(f"Terminating session for {call_sid}")
+        await session.close()
+    else:
+        logger.warning(f"Attempted to terminate non-existent session {call_sid}")
 
 class RealtimeSession:
     """
@@ -103,6 +118,9 @@ class RealtimeSession:
                     self.stream_sid = data.get("start", {}).get("streamSid")
                     call_sid = data.get("start", {}).get("callSid")
                     self.call_sid = call_sid
+
+                    # Register session
+                    active_sessions[call_sid] = self
 
                     # Update Call Session
                     try:
@@ -223,6 +241,10 @@ class RealtimeSession:
             return
 
         self.is_open = False
+
+        # Unregister
+        if self.call_sid and self.call_sid in active_sessions:
+            del active_sessions[self.call_sid]
         duration_ms = int((time.time() - self.start_time) * 1000)
 
         # Log session closed with stats
@@ -239,7 +261,11 @@ class RealtimeSession:
         # Cleanup Call Session
         if self.call_sid:
             try:
-                CallSessionManager().end_session(self.call_sid)
+                mgr = CallSessionManager()
+                current_session = mgr.get_session(self.call_sid)
+                # Only end session if it's not transitioning to human
+                if current_session and current_session.get("status") != CallStatus.HUMAN_REQUESTED:
+                    mgr.end_session(self.call_sid)
             except Exception as e:
                 logger.error(f"Failed to end session for {self.call_sid}: {e}")
 
