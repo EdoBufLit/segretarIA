@@ -56,6 +56,7 @@ from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
 from services.realtime_bridge import RealtimeSession
 from services.business_hours import is_open_now
+from services.validators import validate_open_hours_schema
 from twilio.request_validator import RequestValidator
 from alerting import (
     log_critical_error,
@@ -460,6 +461,11 @@ async def api_admin_create_phone_number(
         if payload.timezone not in pytz.all_timezones:
              raise HTTPException(status_code=400, detail="Timezone non valida.")
 
+    # Validate Open Hours Schema
+    if payload.open_hours_json:
+        if not validate_open_hours_schema(payload.open_hours_json):
+             raise HTTPException(status_code=400, detail="Formato orari non valido.")
+
     service = AdminService(db)
     try:
         phone = service.create_phone_number(payload.e164, payload.user_id)
@@ -498,6 +504,11 @@ async def api_admin_update_phone_number(
     if payload.timezone:
         if payload.timezone not in pytz.all_timezones:
              raise HTTPException(status_code=400, detail="Timezone non valida.")
+
+    # Validate Open Hours Schema
+    if payload.open_hours_json is not None:
+        if not validate_open_hours_schema(payload.open_hours_json):
+             raise HTTPException(status_code=400, detail="Formato orari non valido.")
 
     if payload.notes is not None:
         phone.notes = payload.notes
