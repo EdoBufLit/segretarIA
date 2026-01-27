@@ -4,6 +4,7 @@ import uuid
 import secrets
 import sentry_sdk
 import re
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel, field_validator
@@ -1310,15 +1311,25 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
 
     start_message = None
 
-    # If agent_id is missing, wait for the first message (start event) to find it
+    # If agent_id is missing, wait for the start event to find it
     if not agent_id:
         try:
-            # Wait for the first message
-            raw_msg = await websocket.receive_text()
-            data = json.loads(raw_msg)
+            deadline = time.monotonic() + 5
+            while True:
+                timeout = deadline - time.monotonic()
+                if timeout <= 0:
+                    logger.warning("DEBUG: Timed out waiting for start event with agent_id.")
+                    break
 
-            if data.get("event") == "start":
-                start_message = data # Save it to pass to session
+                raw_msg = await asyncio.wait_for(websocket.receive_text(), timeout=timeout)
+                data = json.loads(raw_msg)
+                event_type = data.get("event")
+
+                if event_type != "start":
+                    logger.warning(f"DEBUG: Ignoring non-start event while waiting for agent_id: {event_type}")
+                    continue
+
+                start_message = data  # Save it to pass to session
                 call_sid = data.get("start", {}).get("callSid")
 
                 # Attempt 1: Resolve from Redis Session (Server-side truth)
@@ -1336,19 +1347,38 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
                 if not agent_id:
                     params = data.get("start", {}).get("customParameters", {})
                     agent_id = params.get("agent_id")
-                    logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
+                    if agent_id:
+                        logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
 
-            else:
-                logger.warning(f"DEBUG: First message was not 'start': {data.get('event')}")
+                # Attempt 3: Fallback to phone number in start payload ("to")
+                if not agent_id:
+                    to_number = data.get("start", {}).get("to") or data.get("start", {}).get("To")
+                    if to_number:
+                        normalized_to = normalize_phone_number(to_number)
+                        phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
+                        if phone:
+                            routing = db.query(AgentRouting).filter(
+                                AgentRouting.phone_number_id == phone.id,
+                                AgentRouting.is_active == True
+                            ).first()
+                            if routing and routing.agent_id:
+                                agent_id = routing.agent_id
+                                logger.info(f"DEBUG: agent_id resolved from To={normalized_to}: {agent_id}")
+                        if not agent_id:
+                            logger.warning(f"DEBUG: No agent routing found for To={normalized_to}")
+
+                break
+        except asyncio.TimeoutError:
+            logger.warning("DEBUG: Timed out waiting for start event with agent_id.")
         except Exception as e:
             logger.error(f"Error receiving start event: {e}")
             await websocket.close()
             return
 
     if not agent_id:
-         logger.info("DEBUG: agent_id mancante o vuoto dopo check start event")
-         await websocket.close(code=4003)
-         return
+        logger.info("DEBUG: agent_id mancante o vuoto dopo check start event")
+        await websocket.close(code=4003)
+        return
 
     # Validate Agent
     routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id, AgentRouting.is_active == True).first()
