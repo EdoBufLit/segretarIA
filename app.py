@@ -4,6 +4,7 @@ import uuid
 import secrets
 import sentry_sdk
 import re
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel, field_validator
@@ -76,6 +77,12 @@ templates = Jinja2Templates(directory="templates")
 configure_logging()
 # Get structlog logger? Or use stdlib which is now intercepted
 logger = logging.getLogger("app")
+
+
+def _log_step_duration(message: str, start_time: float) -> None:
+    duration_ms = (time.perf_counter() - start_time) * 1000
+    lag = " (LAG!)" if duration_ms > 500 else ""
+    logger.info(f"{message} | duration: {duration_ms:.0f}ms{lag}")
 
 # Sentry
 SENTRY_DSN = os.getenv("SENTRY_DSN")
@@ -1074,7 +1081,9 @@ async def twilio_authorize(
     normalized_to = normalize_phone_number(To)
 
     # 1. Lookup Phone Number
+    phone_start = time.perf_counter()
     phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
+    _log_step_duration("DB query PhoneNumber", phone_start)
     if not phone:
         return {"allowed": False, "reason": "Number not found"}
 
@@ -1093,7 +1102,9 @@ async def twilio_authorize(
 
     # 5. Check Agent Routing
     # If a routing exists for this phone number, verify it is active.
+    routing_start = time.perf_counter()
     routing = db.query(AgentRouting).filter(AgentRouting.phone_number_id == phone.id).first()
+    _log_step_duration("DB query AgentRouting", routing_start)
     if routing:
         if not routing.is_active:
             return {"allowed": False, "reason": "Agent disabled"}
@@ -1124,7 +1135,9 @@ async def twilio_voice(
     normalized_to = normalize_phone_number(To)
 
     # 1. Lookup Phone
+    phone_start = time.perf_counter()
     phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
+    _log_step_duration("DB query PhoneNumber", phone_start)
 
     allowed = False
     reason = None
@@ -1133,7 +1146,9 @@ async def twilio_voice(
     if not phone:
         reason = "Number not found"
     else:
+        user_start = time.perf_counter()
         user = phone.user
+        _log_step_duration("DB query User", user_start)
         if not user:
             reason = "User not found"
         elif not user.is_active:
@@ -1142,10 +1157,12 @@ async def twilio_voice(
             reason = "No active plan"
         else:
             # Check Routing
+            routing_start = time.perf_counter()
             routing = db.query(AgentRouting).filter(
                 AgentRouting.phone_number_id == phone.id,
                 AgentRouting.is_active == True
             ).first()
+            _log_step_duration("DB query AgentRouting", routing_start)
             if routing:
                 if routing.agent_id:
                     agent_id = routing.agent_id
@@ -1303,22 +1320,34 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
     we parse it from the initial 'start' event.
     """
     logger.info("DEBUG: Entrato in websocket_twilio")
+    accept_start = time.perf_counter()
     await websocket.accept()
+    _log_step_duration("WebSocket accettato (nuova chiamata Twilio)", accept_start)
     logger.info(f"DEBUG: URL richiesta: {websocket.url}")
     logger.info(f"DEBUG: Query params: {websocket.query_params}")
     logger.info(f"DEBUG: agent_id initial = {agent_id}")
 
     start_message = None
 
-    # If agent_id is missing, wait for the first message (start event) to find it
+    # If agent_id is missing, wait for the start event to find it
     if not agent_id:
         try:
-            # Wait for the first message
-            raw_msg = await websocket.receive_text()
-            data = json.loads(raw_msg)
+            deadline = time.monotonic() + 5
+            while True:
+                timeout = deadline - time.monotonic()
+                if timeout <= 0:
+                    logger.warning("DEBUG: Timed out waiting for start event with agent_id.")
+                    break
 
-            if data.get("event") == "start":
-                start_message = data # Save it to pass to session
+                raw_msg = await asyncio.wait_for(websocket.receive_text(), timeout=timeout)
+                data = json.loads(raw_msg)
+                event_type = data.get("event")
+
+                if event_type != "start":
+                    logger.warning(f"DEBUG: Ignoring non-start event while waiting for agent_id: {event_type}")
+                    continue
+
+                start_message = data  # Save it to pass to session
                 call_sid = data.get("start", {}).get("callSid")
 
                 # Attempt 1: Resolve from Redis Session (Server-side truth)
@@ -1336,24 +1365,45 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
                 if not agent_id:
                     params = data.get("start", {}).get("customParameters", {})
                     agent_id = params.get("agent_id")
-                    logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
+                    if agent_id:
+                        logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
 
-            else:
-                logger.warning(f"DEBUG: First message was not 'start': {data.get('event')}")
+                # Attempt 3: Fallback to phone number in start payload ("to")
+                if not agent_id:
+                    to_number = data.get("start", {}).get("to") or data.get("start", {}).get("To")
+                    if to_number:
+                        normalized_to = normalize_phone_number(to_number)
+                        phone = db.query(PhoneNumber).filter(PhoneNumber.e164 == normalized_to).first()
+                        if phone:
+                            routing = db.query(AgentRouting).filter(
+                                AgentRouting.phone_number_id == phone.id,
+                                AgentRouting.is_active == True
+                            ).first()
+                            if routing and routing.agent_id:
+                                agent_id = routing.agent_id
+                                logger.info(f"DEBUG: agent_id resolved from To={normalized_to}: {agent_id}")
+                        if not agent_id:
+                            logger.warning(f"DEBUG: No agent routing found for To={normalized_to}")
+
+                break
+        except asyncio.TimeoutError:
+            logger.warning("DEBUG: Timed out waiting for start event with agent_id.")
         except Exception as e:
             logger.error(f"Error receiving start event: {e}")
             await websocket.close()
             return
 
     if not agent_id:
-         logger.info("DEBUG: agent_id mancante o vuoto dopo check start event")
-         await websocket.close(code=4003)
-         return
+        logger.info("DEBUG: agent_id mancante o vuoto dopo check start event")
+        logger.error("Errore WebSocket: agent_id mancante, chiusura connessione")
+        await websocket.close(code=4003)
+        return
 
     # Validate Agent
     routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id, AgentRouting.is_active == True).first()
     if not routing:
         logger.warning(f"WebSocket rejected: Invalid or inactive agent {agent_id}")
+        logger.error("Errore WebSocket: agente non valido o inattivo, chiusura connessione")
         await websocket.close(code=4003) # Forbidden
         return
 
