@@ -1015,8 +1015,15 @@ async def twilio_voice(
 
     # 3. Construct WebSocket URL
     # Replace http/https with ws/wss
-    base_url = get_public_base_url(request)
-    ws_base = base_url.replace("http://", "ws://").replace("https://", "wss://")
+    base_url = str(request.base_url).rstrip("/")
+    # Force HTTPS/WSS if we are behind a proxy that terminates SSL (common in production)
+    # or rely on request.url.scheme.
+    # To follow the pattern of get_public_base_url but simpler for this context:
+    if "https" in base_url:
+        ws_base = base_url.replace("https://", "wss://")
+    else:
+        ws_base = base_url.replace("http://", "ws://")
+
     stream_url = f"{ws_base}/ws/twilio?agent_id={agent_id}"
 
     # 4. Return TwiML

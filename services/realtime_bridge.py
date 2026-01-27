@@ -5,6 +5,7 @@ import logging
 import websockets
 import os
 import audioop
+import time
 from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("app.services.realtime_bridge")
@@ -20,12 +21,18 @@ class RealtimeSession:
         self.stream_sid = None
         self.eleven_ws = None
         self.is_open = True
+        self.tasks = set()
 
         # Audio Transcoding State
         # Twilio (8k) -> EL (16k)
         self.in_rate_state = None
         # EL (16k) -> Twilio (8k)
         self.out_rate_state = None
+
+        # Stats
+        self.frames_in = 0
+        self.frames_out = 0
+        self.start_time = time.time()
 
     async def start(self):
         """
@@ -53,15 +60,24 @@ class RealtimeSession:
                 twilio_task = asyncio.create_task(self.handle_twilio_messages())
                 eleven_task = asyncio.create_task(self.handle_eleven_messages())
 
-                # Wait for either to finish (likely due to close/error)
-                done, pending = await asyncio.wait(
-                    [twilio_task, eleven_task],
-                    return_when=asyncio.FIRST_COMPLETED
-                )
+                self.tasks.add(twilio_task)
+                self.tasks.add(eleven_task)
 
-                # Cancel pending task
-                for task in pending:
-                    task.cancel()
+                # Clean up task references when done
+                twilio_task.add_done_callback(self.tasks.discard)
+                eleven_task.add_done_callback(self.tasks.discard)
+
+                # Wait for either to finish (likely due to close/error)
+                try:
+                    done, pending = await asyncio.wait(
+                        [twilio_task, eleven_task],
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+                except asyncio.CancelledError:
+                    logger.info("RealtimeSession cancelled.")
+                finally:
+                    # Logic is handled in close(), but we can ensure tasks are cancelled here if not already
+                    pass
 
         except Exception as e:
             logger.error(f"Error in RealtimeSession: {e}")
@@ -86,6 +102,7 @@ class RealtimeSession:
                     if self.eleven_ws:
                         payload_b64 = data.get("media", {}).get("payload")
                         if payload_b64:
+                            self.frames_in += 1
                             # 1. Decode base64
                             chunk = base64.b64decode(payload_b64)
 
@@ -113,6 +130,9 @@ class RealtimeSession:
 
         except WebSocketDisconnect:
             logger.info("Twilio WebSocket disconnected.")
+        except asyncio.CancelledError:
+            # Expected during shutdown
+            raise
         except Exception as e:
             logger.error(f"Error handling Twilio messages: {e}")
             raise
@@ -132,6 +152,7 @@ class RealtimeSession:
                     payload_b64 = audio_event.get("audio_base_64")
 
                     if payload_b64 and self.stream_sid:
+                        self.frames_out += 1
                         # 1. Decode base64
                         chunk = base64.b64decode(payload_b64)
 
@@ -166,11 +187,52 @@ class RealtimeSession:
                 elif msg_type == "ping":
                     pass
 
+        except asyncio.CancelledError:
+            # Expected during shutdown
+            raise
         except Exception as e:
             logger.error(f"Error handling ElevenLabs messages: {e}")
             raise
 
     async def close(self):
+        """
+        Closes the session cleanly. Idempotent.
+        """
+        if not self.is_open:
+            return
+
         self.is_open = False
+        duration_ms = int((time.time() - self.start_time) * 1000)
+
+        # Log session closed with stats
+        log_data = {
+            "event": "session_closed",
+            "agent_id": self.agent_id,
+            "call_sid": self.stream_sid,
+            "frames_in": self.frames_in,
+            "frames_out": self.frames_out,
+            "duration_ms": duration_ms
+        }
+        logger.info(json.dumps(log_data))
+
+        # Cancel all running tasks
+        for task in self.tasks:
+            if not task.done():
+                task.cancel()
+
+        # Wait for tasks to finish cancelling to avoid "Task was destroyed but it is pending!"
+        # (Optional but good practice if we want to be super clean, though close() is often fire-and-forget)
+
+        # Explicitly close WebSockets
         if self.eleven_ws:
-            await self.eleven_ws.close()
+            try:
+                await self.eleven_ws.close()
+            except Exception:
+                pass # Ignore errors during close
+
+        if self.twilio_ws:
+            try:
+                # 1000 = Normal Closure
+                await self.twilio_ws.close(code=1000)
+            except Exception:
+                pass # Ignore if already closed
