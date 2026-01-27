@@ -10,6 +10,7 @@ except ImportError:
     import audioop_lts as audioop
 import time
 from fastapi import WebSocket, WebSocketDisconnect
+from services.call_session import CallSessionManager, CallStatus
 
 logger = logging.getLogger("app.services.realtime_bridge")
 
@@ -22,6 +23,7 @@ class RealtimeSession:
         self.twilio_ws = twilio_ws
         self.agent_id = agent_id
         self.stream_sid = None
+        self.call_sid = None
         self.eleven_ws = None
         self.is_open = True
         self.tasks = set()
@@ -100,6 +102,16 @@ class RealtimeSession:
                 if event_type == "start":
                     self.stream_sid = data.get("start", {}).get("streamSid")
                     call_sid = data.get("start", {}).get("callSid")
+                    self.call_sid = call_sid
+
+                    # Update Call Session
+                    try:
+                        mgr = CallSessionManager()
+                        mgr.update_stream_sid(call_sid, self.stream_sid)
+                        mgr.update_status(call_sid, CallStatus.AI_ACTIVE)
+                    except Exception as e:
+                        logger.error(f"Failed to update call session for {call_sid}: {e}")
+
                     logger.info(json.dumps({
                         "event": "twilio_stream_start",
                         "streamSid": self.stream_sid,
@@ -223,6 +235,13 @@ class RealtimeSession:
             "duration_ms": duration_ms
         }
         logger.info(json.dumps(log_data))
+
+        # Cleanup Call Session
+        if self.call_sid:
+            try:
+                CallSessionManager().end_session(self.call_sid)
+            except Exception as e:
+                logger.error(f"Failed to end session for {self.call_sid}: {e}")
 
         # Cancel all running tasks
         for task in self.tasks:

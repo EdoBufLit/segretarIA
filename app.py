@@ -57,6 +57,7 @@ from jobs.eleven_jobs import process_elevenlabs_event_job
 from services.realtime_bridge import RealtimeSession
 from services.business_hours import is_open_now
 from services.validators import validate_open_hours_schema
+from services.call_session import CallSessionManager, CallStatus
 from twilio.request_validator import RequestValidator
 from alerting import (
     log_critical_error,
@@ -1134,6 +1135,19 @@ async def twilio_voice(
     # If Open AND Office Phone set -> Forward
     if is_open and phone.office_phone_e164:
         logger.info(f"Forwarding call {CallSid} to office {phone.office_phone_e164} (Open in {phone.timezone})")
+
+        # Start Session (Human Requested)
+        try:
+            CallSessionManager().start_session(
+                call_sid=CallSid,
+                agent_id=agent_id,
+                phone_number_id=phone.id,
+                status=CallStatus.HUMAN_REQUESTED,
+                office_phone_e164=phone.office_phone_e164
+            )
+        except Exception as e:
+            logger.error(f"Failed to start call session {CallSid}: {e}")
+
         # Construct action URL
         base_url = str(request.base_url).rstrip("/")
         action_url = f"{base_url}/twilio/after_dial?agent_id={agent_id}"
@@ -1148,6 +1162,18 @@ async def twilio_voice(
         return Response(content=xml, media_type="application/xml")
 
     # 4. Fallback: Start AI (Closed or No forwarding)
+    # Start Session (AI Active)
+    try:
+        CallSessionManager().start_session(
+            call_sid=CallSid,
+            agent_id=agent_id,
+            phone_number_id=phone.id,
+            status=CallStatus.AI_ACTIVE,
+            office_phone_e164=phone.office_phone_e164
+        )
+    except Exception as e:
+        logger.error(f"Failed to start call session {CallSid}: {e}")
+
     return _build_ai_connect_twiml(request, agent_id)
 
 
@@ -1177,6 +1203,7 @@ def _build_ai_connect_twiml(request: Request, agent_id: str) -> Response:
 async def twilio_after_dial(
     request: Request,
     DialCallStatus: str = Form(...),
+    CallSid: str = Form(...),
     agent_id: str = Query(...)
 ):
     """
@@ -1187,9 +1214,22 @@ async def twilio_after_dial(
     logger.info(f"After Dial: status={DialCallStatus} agent={agent_id}")
 
     if DialCallStatus == "completed":
+        # Update session to connected then ended
+        try:
+            mgr = CallSessionManager()
+            mgr.update_status(CallSid, CallStatus.HUMAN_CONNECTED)
+            mgr.end_session(CallSid)
+        except Exception as e:
+            logger.error(f"Failed to update session {CallSid}: {e}")
+
         return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
 
     # Fallback to AI
+    try:
+        CallSessionManager().update_status(CallSid, CallStatus.AI_ACTIVE)
+    except Exception as e:
+        logger.error(f"Failed to update session {CallSid}: {e}")
+
     return _build_ai_connect_twiml(request, agent_id)
 
 
