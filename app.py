@@ -1166,13 +1166,9 @@ async def twilio_voice(
     # 2. Handle missing/blocked agent
     if not allowed:
         # Fallback or Reject
-        message = "Il numero chiamato non è configurato correttamente."
-        if reason in ("User suspended", "No active plan"):
-             message = "Servizio non attivo. Contattare l'amministrazione."
-
         xml = f"""
         <Response>
-            <Say language="it-IT">{message}</Say>
+            <Say language="it-IT">Il numero chiamato non è configurato correttamente.</Say>
             <Hangup/>
         </Response>
         """
@@ -1233,9 +1229,11 @@ async def twilio_voice(
 
 
 def _build_ai_connect_twiml(request: Request, agent_id: str) -> Response:
+    # Build robust public URL
+    base_url = get_public_base_url(request).rstrip("/")
+
     # Replace http/https with ws/wss
-    base_url = str(request.base_url).rstrip("/")
-    if "https" in base_url:
+    if base_url.startswith("https"):
         ws_base = base_url.replace("https://", "wss://")
     else:
         ws_base = base_url.replace("http://", "ws://")
@@ -1245,9 +1243,7 @@ def _build_ai_connect_twiml(request: Request, agent_id: str) -> Response:
     xml = f"""
     <Response>
         <Connect>
-            <Stream url="{stream_url}">
-                 <Parameter name="agent_id" value="{agent_id}" />
-            </Stream>
+            <Stream url="{stream_url}"/>
         </Connect>
     </Response>
     """
