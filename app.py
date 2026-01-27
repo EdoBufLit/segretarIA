@@ -54,6 +54,7 @@ from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
 from services.realtime_bridge import RealtimeSession
+from twilio.request_validator import RequestValidator
 from alerting import (
     log_critical_error,
     track_webhook_success,
@@ -986,7 +987,31 @@ async def twilio_voice(
     """
     Twilio Voice Webhook (TwiML).
     Looks up the agent associated with the called number (To) and connects via WebSocket.
+    Enforces Twilio Signature validation.
     """
+    # 0. Signature Validation
+    check_signature = os.getenv("TWILIO_SIGNATURE_CHECK", "true").lower() == "true"
+    if check_signature:
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        if not auth_token:
+            logger.warning("TWILIO_AUTH_TOKEN not set, skipping signature check but strictly required.")
+        else:
+            validator = RequestValidator(auth_token)
+            signature = request.headers.get("X-Twilio-Signature", "")
+            # Construct full URL (including scheme/host/params if any)
+            # Twilio signs the exact URL they sent.
+            # If behind proxy, standard headers usually help request.url match original.
+            # request.url is a URL object, convert to str
+            url = str(request.url)
+
+            # Form params dict
+            form_data = await request.form()
+            params = {k: v for k, v in form_data.items()}
+
+            if not validator.validate(url, params, signature):
+                logger.warning(f"Invalid Twilio Signature for call {CallSid}")
+                return Response(status_code=403, content="Invalid Signature")
+
     # Normalize To
     normalized_to = To.replace(" ", "").strip()
 
