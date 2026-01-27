@@ -1266,6 +1266,7 @@ async def websocket_twilio(websocket: WebSocket, agent_id: str = Query(...), db:
 @app.post("/calls/{call_sid}/barge-in")
 async def calls_barge_in(
     call_sid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1306,13 +1307,15 @@ async def calls_barge_in(
         logger.error(f"Barge-in: Failed to update Redis for {call_sid}: {e}")
 
     # 4. Terminate WebSocket (Stop AI)
+    # This disconnects the current Media Stream.
+    # We must also concurrently update the call via Twilio API to prevent hangup.
     await terminate_session(call_sid)
 
     # 5. Redirect Call (Connect Human)
     office_phone = session.get("office_phone_e164")
     if office_phone and twilio_client:
         try:
-            base_url = get_public_base_url()
+            base_url = get_public_base_url(request)
             # Redirect to TwiML generator endpoint to ensure late binding state check
             connect_url = f"{base_url}/twilio/barge_in_connect"
 

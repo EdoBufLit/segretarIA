@@ -21,6 +21,15 @@ active_sessions: Dict[str, "RealtimeSession"] = {}
 async def terminate_session(call_sid: str):
     """
     Terminates the WebSocket session for a given CallSid.
+
+    By closing the WebSocket, we gracefully end the Media Stream on our end.
+    However, to ensure the call doesn't hang up or just fall through,
+    the caller (barge-in endpoint) must concurrently issue a Twilio Client update()
+    to redirect the CallSid to a new TwiML URL.
+
+    This works because Twilio Media Streams are just TwiML verbs (<Connect><Stream>).
+    Updating the call via API replaces the current executing TwiML with the new one,
+    effectively "breaking" the stream connection and re-routing the call.
     """
     session = active_sessions.get(call_sid)
     if session:
