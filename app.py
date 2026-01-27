@@ -55,6 +55,7 @@ from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
 from services.realtime_bridge import RealtimeSession
+from services.business_hours import is_open_now
 from twilio.request_validator import RequestValidator
 from alerting import (
     log_critical_error,
@@ -1114,12 +1115,34 @@ async def twilio_voice(
         """
         return Response(content=xml, media_type="application/xml")
 
-    # 3. Construct WebSocket URL
+    # 3. Business Logic: Office Forwarding (if allowed)
+    is_open = False
+    if phone.open_hours_json and phone.timezone:
+        is_open = is_open_now(phone.open_hours_json, phone.timezone)
+
+    # If Open AND Office Phone set -> Forward
+    if is_open and phone.office_phone_e164:
+        logger.info(f"Forwarding call {CallSid} to office {phone.office_phone_e164} (Open in {phone.timezone})")
+        # Construct action URL
+        base_url = str(request.base_url).rstrip("/")
+        action_url = f"{base_url}/twilio/after_dial?agent_id={agent_id}"
+
+        xml = f"""
+        <Response>
+            <Dial timeout="15" action="{action_url}">
+                {phone.office_phone_e164}
+            </Dial>
+        </Response>
+        """
+        return Response(content=xml, media_type="application/xml")
+
+    # 4. Fallback: Start AI (Closed or No forwarding)
+    return _build_ai_connect_twiml(request, agent_id)
+
+
+def _build_ai_connect_twiml(request: Request, agent_id: str) -> Response:
     # Replace http/https with ws/wss
     base_url = str(request.base_url).rstrip("/")
-    # Force HTTPS/WSS if we are behind a proxy that terminates SSL (common in production)
-    # or rely on request.url.scheme.
-    # To follow the pattern of get_public_base_url but simpler for this context:
     if "https" in base_url:
         ws_base = base_url.replace("https://", "wss://")
     else:
@@ -1127,7 +1150,6 @@ async def twilio_voice(
 
     stream_url = f"{ws_base}/ws/twilio?agent_id={agent_id}"
 
-    # 4. Return TwiML
     xml = f"""
     <Response>
         <Connect>
@@ -1138,6 +1160,26 @@ async def twilio_voice(
     </Response>
     """
     return Response(content=xml, media_type="application/xml")
+
+
+@app.post("/twilio/after_dial")
+async def twilio_after_dial(
+    request: Request,
+    DialCallStatus: str = Form(...),
+    agent_id: str = Query(...)
+):
+    """
+    Callback after <Dial> completes.
+    If 'completed', we hangup.
+    If 'busy', 'no-answer', 'failed', 'canceled', we fallback to AI.
+    """
+    logger.info(f"After Dial: status={DialCallStatus} agent={agent_id}")
+
+    if DialCallStatus == "completed":
+        return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+
+    # Fallback to AI
+    return _build_ai_connect_twiml(request, agent_id)
 
 
 @app.websocket("/ws/twilio")
