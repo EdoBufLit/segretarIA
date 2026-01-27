@@ -1312,15 +1312,12 @@ async def calls_barge_in(
     office_phone = session.get("office_phone_e164")
     if office_phone and twilio_client:
         try:
-            # Construct Action URL for the Dial (so we know when it ends)
             base_url = get_public_base_url()
-            action_url = f"{base_url}/twilio/after_dial?agent_id={agent_id}"
+            # Redirect to TwiML generator endpoint to ensure late binding state check
+            connect_url = f"{base_url}/twilio/barge_in_connect"
 
-            # Simple TwiML to Dial
-            twiml = f'<Response><Dial timeout="15" action="{action_url}">{office_phone}</Dial></Response>'
-
-            twilio_client.calls(call_sid).update(twiml=twiml)
-            logger.info(f"Barge-in: Redirected {call_sid} to {office_phone}")
+            twilio_client.calls(call_sid).update(url=connect_url, method="POST")
+            logger.info(f"Barge-in: Redirected {call_sid} to {connect_url}")
         except Exception as e:
             logger.error(f"Barge-in: Twilio redirect failed for {call_sid}: {e}")
             # We don't fail the request because the AI is at least stopped
@@ -1332,6 +1329,56 @@ async def calls_barge_in(
         "call_status": CallStatus.HUMAN_REQUESTED,
         "office_phone": office_phone
     }
+
+@app.post("/twilio/barge_in_connect")
+async def twilio_barge_in_connect(
+    request: Request,
+    CallSid: str = Form(...)
+):
+    """
+    TwiML endpoint for barge-in connection.
+    Verifies that the human was actually requested before dialing.
+    """
+    mgr = CallSessionManager()
+    session = mgr.get_session(CallSid)
+
+    if not session:
+        logger.warning(f"Barge-in connect: Session not found for {CallSid}")
+        return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+
+    # Verify State
+    if session.get("status") != CallStatus.HUMAN_REQUESTED:
+        logger.warning(f"Barge-in connect: Invalid status {session.get('status')} for {CallSid}")
+        return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+
+    office_phone = session.get("office_phone_e164")
+    agent_id = session.get("agent_id")
+
+    if not office_phone:
+        logger.error(f"Barge-in connect: No office phone for {CallSid}")
+        return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+
+    # Update State
+    try:
+        mgr.update_status(CallSid, CallStatus.HUMAN_CONNECTED)
+    except Exception as e:
+        logger.error(f"Barge-in connect: Failed to update status for {CallSid}: {e}")
+
+    # Log
+    logger.info(f"Barge-in connect: Connecting {CallSid} to {office_phone}")
+
+    # Build TwiML
+    base_url = str(request.base_url).rstrip("/")
+    action_url = f"{base_url}/twilio/after_dial?agent_id={agent_id}"
+
+    xml = f"""
+    <Response>
+        <Dial timeout="15" action="{action_url}">
+            <Number>{office_phone}</Number>
+        </Dial>
+    </Response>
+    """
+    return Response(content=xml, media_type="application/xml")
 
 
 # ================== WEBHOOK ELEVENLABS ==================

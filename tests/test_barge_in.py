@@ -84,7 +84,8 @@ class TestBargeIn:
         # Verify Twilio Redirect
         mock_twilio_client.calls.return_value.update.assert_called_once()
         args, kwargs = mock_twilio_client.calls.return_value.update.call_args
-        assert '<Dial timeout="15"' in kwargs['twiml']
+        assert '/twilio/barge_in_connect' in kwargs['url']
+        assert kwargs['method'] == 'POST'
 
     def test_barge_in_not_found(self, mock_redis, mock_current_user):
         mock_redis.hgetall.return_value = {}
