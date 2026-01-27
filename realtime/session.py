@@ -9,6 +9,7 @@ from typing import Dict, Optional
 
 import audioop
 import websockets
+from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 from fastapi import WebSocket, WebSocketDisconnect
 from pydub import AudioSegment
 
@@ -55,6 +56,7 @@ class RealtimeSession:
         self.call_sid: Optional[str] = None
         self.eleven_ws = None
         self.is_open = True
+        self.is_closing = False
         self.tasks = set()
 
         # Audio Transcoding State
@@ -294,6 +296,10 @@ class RealtimeSession:
                 elif msg_type == "ping":
                     pass
 
+        except ConnectionClosedOK:
+            logger.info("ElevenLabs WebSocket closed normally (1000).")
+        except ConnectionClosedError as e:
+            logger.warning(f"ElevenLabs WebSocket closed with error: code={e.code}, reason={e.reason}")
         except asyncio.CancelledError:
             # Expected during shutdown
             raise
@@ -371,9 +377,10 @@ class RealtimeSession:
         """
         Closes the session cleanly. Idempotent.
         """
-        if not self.is_open:
+        if self.is_closing or not self.is_open:
             return
 
+        self.is_closing = True
         self.is_open = False
 
         if self.eleven_response_warning_task and not self.eleven_response_warning_task.done():
@@ -410,6 +417,13 @@ class RealtimeSession:
         for task in self.tasks:
             if not task.done():
                 task.cancel()
+
+        # Ensure tasks are awaited to prevent "Task exception was never retrieved"
+        if self.tasks:
+            try:
+                await asyncio.gather(*self.tasks, return_exceptions=True)
+            except Exception as e:
+                logger.warning(f"Error awaiting cancelled tasks: {e}")
 
         # Explicitly close WebSockets
         if self.eleven_ws:
