@@ -1319,11 +1319,25 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
 
             if data.get("event") == "start":
                 start_message = data # Save it to pass to session
-                # Extract agent_id from custom parameters
-                params = data.get("start", {}).get("customParameters", {})
-                agent_id = params.get("agent_id")
+                call_sid = data.get("start", {}).get("callSid")
 
-                logger.info(f"DEBUG: agent_id retrieved from start event: {agent_id}")
+                # Attempt 1: Resolve from Redis Session (Server-side truth)
+                if call_sid:
+                    try:
+                        mgr = CallSessionManager()
+                        session_data = mgr.get_session(call_sid)
+                        if session_data and session_data.get("agent_id"):
+                            agent_id = session_data.get("agent_id")
+                            logger.info(f"DEBUG: agent_id resolved from Redis for call {call_sid}: {agent_id}")
+                    except Exception as redis_err:
+                        logger.error(f"Redis lookup failed: {redis_err}")
+
+                # Attempt 2: Fallback to customParameters (Client-side)
+                if not agent_id:
+                    params = data.get("start", {}).get("customParameters", {})
+                    agent_id = params.get("agent_id")
+                    logger.info(f"DEBUG: agent_id retrieved from start params: {agent_id}")
+
             else:
                 logger.warning(f"DEBUG: First message was not 'start': {data.get('event')}")
         except Exception as e:

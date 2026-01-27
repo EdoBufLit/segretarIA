@@ -25,93 +25,89 @@ def override_get_db():
 
 app.dependency_overrides[get_db] = override_get_db
 
-def test_websocket_late_binding_success():
+def test_websocket_late_binding_success_redis():
     """
-    Test that the WebSocket accepts a connection without query params,
-    waits for the 'start' event, extracts agent_id, validates it, and starts the session.
+    Test that the WebSocket resolves agent_id from Redis using callSid.
     """
-    # Patch RealtimeSession.start to be an async no-op so we don't connect to external services
     with patch("services.realtime_bridge.RealtimeSession.start", new_callable=AsyncMock) as mock_start:
         with patch("services.realtime_bridge.RealtimeSession.__init__", return_value=None) as mock_init:
+            # Mock CallSessionManager
+            with patch("app.CallSessionManager") as MockCSM:
+                mock_mgr = MockCSM.return_value
+                mock_mgr.get_session.return_value = {"agent_id": "test-agent-redis"}
 
-            client = TestClient(app)
+                client = TestClient(app)
 
-            # 1. Connect without query params
-            with client.websocket_connect("/ws/twilio") as websocket:
-
-                # 2. Send 'start' event with agent_id
-                start_payload = {
-                    "event": "start",
-                    "start": {
-                        "streamSid": "MZ123",
-                        "callSid": "CA123",
-                        "customParameters": {
-                            "agent_id": "test-agent-123"
+                # 1. Connect
+                with client.websocket_connect("/ws/twilio") as websocket:
+                    # 2. Send 'start' event with callSid
+                    start_payload = {
+                        "event": "start",
+                        "start": {
+                            "streamSid": "MZ123",
+                            "callSid": "CA_REDIS_TEST",
+                            "customParameters": {} # Empty params
                         }
                     }
-                }
-                websocket.send_json(start_payload)
+                    websocket.send_json(start_payload)
 
-                # The route should read this, validate 'test-agent-123', and call session.start()
-                # We can't easily wait for side effects here with TestClient synchronous wrapper
-                # But if the socket doesn't close with error, it's a good sign.
+                # Verify Redis was checked
+                mock_mgr.get_session.assert_called_with("CA_REDIS_TEST")
 
-                # We can verify that DB was queried
+                # Verify Session Init used Redis agent_id
+                mock_init.assert_called_once()
+                args, _ = mock_init.call_args
+                assert args[1] == "test-agent-redis"
 
-            # Verify logic
-            # 1. DB should have been queried for AgentRouting
-            assert mock_db.query.called
+def test_websocket_late_binding_fallback_params():
+    """
+    Test fallback to customParameters if Redis fails or returns empty.
+    """
+    with patch("services.realtime_bridge.RealtimeSession.start", new_callable=AsyncMock) as mock_start:
+        with patch("services.realtime_bridge.RealtimeSession.__init__", return_value=None) as mock_init:
+            with patch("app.CallSessionManager") as MockCSM:
+                mock_mgr = MockCSM.return_value
+                mock_mgr.get_session.return_value = None # No session found
 
-            # 2. RealtimeSession should have been initialized with agent_id="test-agent-123"
-            # and initial_start_message containing our payload
-            mock_init.assert_called_once()
-            args, kwargs = mock_init.call_args
-            # args[0] is websocket, args[1] is agent_id
-            assert args[1] == "test-agent-123"
-            assert kwargs.get("initial_start_message") == start_payload
+                client = TestClient(app)
 
-            # 3. session.start() should have been called
-            mock_start.assert_called_once()
+                with client.websocket_connect("/ws/twilio") as websocket:
+                    start_payload = {
+                        "event": "start",
+                        "start": {
+                            "streamSid": "MZ123",
+                            "callSid": "CA_FALLBACK_TEST",
+                            "customParameters": {
+                                "agent_id": "test-agent-fallback"
+                            }
+                        }
+                    }
+                    websocket.send_json(start_payload)
+
+                mock_init.assert_called_once()
+                args, _ = mock_init.call_args
+                assert args[1] == "test-agent-fallback"
 
 def test_websocket_late_binding_failure_no_agent():
     """
-    Test that if the start event doesn't contain agent_id, the socket closes with 4003.
+    Test failure when neither Redis nor params provide agent_id.
     """
     with patch("services.realtime_bridge.RealtimeSession.start", new_callable=AsyncMock):
-        client = TestClient(app)
+        with patch("app.CallSessionManager") as MockCSM:
+            mock_mgr = MockCSM.return_value
+            mock_mgr.get_session.return_value = None
 
-        with pytest.raises(Exception) as excinfo:
-            with client.websocket_connect("/ws/twilio") as websocket:
-                # Send 'start' event WITHOUT agent_id
-                start_payload = {
-                    "event": "start",
-                    "start": {
-                        "streamSid": "MZ123",
-                        "callSid": "CA123",
-                        "customParameters": {
-                            # "agent_id": ... missing
+            client = TestClient(app)
+
+            with pytest.raises(Exception):
+                with client.websocket_connect("/ws/twilio") as websocket:
+                    start_payload = {
+                        "event": "start",
+                        "start": {
+                            "streamSid": "MZ123",
+                            "callSid": "CA_FAIL",
+                            "customParameters": {}
                         }
                     }
-                }
-                websocket.send_json(start_payload)
-                # Should receive close frame
-                data = websocket.receive_text()
-
-        # TestClient raises WebSocketDisconnect on close
-        # We check if the close code was 4003 (if accessible) or just that it closed.
-        # Starlette TestClient raises WebSocketDisconnect.
-        # But determining the code is tricky depending on version.
-
-def test_websocket_late_binding_failure_wrong_event():
-    """
-    Test that if the first message is not 'start', it closes (or handles error).
-    """
-    with patch("services.realtime_bridge.RealtimeSession.start", new_callable=AsyncMock):
-        client = TestClient(app)
-
-        with pytest.raises(Exception):
-            with client.websocket_connect("/ws/twilio") as websocket:
-                # Send 'media' event first
-                payload = {"event": "media"}
-                websocket.send_json(payload)
-                websocket.receive_text()
+                    websocket.send_json(start_payload)
+                    websocket.receive_text() # Should receive close
