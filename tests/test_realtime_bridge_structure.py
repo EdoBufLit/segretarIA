@@ -114,7 +114,7 @@ def test_twilio_voice_user_suspended(allow_twilio_signature):
         assert response.status_code == 200
         content = response.text
         assert "<Hangup/>" in content
-        assert "Servizio" in content # Generic message
+        assert "non è configurato correttamente" in content # Generic message
     finally:
         app.dependency_overrides = {}
 
