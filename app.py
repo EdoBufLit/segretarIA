@@ -1147,8 +1147,12 @@ async def twilio_voice(
                 AgentRouting.is_active == True
             ).first()
             if routing:
-                agent_id = routing.agent_id
-                allowed = True
+                if routing.agent_id:
+                    agent_id = routing.agent_id
+                    allowed = True
+                else:
+                    reason = "Configuration Error: No Agent ID"
+                    logger.error(f"Routing {routing.id} has no agent_id")
             else:
                 reason = "Agent disabled"
 
@@ -1243,7 +1247,9 @@ def _build_ai_connect_twiml(request: Request, agent_id: str) -> Response:
     xml = f"""
     <Response>
         <Connect>
-            <Stream url="{stream_url}"/>
+            <Stream url="{stream_url}">
+                <Parameter name="agent_id" value="{agent_id}" />
+            </Stream>
         </Connect>
     </Response>
     """
@@ -1293,6 +1299,7 @@ async def websocket_twilio(websocket: WebSocket, agent_id: Optional[str] = Query
     """
     WebSocket endpoint for Twilio Media Streams.
     Bridges the audio stream to ElevenLabs Realtime.
+    Note: agent_id is mandatory logic-wise. We use Query(None) to manually return 4003 if missing.
     """
     logger.info("DEBUG: Entrato in websocket_twilio")
     await websocket.accept()
