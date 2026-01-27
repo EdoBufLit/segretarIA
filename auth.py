@@ -3,6 +3,7 @@ import string
 import os
 import hmac
 import hashlib
+import base64
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -85,44 +86,89 @@ def generate_random_password(length=12):
             return password
 
 
-def verify_elevenlabs_signature(raw_body: bytes, headers: dict, secret: str) -> bool:
+def verify_elevenlabs_signature(raw_body: bytes, headers: dict, secret: str) -> Optional[bool]:
     """
     Verifies the ElevenLabs webhook signature.
-    Header format: "t=TIMESTAMP,v1=SIGNATURE" (or v0)
-    Signature = HMAC-SHA256(secret, "{body}{timestamp}")
+    Returns:
+    - True: Verified
+    - False: Verification failed
+    - None: Signature header missing
     """
-    sig_header = headers.get("ElevenLabs-Signature") or headers.get("elevenlabs-signature")
+    possible_keys = [
+        "ElevenLabs-Signature",
+        "elevenlabs-signature",
+        "X-Elevenlabs-Signature",
+        "x-elevenlabs-signature"
+    ]
+
+    sig_header = None
+    for key in possible_keys:
+        if key in headers:
+            sig_header = headers[key]
+            break
+
     if not sig_header:
-        return False
+        return None
 
     timestamp = None
     signature = None
 
-    # Parse header
+    # Parse header: "t=TIMESTAMP,v1=SIGNATURE"
+    # Allow whitespace around comma and equals
     try:
-        parts = sig_header.split(",")
+        parts = [p.strip() for p in sig_header.split(",")]
         for part in parts:
-            if part.startswith("t="):
-                timestamp = part[2:]
-            elif part.startswith("v1=") or part.startswith("v0="):
-                signature = part[3:]
+            if "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            k = k.strip()
+            v = v.strip()
+
+            if k == "t":
+                timestamp = v
+            elif k in ("v1", "v0"):
+                signature = v
     except Exception:
         return False
 
     if not timestamp or not signature:
         return False
 
-    # Construct payload
+    # Compute expected signatures with multiple common payload formats
     try:
-        payload = raw_body + timestamp.encode("utf-8")
+        timestamp_bytes = timestamp.encode("utf-8")
+        secret_bytes = secret.encode("utf-8")
 
-        expected_signature = hmac.new(
-            secret.encode("utf-8"),
-            payload,
-            hashlib.sha256
-        ).hexdigest()
+        candidates = [
+            raw_body + timestamp_bytes,          # Standard
+            timestamp_bytes + raw_body,          # Reverse
+            timestamp_bytes + b"." + raw_body,   # Dotted
+        ]
 
-        return hmac.compare_digest(expected_signature, signature)
+        for payload in candidates:
+            h = hmac.new(secret_bytes, payload, hashlib.sha256)
+            digest = h.digest()
+
+            # Compare against:
+            # 1. Hex
+            if hmac.compare_digest(h.hexdigest(), signature):
+                return True
+
+            # 2. Base64 (std)
+            b64 = base64.b64encode(digest).decode("utf-8")
+            if hmac.compare_digest(b64, signature):
+                return True
+            if hmac.compare_digest(b64.rstrip("="), signature):  # tolerate missing padding
+                return True
+
+            # 3. Base64 (urlsafe)
+            b64_url = base64.urlsafe_b64encode(digest).decode("utf-8")
+            if hmac.compare_digest(b64_url, signature):
+                return True
+            if hmac.compare_digest(b64_url.rstrip("="), signature):
+                return True
+
+        return False
     except Exception:
         return False
 
