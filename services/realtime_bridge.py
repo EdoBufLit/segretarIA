@@ -10,8 +10,33 @@ except ImportError:
     import audioop_lts as audioop
 import time
 from fastapi import WebSocket, WebSocketDisconnect
+from services.call_session import CallSessionManager, CallStatus
+from typing import Dict
 
 logger = logging.getLogger("app.services.realtime_bridge")
+
+# Registry of active sessions by CallSid
+active_sessions: Dict[str, "RealtimeSession"] = {}
+
+async def terminate_session(call_sid: str):
+    """
+    Terminates the WebSocket session for a given CallSid.
+
+    By closing the WebSocket, we gracefully end the Media Stream on our end.
+    However, to ensure the call doesn't hang up or just fall through,
+    the caller (barge-in endpoint) must concurrently issue a Twilio Client update()
+    to redirect the CallSid to a new TwiML URL.
+
+    This works because Twilio Media Streams are just TwiML verbs (<Connect><Stream>).
+    Updating the call via API replaces the current executing TwiML with the new one,
+    effectively "breaking" the stream connection and re-routing the call.
+    """
+    session = active_sessions.get(call_sid)
+    if session:
+        logger.info(f"Terminating session for {call_sid}")
+        await session.close()
+    else:
+        logger.warning(f"Attempted to terminate non-existent session {call_sid}")
 
 class RealtimeSession:
     """
@@ -22,6 +47,7 @@ class RealtimeSession:
         self.twilio_ws = twilio_ws
         self.agent_id = agent_id
         self.stream_sid = None
+        self.call_sid = None
         self.eleven_ws = None
         self.is_open = True
         self.tasks = set()
@@ -100,6 +126,19 @@ class RealtimeSession:
                 if event_type == "start":
                     self.stream_sid = data.get("start", {}).get("streamSid")
                     call_sid = data.get("start", {}).get("callSid")
+                    self.call_sid = call_sid
+
+                    # Register session
+                    active_sessions[call_sid] = self
+
+                    # Update Call Session
+                    try:
+                        mgr = CallSessionManager()
+                        mgr.update_stream_sid(call_sid, self.stream_sid)
+                        mgr.update_status(call_sid, CallStatus.AI_ACTIVE)
+                    except Exception as e:
+                        logger.error(f"Failed to update call session for {call_sid}: {e}")
+
                     logger.info(json.dumps({
                         "event": "twilio_stream_start",
                         "streamSid": self.stream_sid,
@@ -211,6 +250,10 @@ class RealtimeSession:
             return
 
         self.is_open = False
+
+        # Unregister
+        if self.call_sid and self.call_sid in active_sessions:
+            del active_sessions[self.call_sid]
         duration_ms = int((time.time() - self.start_time) * 1000)
 
         # Log session closed with stats
@@ -223,6 +266,17 @@ class RealtimeSession:
             "duration_ms": duration_ms
         }
         logger.info(json.dumps(log_data))
+
+        # Cleanup Call Session
+        if self.call_sid:
+            try:
+                mgr = CallSessionManager()
+                current_session = mgr.get_session(self.call_sid)
+                # Only end session if it's not transitioning to human
+                if current_session and current_session.get("status") != CallStatus.HUMAN_REQUESTED:
+                    mgr.end_session(self.call_sid)
+            except Exception as e:
+                logger.error(f"Failed to end session for {self.call_sid}: {e}")
 
         # Cancel all running tasks
         for task in self.tasks:

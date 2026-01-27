@@ -54,10 +54,12 @@ from queue_utils import get_queue, get_redis_connection
 from jobs.email_jobs import send_email_job
 from jobs.stripe_jobs import process_stripe_event_job
 from jobs.eleven_jobs import process_elevenlabs_event_job
-from services.realtime_bridge import RealtimeSession
+from services.realtime_bridge import RealtimeSession, terminate_session
 from services.business_hours import is_open_now
 from services.validators import validate_open_hours_schema
+from services.call_session import CallSessionManager, CallStatus
 from twilio.request_validator import RequestValidator
+from twilio.rest import Client as TwilioClient
 from alerting import (
     log_critical_error,
     track_webhook_success,
@@ -92,6 +94,16 @@ if not SECRET_KEY:
 
 if len(SECRET_KEY) < 32:
     logger.warning("SECRET_KEY is too short (less than 32 chars). Please use a stronger key in production.")
+
+# Twilio Client (for outbound calls / modifications)
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+twilio_client = None
+if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+    try:
+        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    except Exception as e:
+        logger.error(f"Failed to initialize Twilio Client: {e}")
 
 app = FastAPI()
 app.add_middleware(
@@ -1134,6 +1146,21 @@ async def twilio_voice(
     # If Open AND Office Phone set -> Forward
     if is_open and phone.office_phone_e164:
         logger.info(f"Forwarding call {CallSid} to office {phone.office_phone_e164} (Open in {phone.timezone})")
+
+        # Start Session (Human Requested)
+        try:
+            CallSessionManager().start_session(
+                call_sid=CallSid,
+                agent_id=agent_id,
+                phone_number_id=phone.id,
+                status=CallStatus.HUMAN_REQUESTED,
+                office_phone_e164=phone.office_phone_e164,
+                user_id=user.id,
+                caller_number=From
+            )
+        except Exception as e:
+            logger.error(f"Failed to start call session {CallSid}: {e}")
+
         # Construct action URL
         base_url = str(request.base_url).rstrip("/")
         action_url = f"{base_url}/twilio/after_dial?agent_id={agent_id}"
@@ -1148,6 +1175,20 @@ async def twilio_voice(
         return Response(content=xml, media_type="application/xml")
 
     # 4. Fallback: Start AI (Closed or No forwarding)
+    # Start Session (AI Active)
+    try:
+        CallSessionManager().start_session(
+            call_sid=CallSid,
+            agent_id=agent_id,
+            phone_number_id=phone.id,
+            status=CallStatus.AI_ACTIVE,
+            office_phone_e164=phone.office_phone_e164,
+            user_id=user.id,
+            caller_number=From
+        )
+    except Exception as e:
+        logger.error(f"Failed to start call session {CallSid}: {e}")
+
     return _build_ai_connect_twiml(request, agent_id)
 
 
@@ -1177,6 +1218,7 @@ def _build_ai_connect_twiml(request: Request, agent_id: str) -> Response:
 async def twilio_after_dial(
     request: Request,
     DialCallStatus: str = Form(...),
+    CallSid: str = Form(...),
     agent_id: str = Query(...)
 ):
     """
@@ -1187,9 +1229,22 @@ async def twilio_after_dial(
     logger.info(f"After Dial: status={DialCallStatus} agent={agent_id}")
 
     if DialCallStatus == "completed":
+        # Update session to connected then ended
+        try:
+            mgr = CallSessionManager()
+            mgr.update_status(CallSid, CallStatus.HUMAN_CONNECTED)
+            mgr.end_session(CallSid)
+        except Exception as e:
+            logger.error(f"Failed to update session {CallSid}: {e}")
+
         return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
 
     # Fallback to AI
+    try:
+        CallSessionManager().update_status(CallSid, CallStatus.AI_ACTIVE)
+    except Exception as e:
+        logger.error(f"Failed to update session {CallSid}: {e}")
+
     return _build_ai_connect_twiml(request, agent_id)
 
 
@@ -1210,6 +1265,127 @@ async def websocket_twilio(websocket: WebSocket, agent_id: str = Query(...), db:
 
     session = RealtimeSession(websocket, agent_id)
     await session.start()
+
+
+@app.post("/calls/{call_sid}/barge-in")
+async def calls_barge_in(
+    call_sid: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Endpoints to request human barge-in.
+    Stops AI, updates status, and redirects call to office number.
+    """
+    mgr = CallSessionManager()
+    session = mgr.get_session(call_sid)
+
+    # 1. Verify Session
+    if not session:
+        raise HTTPException(status_code=404, detail="Call session not found")
+
+    if session.get("status") != CallStatus.AI_ACTIVE:
+        raise HTTPException(status_code=400, detail=f"Call not eligible for barge-in (status: {session.get('status')})")
+
+    agent_id = session.get("agent_id")
+
+    # 2. Authorization
+    if current_user.role != "admin":
+        # Check if user owns this agent
+        # We check if any of the user's agents match the session agent_id
+        has_access = any(a.agent_id == agent_id for a in current_user.agents)
+        if not has_access:
+            # Fallback: Check AgentRouting directly if user_agents might be stale/lazy
+            routing = db.query(AgentRouting).filter(
+                AgentRouting.agent_id == agent_id,
+                AgentRouting.user_id == current_user.id
+            ).first()
+            if not routing:
+                raise HTTPException(status_code=403, detail="Access denied")
+
+    # 3. Update Status
+    try:
+        mgr.update_status(call_sid, CallStatus.HUMAN_REQUESTED)
+    except Exception as e:
+        logger.error(f"Barge-in: Failed to update Redis for {call_sid}: {e}")
+
+    # 4. Terminate WebSocket (Stop AI)
+    # This disconnects the current Media Stream.
+    # We must also concurrently update the call via Twilio API to prevent hangup.
+    await terminate_session(call_sid)
+
+    # 5. Redirect Call (Connect Human)
+    office_phone = session.get("office_phone_e164")
+    if office_phone and twilio_client:
+        try:
+            base_url = get_public_base_url(request)
+            # Redirect to TwiML generator endpoint to ensure late binding state check
+            connect_url = f"{base_url}/twilio/barge_in_connect"
+
+            twilio_client.calls(call_sid).update(url=connect_url, method="POST")
+            logger.info(f"Barge-in: Redirected {call_sid} to {connect_url}")
+        except Exception as e:
+            logger.error(f"Barge-in: Twilio redirect failed for {call_sid}: {e}")
+            # We don't fail the request because the AI is at least stopped
+    else:
+        logger.warning(f"Barge-in: No office phone or Twilio client configured for {call_sid}")
+
+    return {
+        "status": "ok",
+        "call_status": CallStatus.HUMAN_REQUESTED,
+        "office_phone": office_phone
+    }
+
+@app.post("/twilio/barge_in_connect")
+async def twilio_barge_in_connect(
+    request: Request,
+    CallSid: str = Form(...)
+):
+    """
+    TwiML endpoint for barge-in connection.
+    Verifies that the human was actually requested before dialing.
+    """
+    mgr = CallSessionManager()
+    session = mgr.get_session(CallSid)
+
+    if not session:
+        logger.warning(f"Barge-in connect: Session not found for {CallSid}")
+        return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+
+    # Verify State
+    if session.get("status") != CallStatus.HUMAN_REQUESTED:
+        logger.warning(f"Barge-in connect: Invalid status {session.get('status')} for {CallSid}")
+        return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+
+    office_phone = session.get("office_phone_e164")
+    agent_id = session.get("agent_id")
+
+    if not office_phone:
+        logger.error(f"Barge-in connect: No office phone for {CallSid}")
+        return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+
+    # Update State
+    try:
+        mgr.update_status(CallSid, CallStatus.HUMAN_CONNECTED)
+    except Exception as e:
+        logger.error(f"Barge-in connect: Failed to update status for {CallSid}: {e}")
+
+    # Log
+    logger.info(f"Barge-in connect: Connecting {CallSid} to {office_phone}")
+
+    # Build TwiML
+    base_url = str(request.base_url).rstrip("/")
+    action_url = f"{base_url}/twilio/after_dial?agent_id={agent_id}"
+
+    xml = f"""
+    <Response>
+        <Dial timeout="15" action="{action_url}">
+            <Number>{office_phone}</Number>
+        </Dial>
+    </Response>
+    """
+    return Response(content=xml, media_type="application/xml")
 
 
 # ================== WEBHOOK ELEVENLABS ==================
@@ -1543,6 +1719,31 @@ async def api_client_phone_numbers(
         })
 
     return {"status": "ok", "items": items}
+
+@app.get("/api/client/active-call")
+async def api_client_active_call(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the current active call for the user, if any.
+    """
+    mgr = CallSessionManager()
+    session = mgr.get_active_call_for_user(current_user.id)
+
+    if not session:
+        return {"status": "ok", "active_call": None}
+
+    return {
+        "status": "ok",
+        "active_call": {
+            "call_sid": session.get("call_sid"),
+            "status": session.get("status"),
+            "office_phone_e164": session.get("office_phone_e164"),
+            "caller_number": session.get("caller_number"),
+            "agent_id": session.get("agent_id")
+        }
+    }
 
 
 class AdminUpdateUserRequest(BaseModel):
