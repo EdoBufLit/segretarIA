@@ -46,6 +46,7 @@ from auth import (
     normalize_identifier,
     verify_elevenlabs_signature,
 )
+from call_utils import upsert_call_log, extract_transcript_text
 from admin_service import AdminService
 from admin_seed import ensure_default_admin, ensure_plans
 from client_service import ClientService
@@ -1554,7 +1555,14 @@ async def elevenlabs_webhook(request: Request):
         raise HTTPException(status_code=500, detail="Server misconfiguration")
 
     # Read RAW body for signature verification
-    raw_body = await request.body()
+    try:
+        raw_body = await request.body()
+    except Exception as e:
+        logger.error(f"[WEBHOOK] Error reading body: {e}")
+        # Return 200 to acknowledge receipt to avoid retries on bad requests?
+        # Requirement says "if JSON parsing fails or body empty: log warning ... and return 200"
+        # Body read error is similar.
+        return JSONResponse(status_code=200, content={"ok": True, "ignored": "read_error"})
 
     verification_result = verify_elevenlabs_signature(raw_body, request.headers, secret)
 
@@ -1600,19 +1608,44 @@ async def elevenlabs_webhook(request: Request):
     try:
         payload = json.loads(raw_body.decode("utf-8"))
     except Exception as e:
-        logger.error(f"[WEBHOOK] JSON Decode Error: {e}")
-        return Response(status_code=400, content="Invalid JSON")
+        logger.warning(f"[WEBHOOK] JSON Decode Error: {e}")
+        return JSONResponse(status_code=200, content={"ok": True, "ignored": "invalid_json"})
 
     # 2) Validate Type
     event_type = payload.get("type")
     if event_type != "post_call_transcription":
         # Return 200 to acknowledge receipt but ignore logic
-        return {"status": "ignored", "reason": "unsupported type"}
+        return JSONResponse(status_code=200, content={"ok": True, "ignored": "unsupported_type"})
 
-    # 3) Extract Minimal Info for Log
-    data = payload.get("data", {})
+    # 3) Extract Fields
+    data = payload.get("data") or {}
     agent_id = data.get("agent_id")
-    call_id = data.get("metadata", {}).get("phone_call", {}).get("call_sid")
+    conversation_id = data.get("conversation_id")
+    status = data.get("status")
+    transcript = data.get("transcript", [])
+    analysis = data.get("analysis") or {}
+    summary = analysis.get("transcript_summary")
+
+    # Correlate
+    dyn = ((data.get("conversation_initiation_client_data") or {}).get("dynamic_variables") or {})
+    call_sid = dyn.get("call_sid") or dyn.get("twilio_call_sid")
+
+    # 4) Persistence (Minimal)
+    if conversation_id and agent_id:
+        log_data = {
+            "conversation_id": conversation_id,
+            "call_id": call_sid,
+            "status": status,
+            "summary": summary,
+            "transcript": transcript,
+            "transcript_text": extract_transcript_text(payload)
+        }
+        upsert_call_log(agent_id, log_data)
+        logger.info(f"[ELEVEN WEBHOOK] type={event_type} conversation_id={conversation_id} agent_id={agent_id} status={status} call_sid={call_sid}")
+        # Log transcript length
+        logger.info(f"[ELEVEN WEBHOOK] transcript_len={len(transcript)}")
+    else:
+        logger.warning(f"[ELEVEN WEBHOOK] Missing conversation_id or agent_id in payload")
 
     # --- BLOCKING LOGIC START ---
     if agent_id:
@@ -1654,20 +1687,23 @@ async def elevenlabs_webhook(request: Request):
             return JSONResponse(status_code=403, content={"error": "System error during validation"})
     # --- BLOCKING LOGIC END ---
 
-    logger.info(f"[WEBHOOK] Enqueuing event type={event_type} agent={agent_id} call={call_id}")
-
     # 4) Enqueue
     try:
+        # Sanitize payload for job (ensure metadata dict exists)
+        if data.get("metadata") is None:
+            data["metadata"] = {}
+            payload["data"] = data
+
         queue = get_queue()
         queue.enqueue(process_elevenlabs_event_job, payload)
 
         # ALERTING: Track Success
-        if agent_id and call_id:
-            track_webhook_success(agent_id, call_id)
+        if agent_id and call_sid:
+            track_webhook_success(agent_id, call_sid)
 
     except Exception as e:
         # ALERTING: Enqueue failure
-        log_critical_error(f"Webhook enqueue failed: {e}", context={"agent_id": agent_id, "call_id": call_id})
+        log_critical_error(f"Webhook enqueue failed: {e}", context={"agent_id": agent_id, "call_id": call_sid})
         logger.error(f"[WEBHOOK] Failed to enqueue: {e}")
         # Return 500 so ElevenLabs retries if our infrastructure is down
         raise HTTPException(status_code=500, detail="Queue unavailable")

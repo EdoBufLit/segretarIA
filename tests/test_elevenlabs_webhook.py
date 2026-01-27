@@ -78,7 +78,8 @@ def test_webhook_valid_signature_ignored_type():
         )
 
         assert response.status_code == 200
-        assert response.json()["status"] == "ignored"
+        assert response.json().get("ok") is True
+        assert "ignored" in response.json()
 
 def test_webhook_success():
     with patch.dict(os.environ, {"ELEVENLABS_WEBHOOK_SECRET": SECRET}):

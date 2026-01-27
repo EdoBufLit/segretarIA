@@ -7,7 +7,7 @@ from db import SessionLocal
 from models import CallLog
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger("call_utils")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -34,6 +34,106 @@ def log_call(agent_id: str, data: Dict[str, Any]):
         logger.info(f"[LOG] Salvata chiamata su DB per agent {agent_id}")
     except Exception as exc:
         logger.warning(f"[LOG] DB write failed for agent {agent_id}: {exc}")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+def upsert_call_log(agent_id: str, data: Dict[str, Any]) -> None:
+    """
+    Salva o aggiorna una chiamata su DB (CallLog).
+    Cerca un duplicato (conversation_id o call_id) negli ultimi 2 giorni.
+    """
+    timestamp = datetime.utcnow()
+
+    # Identify unique key (conversation_id or call_id)
+    # ElevenLabs webhook uses 'conversation_id'
+    # Jobs use 'call_id' which is derived from conversation_id/call_sid
+    # We expect 'conversation_id' or 'call_id' in data.
+
+    unique_id = data.get("conversation_id") or data.get("call_id")
+
+    if not unique_id:
+        logger.warning(f"[LOG] upsert_call_log called without conversation_id or call_id for agent {agent_id}. Falling back to blind insert.")
+        log_call(agent_id, data) # Fallback to legacy
+        return
+
+    try:
+        db = SessionLocal()
+
+        # 1. Search for existing log in recent window (optimization)
+        # Assuming most updates happen within hours.
+        search_window = timestamp - timedelta(days=2)
+
+        candidates = db.query(CallLog).filter(
+            CallLog.agent_id == agent_id,
+            CallLog.timestamp >= search_window
+        ).all()
+
+        target_log = None
+        for log in candidates:
+            raw = log.raw_data or {}
+            inner_data = raw.get("data", {})
+            existing_id = inner_data.get("conversation_id") or inner_data.get("call_id")
+            if existing_id == unique_id:
+                target_log = log
+                break
+
+        entry = {
+            "timestamp": timestamp.isoformat(),
+            "agent_id": agent_id,
+            "data": data
+        }
+
+        if target_log:
+            # UPDATE
+            # Merge data? Or overwrite?
+            # The job adds enriched analysis. The webhook adds basic transcript.
+            # We want to preserve existing fields if we are updating.
+
+            # Simple merge: Update top-level fields. Deep merge 'data' if needed.
+            # Ideally we want the latest 'data' but preserving analysis if not present in new data.
+            # But the job sends the FULL data including analysis.
+            # The webhook sends data WITHOUT analysis (or empty).
+            # If webhook comes AFTER job (unlikely), it might overwrite analysis with empty?
+            # Webhook comes first usually. Job runs later.
+            # So Job overwrites Webhook data. This is desired.
+
+            # What if Webhook comes AGAIN (idempotency)?
+            # If we already have analysis (from job), and webhook comes again with basic data, we don't want to wipe analysis.
+
+            current_raw = target_log.raw_data or {}
+            current_data = current_raw.get("data", {})
+
+            # If current has 'analysis' and new data doesn't, keep current analysis
+            if "analysis" in current_data and not data.get("analysis"):
+                data["analysis"] = current_data["analysis"]
+
+            target_log.text = data.get("summary") or data.get("transcript_text")
+            target_log.status = data.get("status") or target_log.status
+
+            # Update raw_data
+            target_log.raw_data = entry
+
+            logger.info(f"[LOG] Updated existing CallLog for {unique_id}")
+        else:
+            # INSERT
+            call_log = CallLog(
+                agent_id=agent_id,
+                timestamp=timestamp,
+                text=data.get("summary") or data.get("transcript_text"),
+                status=data.get("status"),
+                raw_data=entry
+            )
+            db.add(call_log)
+            logger.info(f"[LOG] Inserted new CallLog for {unique_id}")
+
+        db.commit()
+
+    except Exception as exc:
+        logger.warning(f"[LOG] DB upsert failed for agent {agent_id}: {exc}")
+        db.rollback()
     finally:
         try:
             db.close()
