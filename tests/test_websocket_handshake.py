@@ -23,7 +23,11 @@ def override_get_db():
     finally:
         pass
 
-app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture(autouse=True)
+def _db_override():
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.pop(get_db, None)
 
 def test_websocket_late_binding_success_redis():
     """

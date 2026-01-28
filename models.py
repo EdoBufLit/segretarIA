@@ -105,10 +105,13 @@ class CallLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     agent_id = Column(String, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     timestamp = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
     text = Column(String, nullable=True)
     status = Column(String, nullable=True)
     raw_data = Column(JSON, nullable=True)
+
+    user = relationship("User")
 
 class Plan(Base):
     __tablename__ = "plans"

@@ -1721,7 +1721,8 @@ def _read_logs(
     status: str = "all",
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
-    q: Optional[str] = None
+    q: Optional[str] = None,
+    user_id: Optional[int] = None
 ):
     """
     Helper to read, filter, sort and paginate logs from the database.
@@ -1732,7 +1733,9 @@ def _read_logs(
     dt = datetime.fromisoformat(date_to).date() if date_to else None
 
     query = db.query(CallLog)
-    if agent_ids:
+    if user_id is not None:
+        query = query.filter(CallLog.user_id == user_id)
+    elif agent_ids:
         query = query.filter(CallLog.agent_id.in_(agent_ids))
     if df:
         query = query.filter(CallLog.timestamp >= datetime.combine(df, datetime.min.time()))
@@ -1839,7 +1842,7 @@ async def view_logs(agent_id: str, admin: User = Depends(get_current_admin_user)
     }
 
 
-def _calculate_analytics(db: Session, agent_ids: List[str]) -> Dict[str, Any]:
+def _calculate_analytics(db: Session, agent_ids: List[str], user_id: Optional[int] = None) -> Dict[str, Any]:
     stats_by_day: Dict[str, int] = {}
     stats_by_client: Dict[str, int] = {}
     stats_by_category: Dict[str, int] = {}
@@ -1856,7 +1859,7 @@ def _calculate_analytics(db: Session, agent_ids: List[str]) -> Dict[str, Any]:
     # heatmap[hour][weekday] – 24 ore x 7 giorni
     heatmap = [[0 for _ in range(7)] for _ in range(24)]
 
-    if not agent_ids:
+    if not agent_ids and user_id is None:
         return {
             "status": "ok",
             "total_calls": 0,
@@ -1871,12 +1874,15 @@ def _calculate_analytics(db: Session, agent_ids: List[str]) -> Dict[str, Any]:
             "by_urgency": {},
         }
 
-    logs = (
-        db.query(CallLog)
-        .filter(CallLog.agent_id.in_(agent_ids))
-        .order_by(CallLog.timestamp.asc())
-        .all()
-    )
+    log_query = db.query(CallLog)
+    if user_id is not None:
+        log_query = log_query.filter(CallLog.user_id == user_id)
+    elif agent_ids:
+        log_query = log_query.filter(CallLog.agent_id.in_(agent_ids))
+
+    logs = log_query.order_by(CallLog.timestamp.asc()).all()
+
+    heatmap_start = datetime.utcnow() - timedelta(days=14)
 
     if logs:
         db_agents = {log.agent_id for log in logs}
@@ -1928,11 +1934,12 @@ def _calculate_analytics(db: Session, agent_ids: List[str]) -> Dict[str, Any]:
             stats_by_category[cat] = stats_by_category.get(cat, 0) + 1
             stats_by_urgency[urg] = stats_by_urgency.get(urg, 0) + 1
 
-            # ---- heatmap ora x giorno ----
-            hour = dt.hour
-            weekday = dt.weekday()  # 0 = Monday, 6 = Sunday
-            if 0 <= hour < 24 and 0 <= weekday < 7:
-                heatmap[hour][weekday] += 1
+            # ---- heatmap ora x giorno (last 14 days) ----
+            if dt >= heatmap_start:
+                hour = dt.hour
+                weekday = dt.weekday()  # 0 = Monday, 6 = Sunday
+                if 0 <= hour < 24 and 0 <= weekday < 7:
+                    heatmap[hour][weekday] += 1
 
     return {
         "status": "ok",
@@ -1942,7 +1949,7 @@ def _calculate_analytics(db: Session, agent_ids: List[str]) -> Dict[str, Any]:
         "calls_today": calls_today,
         "calls_last_7_days": calls_last_7,
         "errors": errors,
-        "clients_count": len(agent_ids),
+        "clients_count": 1 if user_id is not None else len(agent_ids),
         "heatmap": heatmap,
         "by_category": stats_by_category,
         "by_urgency": stats_by_urgency,
@@ -1974,7 +1981,7 @@ async def analytics_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     agent_ids = [a.agent_id for a in user.agents]
-    return _calculate_analytics(db, agent_ids)
+    return _calculate_analytics(db, agent_ids, user_id=current_user.id)
 
 
 @app.get("/api/client/phone-numbers")
@@ -2513,6 +2520,7 @@ async def dashboard(
             # Calculate usage for this subscription
             usage_seconds = db.query(func.sum(UsageEvent.billed_seconds)) \
                                 .filter(UsageEvent.subscription_id == sub.id) \
+                                .filter(UsageEvent.user_id == user.id) \
                                 .filter(UsageEvent.created_at >= sub.cycle_start) \
                                 .filter(UsageEvent.created_at <= sub.cycle_end) \
                                 .scalar() or 0
@@ -3161,7 +3169,6 @@ async def get_my_logs(
 ):
     """
     Ritorna i log dell'utente corrente (Client-scoped).
-    Recupera gli agent_id associati all'utente.
     """
     # Force reload user to ensure relationships are loaded
     # Actually, current_user from get_current_user might not have relationships loaded depending on how it was queried
@@ -3173,12 +3180,7 @@ async def get_my_logs(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    agent_ids = [a.agent_id for a in user.agents]
-
-    if not agent_ids:
-        return {"status": "ok", "total": 0, "items": []}
-
-    return _read_logs(db, agent_ids, limit, offset, status, date_from, date_to, q)
+    return _read_logs(db, [], limit, offset, status, date_from, date_to, q, user_id=current_user.id)
 
 
 # ================== CHAT SUPPORT ==================

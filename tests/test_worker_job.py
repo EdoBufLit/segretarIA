@@ -58,6 +58,16 @@ def setup_test_db(db):
     db.add(agent)
     db.flush()
 
+    # Routing (active)
+    routing = AgentRouting(
+        user_id=user.id,
+        agent_id=agent.agent_id,
+        status="active",
+        is_active=True
+    )
+    db.add(routing)
+    db.flush()
+
     # Link
     from sqlalchemy import text
     db.execute(
