@@ -289,7 +289,7 @@ def _process_elevenlabs_event_logic(payload: dict):
                     )
                     db.add(usage)
                     db.commit()
-                    logger.info("[USAGE] inserted call_id=%s seconds=%s", call_id, billed_seconds)
+                    logger.info("[USAGE] Inserted usage_event seconds=%s", billed_seconds)
 
                 # E) Protect against duplicates
                 except IntegrityError:

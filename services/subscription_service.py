@@ -84,7 +84,7 @@ def ensure_subscription_for_user(db: Session, user_id: int):
                 stripe_subscription_id=None
             )
             db.add(new_sub)
-            logger.info(f"Created new manual subscription for user {user_id} plan {manual_plan_code}")
+            logger.info(f"[USAGE] Created missing subscription for user_id={user_id}")
 
         db.commit()
 
