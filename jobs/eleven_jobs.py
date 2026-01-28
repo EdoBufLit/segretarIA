@@ -8,6 +8,7 @@ from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, Unassigne
 from jobs.email_jobs import send_email_job
 from call_utils import upsert_call_log, summarize_call, build_email_body_html, extract_transcript_text
 from queue_utils import get_queue
+from services.subscription_service import ensure_subscription_for_user
 from alerting import log_critical_error
 import os
 
@@ -195,16 +196,15 @@ def _process_elevenlabs_event_logic(payload: dict):
             if user and not user.has_active_plan():
                 logger.warning(f"[JOB] No active plan for user {user.username}. Allowing summary/email to proceed.")
 
-            # Resolve active_sub for linking usage event (fallback to last sub if manual override but no active sub found?)
-            # UsageEvent REQUIRES a subscription_id currently.
-            # If manual plan is used and no Stripe sub exists, we might need a "dummy" sub or allow nullable subscription_id.
-            # However, prompt says "Stripe integration remains active", so likely a sub exists even if expired/canceled.
-            # We should try to find *some* subscription record to link to, or create one if manual.
-            # For now, let's link to the most recent subscription record even if canceled,
-            # OR find the active one.
-
+            # Resolve active_sub for linking usage event
             target_sub = None
             if user:
+                # Ensure subscription exists (sync manual plan if needed)
+                try:
+                    ensure_subscription_for_user(db, user.id)
+                except Exception as e:
+                    logger.error(f"Failed to ensure subscription for user {user.id}: {e}")
+
                 target_sub = db.query(Subscription).filter(
                     Subscription.user_id == user.id,
                     Subscription.state == "active"
@@ -312,7 +312,17 @@ def _process_elevenlabs_event_logic(payload: dict):
     # ENQUEUE EMAIL
 
     # 1. Use DB resolved values
-    studio_name = db_studio_name or STUDIO_NAME
+    # Fallback for studio_name: db_studio_name -> user.username -> "Il tuo studio"
+    studio_name = db_studio_name
+    if not studio_name and resolved_user_id:
+        with SessionLocal() as db:
+             u = db.query(User).filter(User.id == resolved_user_id).first()
+             if u:
+                 studio_name = u.username or "Il tuo studio"
+
+    if not studio_name:
+        studio_name = STUDIO_NAME
+
     email_to = db_email_to
     unassigned_prefix = ""
 
@@ -323,12 +333,15 @@ def _process_elevenlabs_event_logic(payload: dict):
             unassigned_prefix = "UNASSIGNED "
             logger.warning(f"[JOB] Unrouted event for agent_id={agent_id}. Sending to notification email.")
         else:
-            logger.warning(f"[JOB] Missing email for user_id={resolved_user_id}. Skipping email.")
-            return
+            # Try to fetch user email again if db_email_to was None (should be captured above, but let's be safe)
+            with SessionLocal() as db:
+                 u = db.query(User).filter(User.id == resolved_user_id).first()
+                 if u and u.email:
+                     email_to = u.email
 
-    if resolved_user_id is not None and not db_studio_name:
-        logger.warning(f"[JOB] Missing studio_name for user_id={resolved_user_id}. Skipping email.")
-        return
+            if not email_to:
+                logger.warning(f"[JOB] Missing email for user_id={resolved_user_id}. Skipping email.")
+                return
 
     if not email_to:
         logger.warning(f"[JOB] Missing notification email for agent_id {agent_id}. Skipping email.")

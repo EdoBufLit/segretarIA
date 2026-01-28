@@ -70,6 +70,7 @@ from alerting import (
     notify_chat_message,
 )
 from services.timing import log_duration
+from services.subscription_service import ensure_subscription_for_user
 
 # ================== CONFIG BASE ==================
 
@@ -2160,6 +2161,9 @@ async def admin_update_user(
         meta={"changes": payload.dict(exclude_unset=True)}
     )
 
+    # Sync Subscription
+    ensure_subscription_for_user(db, user.id)
+
     return {"status": "ok", "user": {"id": user.id, "email": user.email, "studio_name": user.studio_name}}
 
 
@@ -2190,6 +2194,9 @@ async def admin_put_user(
         admin_username=admin.username,
         meta={"changes": payload.dict(exclude_unset=True)}
     )
+
+    # Sync Subscription
+    ensure_subscription_for_user(db, user.id)
 
     return {"status": "ok", "user": {"id": user.id, "email": user.email, "studio_name": user.studio_name}}
 

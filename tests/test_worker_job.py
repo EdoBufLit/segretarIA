@@ -242,13 +242,13 @@ def test_process_elevenlabs_event_job_no_studio_name():
         usage = db.query(UsageEvent).filter_by(call_id="test_call_id_unique").first()
         assert usage is not None
 
-        # Check Email Enqueued - SHOULD BE 0
-        mock_queue_instance.enqueue.assert_not_called()
+        # Check Email Enqueued - SHOULD BE CALLED (Fallback logic)
+        mock_queue_instance.enqueue.assert_called_once()
 
         # Check Logging
-        # Verify that we logged the warning about missing studio_name
+        # Verify that we DID NOT log the warning about missing studio_name
         warning_calls = [call[0][0] for call in mock_logger.warning.call_args_list]
-        assert any("Missing studio_name" in str(arg) for arg in warning_calls)
+        assert not any("Missing studio_name" in str(arg) for arg in warning_calls)
 
 if __name__ == "__main__":
     # Manually run tests if executed directly
