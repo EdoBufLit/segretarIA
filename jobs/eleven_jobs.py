@@ -30,14 +30,21 @@ def process_elevenlabs_event_job(payload: dict):
     except Exception as e:
         data = payload.get("data", {})
         agent_id = data.get("agent_id", "unknown")
-        call_id = data.get("metadata", {}).get("phone_call", {}).get("call_sid", "unknown")
+        # Safe extraction for error logging
+        meta = data.get("metadata") or {}
+        phone_meta = meta.get("phone_call") or {}
+        call_id = phone_meta.get("call_sid") or data.get("conversation_id") or "unknown"
+
         log_critical_error(f"Job fallito per agent_id {agent_id}: {e}", context={"agent_id": agent_id, "call_id": call_id})
         raise
 
 def _process_elevenlabs_event_logic(payload: dict):
-    logger.info("Processing ElevenLabs event...")
-
+    event_type = payload.get("type")
     data = payload.get("data", {})
+    conversation_id = data.get("conversation_id")
+
+    logger.info(f"Processing ElevenLabs event type={event_type} conversation_id={conversation_id}")
+
     agent_id = data.get("agent_id")
 
     # We expect the payload to be already validated as 'post_call_transcription' by the endpoint.
@@ -46,13 +53,24 @@ def _process_elevenlabs_event_logic(payload: dict):
         logger.error("No agent_id in payload")
         return
 
-    # Extract metadata
-    metadata = data.get("metadata", {})
+    # Extract metadata safely
+    metadata = data.get("metadata") or {}
     start_unix = metadata.get("start_time_unix_secs")
     duration_secs = metadata.get("call_duration_secs")
 
+    # Branching logic by event type
+    if event_type == "post_call_transcription":
+        # For transcription events, metadata.phone_call is often missing/null
+        phone_call_meta = {}
+        # Do not rely on call_sid from metadata
+        call_id = conversation_id
+        logger.info(f"[ELEVEN JOB] processed post_call_transcription conversation_id={conversation_id}")
+    else:
+        # Default behavior for other events
+        phone_call_meta = metadata.get("phone_call") or {}
+        call_id = phone_call_meta.get("call_sid")
+
     # Inbound Number (to_number)
-    phone_call_meta = metadata.get("phone_call", {})
     to_number = phone_call_meta.get("number") or phone_call_meta.get("to_number")
 
     # Caller Number (from_number)
@@ -68,7 +86,11 @@ def _process_elevenlabs_event_logic(payload: dict):
     dyn = ((data.get("conversation_initiation_client_data") or {}).get("dynamic_variables") or {})
     twilio_sid = dyn.get("call_sid") or dyn.get("twilio_call_sid")
 
-    call_id = twilio_sid or phone_call_meta.get("call_sid") or data.get("conversation_id")
+    if twilio_sid:
+        call_id = twilio_sid
+    elif not call_id:
+        # Fallback if not set by branching logic
+        call_id = conversation_id
 
     # Calculate Timestamps early for UsageEvent
     started_at = None
