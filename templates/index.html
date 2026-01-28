@@ -59,9 +59,9 @@
         }
 
         /* Hero Rotation */
-        .rotator-text { transform: translateY(0); opacity: 1; }
-        .rot-out { transform: translateY(-110%); opacity: 0; }
-        .rot-in  { transform: translateY(110%); opacity: 0; }
+        .rotator-text { transform: translate(-50%, 0); opacity: 1; left: 50%; }
+        .rot-out { transform: translate(-50%, -110%); opacity: 0; }
+        .rot-in  { transform: translate(-50%, 110%); opacity: 0; }
 
         .rotator-underline{
             bottom: -0.10em;
@@ -141,18 +141,20 @@
                     AI Voice Assistant Enterprise
                 </div>
 
-                <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-[1.1] text-neutral-900">
-                    La segretaria che <br class="hidden md:block" />
-                    non dorme mai per
-                    <div class="mt-2 block">
-                        <span class="rotator-wrap inline-block align-baseline relative overflow-hidden h-[1.15em] w-[18ch]">
-                            <span id="hero-rotating-phrase"
-                                  class="rotator-text absolute left-0 top-0 transition-all duration-300 ease-out will-change-[transform,opacity]">
-                                il tuo studio
+                <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-[1.1] text-neutral-900 flex flex-col items-center max-w-4xl mx-auto">
+                    <span>La segretaria che</span>
+                    <span class="block">
+                        non dorme mai per
+                        <span class="block md:inline-block mt-2 md:mt-0">
+                            <span class="rotator-wrap inline-block align-bottom relative overflow-hidden h-[1.15em] w-[22ch]">
+                                <span id="hero-rotating-phrase"
+                                      class="rotator-text absolute top-0 transition-all duration-300 ease-out will-change-[transform,opacity] whitespace-nowrap">
+                                    il tuo studio
+                                </span>
+                                <span id="hero-underline" class="rotator-underline absolute left-0 right-0"></span>
                             </span>
-                            <span id="hero-underline" class="rotator-underline absolute left-0 right-0"></span>
                         </span>
-                    </div>
+                    </span>
                 </h1>
 
                 <p class="text-xl text-neutral-600 leading-relaxed mb-12 max-w-2xl mx-auto font-light">
