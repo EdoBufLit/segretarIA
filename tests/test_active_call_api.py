@@ -38,23 +38,26 @@ class TestActiveCallApi:
         user_id = 1
         call_sid = "call_123"
 
-        # Mock user mapping lookup
-        mock_redis.get.return_value = call_sid.encode()
-
-        # Mock session lookup (bytes)
-        mock_redis.hgetall.return_value = {
-            b"status": b"ai_active",
-            b"call_sid": b"call_123",
-            b"office_phone_e164": b"+39021234567",
-            b"caller_number": b"+393331234567",
-            b"agent_id": b"agent_007"
-        }
+        # Mock Lua script response: [call_sid, [key, val, key, val...]]
+        mock_redis.eval.return_value = [
+            call_sid.encode(),
+            [
+                b"status", b"ai_active",
+                b"call_sid", b"call_123",
+                b"office_phone_e164", b"+39021234567",
+                b"caller_number", b"+393331234567",
+                b"agent_id", b"agent_007"
+            ]
+        ]
 
         response = client.get("/api/client/active-call")
 
         # Verify redis calls
-        mock_redis.get.assert_called_with(f"active_call_user:{user_id}")
-        mock_redis.hgetall.assert_called_with(f"call_session:{call_sid}")
+        assert mock_redis.eval.called
+        args, _ = mock_redis.eval.call_args
+        # args[0] is script, args[1] is numkeys, args[2] is key
+        assert args[1] == 1
+        assert args[2] == f"active_call_user:{user_id}"
 
         assert response.status_code == 200
         data = response.json()
@@ -64,7 +67,7 @@ class TestActiveCallApi:
         assert data["active_call"]["caller_number"] == "+393331234567"
 
     def test_get_active_call_none(self, mock_redis, mock_current_user):
-        mock_redis.get.return_value = None
+        mock_redis.eval.return_value = None
 
         response = client.get("/api/client/active-call")
 
@@ -74,10 +77,10 @@ class TestActiveCallApi:
 
     def test_get_active_call_ended_status(self, mock_redis, mock_current_user):
         # Even if user mapping exists, if session is ended, return None
-        mock_redis.get.return_value = b"call_ended_123"
-        mock_redis.hgetall.return_value = {
-            b"status": b"ended"
-        }
+        mock_redis.eval.return_value = [
+            b"call_ended_123",
+            [b"status", b"ended"]
+        ]
 
         response = client.get("/api/client/active-call")
         data = response.json()

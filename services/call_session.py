@@ -111,18 +111,30 @@ class CallSessionManager:
         Returns the current active session for a user, if any.
         """
         user_key = self._key_user_active(user_id)
+        script = """
+        local sid = redis.call('GET', KEYS[1])
+        if not sid then return nil end
+        local session = redis.call('HGETALL', 'call_session:' .. sid)
+        return {sid, session}
+        """
         try:
-            call_sid_bytes = None
-            with log_duration("redis.get active_call_for_user"):
-                call_sid_bytes = self.redis.get(user_key)
+            result = None
+            with log_duration("redis.get active_call_for_user", level=logging.DEBUG):
+                result = self.redis.eval(script, 1, user_key)
 
-            if not call_sid_bytes:
+            if not result:
                 return None
-            call_sid = call_sid_bytes.decode()
-            session = self.get_session(call_sid)
+
+            call_sid = result[0].decode()
+            session_data = result[1]
+            if not session_data:
+                return None
+
+            # Parse HGETALL list response
+            session = {session_data[i].decode(): session_data[i+1].decode() for i in range(0, len(session_data), 2)}
 
             # Verify it's actually active
-            if session and session.get("status") in [CallStatus.AI_ACTIVE, CallStatus.HUMAN_REQUESTED]:
+            if session.get("status") in [CallStatus.AI_ACTIVE, CallStatus.HUMAN_REQUESTED]:
                 session["call_sid"] = call_sid # Attach key
                 return session
             return None
