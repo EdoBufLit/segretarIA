@@ -150,7 +150,7 @@ class UsageEvent(Base):
     subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
-    call_id = Column(String, unique=True, nullable=True)
+    call_id = Column(Integer, ForeignKey("call_logs.id"), unique=True, nullable=False)
     started_at = Column(DateTime, nullable=False)
     ended_at = Column(DateTime, nullable=False)
     billed_seconds = Column(Integer, nullable=False)
