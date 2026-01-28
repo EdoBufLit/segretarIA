@@ -19,15 +19,17 @@ class ClientService:
         manual_active = False
         manual_plan = None
 
+        manual_plan_code = (self.user.subscription_plan or "").strip().lower()
+
         if self.user.has_active_plan():
              # Check if it's a manual plan (plan set and not NONE)
              # Note: has_active_plan() returns True for active Stripe subs too, so we need to be careful.
              # If subscription is None but has_active_plan is True, it must be manual (or stripe sub state issue, but has_active_plan checks state).
              if not subscription:
-                  if self.user.subscription_plan and self.user.subscription_plan != 'NONE':
+                  if manual_plan_code and manual_plan_code != "none":
                        manual_active = True
                        # Fetch Plan details
-                       manual_plan = self.db.query(Plan).filter(Plan.code == self.user.subscription_plan).first()
+                       manual_plan = self.db.query(Plan).filter(Plan.code == manual_plan_code).first()
 
         if not subscription and not manual_active:
             return {"status": "inactive"}

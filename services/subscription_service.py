@@ -34,11 +34,14 @@ def ensure_subscription_for_user(db: Session, user_id: int):
             return
 
         # 2. Fallback to manual plan (User.subscription_plan)
-        manual_plan_code = user.subscription_plan
-        if not manual_plan_code or manual_plan_code == 'NONE':
+        manual_plan_code = (user.subscription_plan or "").strip().lower()
+        if not manual_plan_code or manual_plan_code == "none":
             # No manual plan set, nothing to enforce.
             # (Optional: we could cancel any existing manual sub if it exists, but requirements don't strictly ask for it)
             return
+
+        if user.subscription_plan != manual_plan_code:
+            user.subscription_plan = manual_plan_code
 
         plan = db.query(Plan).filter(Plan.code == manual_plan_code).first()
         if not plan:
@@ -84,7 +87,7 @@ def ensure_subscription_for_user(db: Session, user_id: int):
                 stripe_subscription_id=None
             )
             db.add(new_sub)
-            logger.info(f"Created new manual subscription for user {user_id} plan {manual_plan_code}")
+            logger.info(f"[USAGE] Created missing subscription for user_id={user_id}")
 
         db.commit()
 
