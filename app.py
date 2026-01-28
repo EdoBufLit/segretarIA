@@ -1668,6 +1668,7 @@ async def elevenlabs_webhook(request: Request):
         log_data = {
             "conversation_id": conversation_id,
             "call_id": call_sid,
+            "metadata": {"phone_call": {"call_sid": call_sid}},
             "status": status,
             "summary": summary,
             "transcript": transcript,

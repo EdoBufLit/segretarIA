@@ -60,6 +60,8 @@ class BillingService:
             return
 
         # 4. Create UsageEvent
+        if call_id is None:
+            call_id = f"conv_{call_log_id}"
         usage_event = UsageEvent(
             subscription_id=active_subscription.id,
             user_id=client_user.id,

@@ -122,7 +122,7 @@ def test_process_elevenlabs_event_job_success():
         mock_summarize.assert_called_once()
 
 def test_process_elevenlabs_event_job_idempotency():
-    """Test idempotency: duplicate call_id should not trigger OpenAI or Email."""
+    """Test idempotency: duplicate call_log_id should still send email but skip usage insert."""
     with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
          patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
          patch("jobs.eleven_jobs.summarize_call") as mock_summarize:
@@ -154,6 +154,7 @@ def test_process_elevenlabs_event_job_idempotency():
             subscription_id=sub.id,
             user_id=user.id,
             agent_id=agent.id,
+            call_id="test_call_id_unique",
             call_log_id=call_log.id,
             started_at=datetime.utcnow(),
             ended_at=datetime.utcnow(),
@@ -171,9 +172,9 @@ def test_process_elevenlabs_event_job_idempotency():
         # RUN (Duplicate)
         process_elevenlabs_event_job(MOCK_PAYLOAD)
 
-        # Check: No Email, No OpenAI
-        mock_queue_instance.enqueue.assert_not_called()
-        mock_summarize.assert_not_called()
+        # Check: Email and OpenAI still executed (metering skipped)
+        mock_queue_instance.enqueue.assert_called_once()
+        mock_summarize.assert_called_once()
 
 def test_process_elevenlabs_event_job_no_email():
     """Test scenario where user has no email: logic should skip email sending but process usage."""

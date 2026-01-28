@@ -1,10 +1,12 @@
 import json
 import logging
+import math
+import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from db import SessionLocal
-from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription
+from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription, CallLog
 from jobs.email_jobs import send_email_job
 from call_utils import upsert_call_log, summarize_call, build_email_body_html, extract_transcript_text
 from queue_utils import get_queue
@@ -94,7 +96,9 @@ def _process_elevenlabs_event_logic(payload: dict):
 
     if not call_id:
         # Fallback if not set by branching logic
-        call_id = conversation_id
+        call_id = conversation_id or f"conv_{uuid.uuid4().hex}"
+
+    call_sid_value = phone_call_meta.get("call_sid") or twilio_sid
 
     # Calculate Timestamps early for UsageEvent
     # 1. Duration Calculation (with fallback to transcript)
@@ -147,6 +151,7 @@ def _process_elevenlabs_event_logic(payload: dict):
     resolved_user_id = None
     usage_inserted = False
     call_log_result = None
+    call_log_payload = None
 
     # === DB OPERATIONS (SYNC & VALIDATION & LOCKING) ===
     with SessionLocal() as db:
@@ -294,6 +299,7 @@ def _process_elevenlabs_event_logic(payload: dict):
                 "transcript_text": transcript_text,
                 "caller_number": caller_number,
                 "call_id": call_id,
+                "metadata": {"phone_call": {"call_sid": call_sid_value}} if call_sid_value else None,
                 "started_at": started_at,
                 "ended_at": ended_at,
                 "duration_secs": duration_secs,
@@ -302,70 +308,79 @@ def _process_elevenlabs_event_logic(payload: dict):
             call_log_result = upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id, db=db)
             if not call_log_result or not call_log_result.get("id"):
                 logger.error("[JOB] Unable to resolve call_log for agent_id=%s. Skipping usage metering.", agent_id)
-                return
 
             # 6. IDEMPOTENCY & LOCKING (Insert UsageEvent)
-            if user and target_sub:
+            if user and target_sub and call_log_result and call_log_result.get("id"):
                 # A) Resolve DB agent id
                 db_agent = agent_obj
                 if not db_agent:
                     logger.error("[USAGE] Agent not found for eleven_agent_id=%s", agent_id)
-                    return
+                    raise ValueError("Agent not found for usage metering")
 
                 # B) Resolve canonical call_id (CallLog.id)
                 call_log_id = call_log_result["id"]
 
                 # C) Compute billed_seconds
-                billed_seconds = payload["data"].get("metadata", {}).get("call_duration_secs")
-                if not billed_seconds:
-                    billed_seconds = max(
-                        (t.get("time_in_call_secs", 0) for t in payload["data"].get("transcript", [])),
-                        default=0
-                    )
+                call_log = db.query(CallLog).filter(CallLog.id == call_log_id).first()
+                raw_data = (call_log.raw_data or {}) if call_log else {}
+                raw_payload = raw_data.get("data", {}) if isinstance(raw_data, dict) else {}
+                duration_ms = raw_payload.get("duration_ms")
+                if isinstance(duration_ms, (int, float)):
+                    billed_seconds = int(math.ceil(duration_ms / 1000))
+                else:
+                    billed_seconds = payload["data"].get("metadata", {}).get("call_duration_secs")
+                    if not billed_seconds:
+                        billed_seconds = max(
+                            (t.get("time_in_call_secs", 0) for t in payload["data"].get("transcript", [])),
+                            default=0
+                        )
                 if billed_seconds <= 0:
-                    logger.warning("[USAGE] billed_seconds=0, skipping")
-                    return
+                    logger.warning("[USAGE] billed_seconds=0, inserting usage_event with zero seconds")
 
                 # D) Insert usage (idempotent)
                 existing_usage = db.query(UsageEvent).filter_by(call_log_id=call_log_id).first()
                 if existing_usage:
                     logger.info("[JOB] Duplicate call_log_id %s detected. Skipping usage.", call_log_id)
-                    return
-
-                try:
-                    usage = UsageEvent(
-                        subscription_id=target_sub.id,
-                        user_id=user.id,
-                        agent_id=db_agent.id,
-                        call_id=call_id,
-                        call_log_id=call_log_id,
-                        billed_seconds=int(billed_seconds),
-                        started_at=datetime.utcnow() - timedelta(seconds=billed_seconds),
-                        ended_at=datetime.utcnow(),
-                    )
-                    db.add(usage)
-                    db.commit()
-                    usage_inserted = True
+                else:
+                    usage_call_id = conversation_id or call_id or f"conv_{uuid.uuid4().hex}"
                     logger.info(
-                        "[USAGE] inserted usage_event call_log_id=%s billed_seconds=%s",
-                        call_log_id,
+                        "[USAGE] resolved user_id=%s subscription_id=%s call_id=%s billed_seconds=%s",
+                        user.id,
+                        target_sub.id,
+                        usage_call_id,
                         billed_seconds,
                     )
+                    try:
+                        usage = UsageEvent(
+                            subscription_id=target_sub.id,
+                            user_id=user.id,
+                            agent_id=db_agent.id,
+                            call_id=usage_call_id,
+                            call_log_id=call_log_id,
+                            billed_seconds=int(billed_seconds),
+                            started_at=datetime.utcnow() - timedelta(seconds=billed_seconds),
+                            ended_at=datetime.utcnow(),
+                        )
+                        db.add(usage)
+                        db.commit()
+                        usage_inserted = True
+                        logger.info(
+                            "[USAGE] inserted usage_event call_log_id=%s billed_seconds=%s",
+                            call_log_id,
+                            billed_seconds,
+                        )
 
-                # E) Protect against duplicates
-                except IntegrityError:
-                    db.rollback()
-                    logger.info(f"[JOB] Duplicate call_log_id {call_log_id} detected (IntegrityError). Skipping.")
-                    return
+                    # E) Protect against duplicates
+                    except IntegrityError:
+                        db.rollback()
+                        logger.info(f"[JOB] Duplicate call_log_id {call_log_id} detected (IntegrityError). Skipping.")
 
         except Exception as e:
             logger.error(f"[JOB] DB Error: {e}")
-            # We treat DB errors as fatal for processing to avoid incorrect billing/logging
-            return
+            # Continue with summary/email even if metering fails.
 
     if not usage_inserted:
-        logger.info("[JOB] Usage event not inserted; skipping summarization and email.")
-        return
+        logger.info("[JOB] Usage event not inserted; continuing with summarization and email.")
 
     if call_log_result:
         if call_log_result.get("created"):
@@ -400,12 +415,13 @@ def _process_elevenlabs_event_logic(payload: dict):
         }
 
     # LOG CALL (update with summary/analysis)
-    call_log_payload.update({
-        "analysis": analysis_structured,
-        "summary": analysis_structured.get("summary")
-    })
-    with SessionLocal() as db:
-        upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id, db=db)
+    if call_log_payload:
+        call_log_payload.update({
+            "analysis": analysis_structured,
+            "summary": analysis_structured.get("summary")
+        })
+        with SessionLocal() as db:
+            upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id, db=db)
 
     # ENQUEUE EMAIL
 
@@ -459,6 +475,7 @@ def _process_elevenlabs_event_logic(payload: dict):
 
         subject = f"{unassigned_prefix}[Mr.Automa] Nuova chiamata per {studio_name} da {caller_number}"
 
+        logger.info("[EMAIL] sending to=%s studio_name=%s", email_to, studio_name)
         queue = get_queue()
         queue.enqueue(send_email_job, email_to, subject, email_body)
         logger.info(f"[EMAIL] enqueued to={email_to} conversation_id={conversation_id}")

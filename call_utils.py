@@ -125,12 +125,20 @@ def upsert_call_log(
             if "analysis" in current_data and not data.get("analysis"):
                 data["analysis"] = current_data["analysis"]
 
-            target_log.text = data.get("summary") or data.get("transcript_text")
-            target_log.status = data.get("status") or target_log.status
+            merged_data = current_data.copy()
+            for key, value in data.items():
+                if value is not None:
+                    merged_data[key] = value
+
+            summary_text = merged_data.get("summary") or merged_data.get("transcript_text")
+            if summary_text:
+                target_log.text = summary_text
+            target_log.status = merged_data.get("status") or target_log.status
             if user_id and not target_log.user_id:
                 target_log.user_id = user_id
 
             # Update raw_data
+            entry["data"] = merged_data
             target_log.raw_data = entry
 
             logger.info(f"[LOG] Updated existing CallLog for {unique_id}")
