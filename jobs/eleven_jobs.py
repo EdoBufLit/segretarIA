@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from db import SessionLocal
 from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription
-from billing_service import BillingService
 from jobs.email_jobs import send_email_job
 from call_utils import upsert_call_log, summarize_call, build_email_body_html, extract_transcript_text
 from queue_utils import get_queue
@@ -14,6 +13,7 @@ import os
 
 logger = logging.getLogger("eleven_jobs")
 STUDIO_NAME = os.getenv("STUDIO_NAME", "Mr.Automa")
+NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL")
 
 def process_elevenlabs_event_job(payload: dict):
     """
@@ -61,9 +61,8 @@ def _process_elevenlabs_event_logic(payload: dict):
     # Branching logic by event type
     if event_type == "post_call_transcription":
         # For transcription events, metadata.phone_call is often missing/null
-        phone_call_meta = {}
-        # Do not rely on call_sid from metadata
-        call_id = conversation_id
+        phone_call_meta = metadata.get("phone_call") or {}
+        call_id = phone_call_meta.get("call_sid") or conversation_id
         logger.info(f"[ELEVEN JOB] processed post_call_transcription conversation_id={conversation_id}")
     else:
         # Default behavior for other events
@@ -109,6 +108,7 @@ def _process_elevenlabs_event_logic(payload: dict):
     # Variables for email sending (resolved via DB)
     db_email_to = None
     db_studio_name = None
+    resolved_user_id = None
 
     # === DB OPERATIONS (SYNC & VALIDATION & LOCKING) ===
     with SessionLocal() as db:
@@ -153,12 +153,16 @@ def _process_elevenlabs_event_logic(payload: dict):
             # Query active routing for this agent
             active_routing = db.query(AgentRouting).filter(
                 AgentRouting.agent_id == agent_id,
-                AgentRouting.is_active == True
-            ).first()
+                AgentRouting.is_active == True,
+                AgentRouting.status == "active"
+            ).order_by(AgentRouting.id.desc()).first()
 
             user = None
+            resolved_user_id = None
             if active_routing and active_routing.user_id:
                 user = db.query(User).filter(User.id == active_routing.user_id).first()
+                if user:
+                    resolved_user_id = user.id
 
             # Logging Routing Result
             if user:
@@ -169,8 +173,8 @@ def _process_elevenlabs_event_logic(payload: dict):
             # We still need agent_obj for UsageEvent FK
             agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
 
-            if not user or not agent_obj:
-                logger.warning(f"[JOB] Unassigned/Unknown agent/user for agent_id {agent_id}. Storing UnassignedEvent.")
+            if not user:
+                logger.warning(f"[JOB] Unassigned agent_id={agent_id}. Storing UnassignedEvent.")
                 unassigned = UnassignedEvent(
                     agent_id=agent_id,
                     phone_number=to_number,
@@ -178,20 +182,18 @@ def _process_elevenlabs_event_logic(payload: dict):
                 )
                 db.add(unassigned)
                 db.commit()
-                return # Stop processing
 
             # Capture Email/Studio info from User (Source of Truth)
-            db_email_to = user.email
-            db_studio_name = user.studio_name
+            if user:
+                db_email_to = user.email
+                db_studio_name = user.studio_name
 
             # 4. Check Suspension
-            if not user.is_active:
-                logger.warning(f"[JOB] Suspended user {user.username}. Blocking.")
-                return
+            if user and not user.is_active:
+                logger.warning(f"[JOB] Suspended user {user.username}. Allowing summary/email to proceed.")
 
-            if not user.has_active_plan():
-                logger.warning(f"[JOB] No active plan for user {user.username}. Blocking.")
-                return
+            if user and not user.has_active_plan():
+                logger.warning(f"[JOB] No active plan for user {user.username}. Allowing summary/email to proceed.")
 
             # Resolve active_sub for linking usage event (fallback to last sub if manual override but no active sub found?)
             # UsageEvent REQUIRES a subscription_id currently.
@@ -201,37 +203,25 @@ def _process_elevenlabs_event_logic(payload: dict):
             # For now, let's link to the most recent subscription record even if canceled,
             # OR find the active one.
 
-            target_sub = db.query(Subscription).filter(
-                Subscription.user_id == user.id,
-                Subscription.state == "active"
-            ).first()
-
-            if not target_sub:
-                # If no active stripe sub (maybe manual override), get the latest one
+            target_sub = None
+            if user:
                 target_sub = db.query(Subscription).filter(
-                    Subscription.user_id == user.id
-                ).order_by(Subscription.id.desc()).first()
+                    Subscription.user_id == user.id,
+                    Subscription.state == "active"
+                ).first()
 
-            if not target_sub:
-                # If NO subscription record exists at all (e.g. manually added user without stripe init), we can't create UsageEvent easily without changing schema.
-                # Assuming all users have at least a "NONE" plan subscription created at register/init?
-                # If not, we skip metering or create a dummy one?
-                # Let's log warning and return for now to avoid crash, but this effectively blocks metering.
-                # However, blocking logic above passed, so we allow the call but maybe fail to bill it?
-                # But wait, step 5 is just metering. The call logic continues after the `try...catch` block?
-                # No, if we return here, we skip AI/Email.
-                # We need a subscription to link usage.
-                logger.warning(f"[JOB] User {user.username} has active plan (manual?) but no Subscription record found in DB. Cannot meter usage.")
-                # We should probably allow proceeding but skip usage tracking?
-                # But IDEMPOTENCY relies on UsageEvent insert.
-                # Let's Skip metering but proceed? No, idempotency is key.
-                # Let's assume a subscription always exists (created on user creation? admin_seed creates plans, maybe client_service creates sub?)
-                return
+                if not target_sub:
+                    # If no active stripe sub (maybe manual override), get the latest one
+                    target_sub = db.query(Subscription).filter(
+                        Subscription.user_id == user.id
+                    ).order_by(Subscription.id.desc()).first()
+
+                if not target_sub:
+                    logger.warning(f"[JOB] User {user.username} has active plan but no Subscription record found. Skipping usage metering.")
 
             # 5. IDEMPOTENCY & LOCKING (Insert UsageEvent)
             # This acts as a lock. If call_id exists, IntegrityError will be raised.
-            if call_id and duration_secs:
-                 billing_service = BillingService(db)
+            if user and agent_obj and target_sub and call_id and duration_secs:
                  # We insert explicitly here to lock.
                  # billing_service.meter_call might do a commit, which is fine.
                  # meter_call checks for existing call_id too? Let's check logic or rely on IntegrityError.
@@ -263,6 +253,41 @@ def _process_elevenlabs_event_logic(payload: dict):
     # Extract transcript text
     transcript_text = extract_transcript_text(payload)
 
+    # Status
+    status = "success"
+    if duration_secs and duration_secs < 3:
+        status = "failure"
+
+    # LOG CALL (initial insert)
+    call_log_payload = {
+        "conversation_id": conversation_id,
+        "transcript_text": transcript_text,
+        "caller_number": caller_number,
+        "call_id": call_id,
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "duration_secs": duration_secs,
+        "status": status
+    }
+    call_log_result = upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id)
+    if call_log_result:
+        if call_log_result.get("created"):
+            logger.info(
+                "[DB] call_log inserted id=%s user_id=%s agent_id=%s conversation_id=%s",
+                call_log_result.get("id"),
+                resolved_user_id,
+                agent_id,
+                conversation_id
+            )
+        else:
+            logger.info(
+                "[DB] call_log updated id=%s user_id=%s agent_id=%s conversation_id=%s",
+                call_log_result.get("id"),
+                resolved_user_id,
+                agent_id,
+                conversation_id
+            )
+
     # Analysis from ElevenLabs
     analysis_obj: Dict[str, Any] = data.get("analysis", {}) or {}
     el_summary: Optional[str] = analysis_obj.get("transcript_summary")
@@ -277,37 +302,36 @@ def _process_elevenlabs_event_logic(payload: dict):
             "client_name": None
         }
 
-    # Status
-    status = "success"
-    if duration_secs and duration_secs < 3:
-        status = "failure"
-
-    # LOG CALL
-    upsert_call_log(agent_id, {
-        "transcript_text": transcript_text,
+    # LOG CALL (update with summary/analysis)
+    call_log_payload.update({
         "analysis": analysis_structured,
-        "caller_number": caller_number,
-        "call_id": call_id,
-        "started_at": started_at,
-        "ended_at": ended_at,
-        "duration_secs": duration_secs,
-        "status": status,
         "summary": analysis_structured.get("summary")
     })
+    upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id)
 
     # ENQUEUE EMAIL
 
     # 1. Use DB resolved values
-    studio_name = db_studio_name
+    studio_name = db_studio_name or STUDIO_NAME
     email_to = db_email_to
+    unassigned_prefix = ""
 
-    # 2. Strict Check: If no user/email found in DB, log unrouted and skip.
+    # 2. Fallback: If no user/email found in DB, send to notification email.
     if not email_to:
-        logger.warning(f"[JOB] Unrouted event for agent_id={agent_id}. No user/email found in DB. Skipping email.")
+        if resolved_user_id is None:
+            email_to = NOTIFICATION_EMAIL
+            unassigned_prefix = "UNASSIGNED "
+            logger.warning(f"[JOB] Unrouted event for agent_id={agent_id}. Sending to notification email.")
+        else:
+            logger.warning(f"[JOB] Missing email for user_id={resolved_user_id}. Skipping email.")
+            return
+
+    if resolved_user_id is not None and not db_studio_name:
+        logger.warning(f"[JOB] Missing studio_name for user_id={resolved_user_id}. Skipping email.")
         return
 
-    if not studio_name:
-        logger.warning(f"[JOB] Missing studio_name for agent_id {agent_id}. Skipping email.")
+    if not email_to:
+        logger.warning(f"[JOB] Missing notification email for agent_id {agent_id}. Skipping email.")
         return
 
     try:
@@ -322,11 +346,11 @@ def _process_elevenlabs_event_logic(payload: dict):
             agency_name=STUDIO_NAME,
         )
 
-        subject = f"[Mr.Automa] Nuova chiamata per {studio_name} da {caller_number}"
+        subject = f"{unassigned_prefix}[Mr.Automa] Nuova chiamata per {studio_name} da {caller_number}"
 
         queue = get_queue()
         queue.enqueue(send_email_job, email_to, subject, email_body)
-        logger.info(f"Email job enqueued for {email_to}")
+        logger.info(f"[EMAIL] enqueued to={email_to} conversation_id={conversation_id}")
 
     except Exception as e:
         logger.error(f"Error preparing/enqueuing email: {e}")

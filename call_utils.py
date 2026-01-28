@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 logger = logging.getLogger("call_utils")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def log_call(agent_id: str, data: Dict[str, Any]):
+def log_call(agent_id: str, data: Dict[str, Any], user_id: Optional[int] = None) -> Optional[int]:
     """Salva una riga JSON in DB (CallLog)"""
     timestamp = datetime.utcnow()
     entry = {
@@ -24,6 +24,7 @@ def log_call(agent_id: str, data: Dict[str, Any]):
         db = SessionLocal()
         call_log = CallLog(
             agent_id=agent_id,
+            user_id=user_id,
             timestamp=timestamp,
             text=data.get("summary") or data.get("transcript_text"),
             status=data.get("status"),
@@ -32,15 +33,21 @@ def log_call(agent_id: str, data: Dict[str, Any]):
         db.add(call_log)
         db.commit()
         logger.info(f"[LOG] Salvata chiamata su DB per agent {agent_id}")
+        return call_log.id
     except Exception as exc:
         logger.warning(f"[LOG] DB write failed for agent {agent_id}: {exc}")
+        return None
     finally:
         try:
             db.close()
         except Exception:
             pass
 
-def upsert_call_log(agent_id: str, data: Dict[str, Any]) -> None:
+def upsert_call_log(
+    agent_id: str,
+    data: Dict[str, Any],
+    user_id: Optional[int] = None
+) -> Optional[Dict[str, Any]]:
     """
     Salva o aggiorna una chiamata su DB (CallLog).
     Cerca un duplicato (conversation_id o call_id) negli ultimi 2 giorni.
@@ -56,8 +63,8 @@ def upsert_call_log(agent_id: str, data: Dict[str, Any]) -> None:
 
     if not unique_id:
         logger.warning(f"[LOG] upsert_call_log called without conversation_id or call_id for agent {agent_id}. Falling back to blind insert.")
-        log_call(agent_id, data) # Fallback to legacy
-        return
+        call_log_id = log_call(agent_id, data, user_id=user_id) # Fallback to legacy
+        return {"id": call_log_id, "created": True} if call_log_id else None
 
     try:
         db = SessionLocal()
@@ -112,28 +119,40 @@ def upsert_call_log(agent_id: str, data: Dict[str, Any]) -> None:
 
             target_log.text = data.get("summary") or data.get("transcript_text")
             target_log.status = data.get("status") or target_log.status
+            if user_id and not target_log.user_id:
+                target_log.user_id = user_id
 
             # Update raw_data
             target_log.raw_data = entry
 
             logger.info(f"[LOG] Updated existing CallLog for {unique_id}")
+            call_log_id = target_log.id
+            created = False
         else:
             # INSERT
             call_log = CallLog(
                 agent_id=agent_id,
+                user_id=user_id,
                 timestamp=timestamp,
                 text=data.get("summary") or data.get("transcript_text"),
                 status=data.get("status"),
                 raw_data=entry
             )
             db.add(call_log)
+            db.flush()
             logger.info(f"[LOG] Inserted new CallLog for {unique_id}")
+            call_log_id = call_log.id
+            created = True
 
         db.commit()
+        if not call_log_id:
+            call_log_id = target_log.id if target_log else None
+        return {"id": call_log_id, "created": created}
 
     except Exception as exc:
         logger.warning(f"[LOG] DB upsert failed for agent {agent_id}: {exc}")
         db.rollback()
+        return None
     finally:
         try:
             db.close()
