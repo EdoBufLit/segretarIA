@@ -7,6 +7,7 @@ from models import User, Subscription, Plan
 import logging
 import audit_logger
 from mailer import send_email
+from services.subscription_service import ensure_subscription_for_user
 
 logger = logging.getLogger("stripe_service")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
@@ -315,6 +316,9 @@ class StripeService:
         user.plan_expires_at = subscription.cycle_end
         self.db.commit()
 
+        # Ensure Subscription Sync
+        ensure_subscription_for_user(self.db, user.id)
+
         # Audit Log
         audit_logger.log_audit_event(
             db=self.db,
@@ -402,6 +406,9 @@ class StripeService:
 
         self.db.commit()
 
+        # Ensure Subscription Sync
+        ensure_subscription_for_user(self.db, user.id)
+
         # Audit Log
         audit_logger.log_audit_event(
             db=self.db,
@@ -470,6 +477,9 @@ class StripeService:
 
         self.db.commit()
 
+        # Ensure Subscription Sync
+        ensure_subscription_for_user(self.db, user.id)
+
         # Audit Log
         audit_logger.log_audit_event(
             db=self.db,
@@ -515,6 +525,9 @@ class StripeService:
             sub.cancel_requested_at = datetime.utcnow() # Technically already canceled
 
         self.db.commit()
+
+        # Ensure Subscription Sync
+        ensure_subscription_for_user(self.db, user.id)
 
         # Audit Log
         audit_logger.log_audit_event(
