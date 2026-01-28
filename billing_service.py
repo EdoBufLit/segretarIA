@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from models import User, Agent, Subscription, UsageEvent
+from services.subscription_service import ensure_subscription_for_user
 
 class BillingService:
     def __init__(self, db: Session):
@@ -29,8 +30,18 @@ class BillingService:
         ).first()
 
         if not active_subscription:
-            print(f"Metering failed: No active subscription found for user '{client_user.username}'.")
-            return
+            if client_user.subscription_plan and client_user.subscription_plan != "NONE":
+                ensure_subscription_for_user(self.db, client_user.id)
+                active_subscription = self.db.query(Subscription).filter(
+                    Subscription.user_id == client_user.id,
+                    Subscription.state == "active",
+                    Subscription.cycle_start <= now,
+                    Subscription.cycle_end > now
+                ).first()
+
+            if not active_subscription:
+                print(f"Metering failed: No active subscription found for user '{client_user.username}'.")
+                return
 
         # 3. Idempotency check
         existing_event = self.db.query(UsageEvent).filter_by(call_id=call_id).first()
@@ -50,4 +61,4 @@ class BillingService:
         )
         self.db.add(usage_event)
         self.db.commit()
-        print(f"Successfully metered call '{call_id}' for user '{client_user.username}'.")
+        print(f"[USAGE] Inserted usage_event seconds={duration_secs}")

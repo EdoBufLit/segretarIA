@@ -146,9 +146,9 @@
                     <span class="block">
                         non dorme mai per
                         <span class="block md:inline-block mt-2 md:mt-0">
-                            <span class="rotator-wrap inline-block align-bottom relative w-[22ch]">
+                            <span class="rotator-wrap inline-flex justify-center align-bottom relative min-w-[22ch] text-center">
                                 <span id="hero-rotating-phrase"
-                                      class="rotator-text relative inline-block transition-all duration-300 ease-out will-change-[transform,opacity] whitespace-nowrap">
+                                      class="rotator-text relative inline-block w-full text-center transition-all duration-300 ease-out will-change-[transform,opacity] whitespace-nowrap">
                                     il tuo studio
                                 </span>
                                 <span id="hero-underline" class="rotator-underline absolute left-0 right-0"></span>
@@ -423,48 +423,55 @@
 
             const phrases = ["il tuo studio", "la tua azienda", "la tua associazione"];
             let idx = 0;
+            const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            const retriggerUnderline = () => {
+                elLine.classList.remove("underline-on");
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        elLine.classList.add("underline-on");
+                    });
+                });
+            };
+
+            const swapReduced = () => {
+                idx = (idx + 1) % phrases.length;
+                elText.textContent = phrases[idx];
+                retriggerUnderline();
+            };
+
+            const swapAnimated = () => {
+                elText.classList.add("rot-out");
+
+                setTimeout(() => {
+                    idx = (idx + 1) % phrases.length;
+                    elText.textContent = phrases[idx];
+
+                    elText.classList.remove("rot-out");
+                    elText.classList.add("rot-in");
+
+                    elLine.classList.remove("underline-on");
+
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            elText.classList.remove("rot-in");
+                            elLine.classList.add("underline-on");
+                        });
+                    });
+                }, 320);
+            };
 
             // On first load, add underline-on after 50ms so it animates in.
             setTimeout(() => {
                 elLine.classList.add("underline-on");
             }, 50);
 
-            // Respect reduced motion
-            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-                elLine.classList.add("underline-on");
-                return;
-            }
-
             setInterval(() => {
-                // 1) Animate Out
-                elText.classList.add("rot-out");
-
-                setTimeout(() => {
-                    // 2) after 320ms:
-                    // set elText.textContent = next phrase
-                    idx = (idx + 1) % phrases.length;
-                    elText.textContent = phrases[idx];
-
-                    // elText.classList.remove("rot-out")
-                    elText.classList.remove("rot-out");
-                    // elText.classList.add("rot-in")
-                    elText.classList.add("rot-in");
-
-                    // retrigger underline: elLine.classList.remove("underline-on")
-                    elLine.classList.remove("underline-on");
-
-                    // 3) next animation frame:
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            // elText.classList.remove("rot-in")
-                            elText.classList.remove("rot-in");
-                            // elLine.classList.add("underline-on")
-                            elLine.classList.add("underline-on");
-                        });
-                    });
-
-                }, 320);
-
+                if (reduced) {
+                    swapReduced();
+                } else {
+                    swapAnimated();
+                }
             }, 2400);
         });
     </script>

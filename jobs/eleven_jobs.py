@@ -244,6 +244,16 @@ def _process_elevenlabs_event_logic(payload: dict):
                         Subscription.user_id == user.id
                     ).order_by(Subscription.id.desc()).first()
 
+                if not target_sub and user.subscription_plan and user.subscription_plan != "NONE":
+                    try:
+                        ensure_subscription_for_user(db, user.id)
+                    except Exception as e:
+                        logger.error(f"Failed to ensure subscription for user {user.id}: {e}")
+
+                    target_sub = db.query(Subscription).filter(
+                        Subscription.user_id == user.id
+                    ).order_by(Subscription.id.desc()).first()
+
                 if not target_sub:
                     logger.warning(f"[JOB] User {user.username} has active plan but no Subscription record found. Skipping usage metering.")
 
@@ -289,7 +299,7 @@ def _process_elevenlabs_event_logic(payload: dict):
                     )
                     db.add(usage)
                     db.commit()
-                    logger.info("[USAGE] inserted call_id=%s seconds=%s", call_id, billed_seconds)
+                    logger.info("[USAGE] Inserted usage_event seconds=%s", billed_seconds)
 
                 # E) Protect against duplicates
                 except IntegrityError:
