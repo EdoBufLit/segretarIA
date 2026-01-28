@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from models import User, Agent, Subscription, UsageEvent
+from services.subscription_service import ensure_subscription_for_user
 
 class BillingService:
     def __init__(self, db: Session):
@@ -19,14 +20,16 @@ class BillingService:
             print(f"Metering failed: No client user found for agent '{agent_id}'.")
             return
 
-        # 2. Find current subscription
-        now = datetime.utcnow()
-        active_subscription = self.db.query(Subscription).filter(
-            Subscription.user_id == client_user.id,
-            Subscription.state == "active",
-            Subscription.cycle_start <= now,
-            Subscription.cycle_end > now
-        ).first()
+        # 2. Ensure subscription and find current subscription
+        active_subscription = ensure_subscription_for_user(self.db, client_user.id)
+        if not active_subscription:
+            now = datetime.utcnow()
+            active_subscription = self.db.query(Subscription).filter(
+                Subscription.user_id == client_user.id,
+                Subscription.state == "active",
+                Subscription.cycle_start <= now,
+                Subscription.cycle_end > now
+            ).first()
 
         if not active_subscription:
             print(f"Metering failed: No active subscription found for user '{client_user.username}'.")
@@ -50,4 +53,4 @@ class BillingService:
         )
         self.db.add(usage_event)
         self.db.commit()
-        print(f"Successfully metered call '{call_id}' for user '{client_user.username}'.")
+        print(f"[USAGE] Inserted usage_event seconds={duration_secs}")

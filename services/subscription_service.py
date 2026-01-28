@@ -18,7 +18,19 @@ def ensure_subscription_for_user(db: Session, user_id: int):
             logger.warning(f"User {user_id} not found during ensure_subscription")
             return
 
-        # 1. Check for active Stripe subscription
+        # 1. Return active subscription in current cycle if present.
+        now = datetime.utcnow()
+        active_sub = db.query(Subscription).filter(
+            Subscription.user_id == user_id,
+            Subscription.state == 'active',
+            Subscription.cycle_start <= now,
+            Subscription.cycle_end > now
+        ).first()
+
+        if active_sub:
+            return active_sub
+
+        # 2. Check for active Stripe subscription
         active_stripe_sub = db.query(Subscription).filter(
             Subscription.user_id == user_id,
             Subscription.stripe_subscription_id != None,
@@ -31,14 +43,21 @@ def ensure_subscription_for_user(db: Session, user_id: int):
                 logger.info(f"Syncing user {user_id} plan from {user.subscription_plan} to {active_stripe_sub.plan.code} (Stripe)")
                 user.subscription_plan = active_stripe_sub.plan.code
                 db.commit()
-            return
+            return active_stripe_sub
 
         # 2. Fallback to manual plan (User.subscription_plan)
-        manual_plan_code = user.subscription_plan
-        if not manual_plan_code or manual_plan_code == 'NONE':
+        manual_plan_code = (user.subscription_plan or "").strip().lower()
+        if not manual_plan_code or manual_plan_code == "none":
             # No manual plan set, nothing to enforce.
             # (Optional: we could cancel any existing manual sub if it exists, but requirements don't strictly ask for it)
             return
+
+        if manual_plan_code not in {"starter", "pro", "business"}:
+            logger.warning(f"Plan code {manual_plan_code} not recognized for manual subscription")
+            return
+
+        if user.subscription_plan != manual_plan_code:
+            user.subscription_plan = manual_plan_code
 
         plan = db.query(Plan).filter(Plan.code == manual_plan_code).first()
         if not plan:
@@ -72,6 +91,8 @@ def ensure_subscription_for_user(db: Session, user_id: int):
                 latest_sub.cycle_end = now + timedelta(days=30)
 
             logger.info(f"Updated subscription {latest_sub.id} for user {user_id} to plan {manual_plan_code} (Manual)")
+            db.commit()
+            return latest_sub
         else:
             # Create new
             new_sub = Subscription(
@@ -84,10 +105,12 @@ def ensure_subscription_for_user(db: Session, user_id: int):
                 stripe_subscription_id=None
             )
             db.add(new_sub)
-            logger.info(f"Created new manual subscription for user {user_id} plan {manual_plan_code}")
+            logger.info(f"[USAGE] Created missing subscription for user_id={user_id}")
 
         db.commit()
+        return new_sub
 
     except Exception as e:
         logger.error(f"Error in ensure_subscription_for_user: {e}")
         db.rollback()
+        return None

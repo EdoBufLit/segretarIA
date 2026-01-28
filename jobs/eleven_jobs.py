@@ -15,6 +15,33 @@ import os
 logger = logging.getLogger("eleven_jobs")
 STUDIO_NAME = os.getenv("STUDIO_NAME", "Mr.Automa")
 NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL")
+MANUAL_PLAN_CODES = {"starter", "pro", "business"}
+
+def upsert_agent_from_routing(db, routing: Optional[AgentRouting], user: Optional[User]) -> Optional[Agent]:
+    if not routing or not routing.agent_id:
+        return None
+
+    agent = db.query(Agent).filter(Agent.agent_id == routing.agent_id).first()
+    phone_number_id = str(routing.phone_number_id) if routing.phone_number_id else None
+
+    if agent:
+        if phone_number_id and agent.phone_number_id != phone_number_id:
+            agent.phone_number_id = phone_number_id
+        if not agent.display_name:
+            agent.display_name = "Segreteria IA"
+    else:
+        agent = Agent(
+            agent_id=routing.agent_id,
+            phone_number_id=phone_number_id,
+            display_name="Segreteria IA"
+        )
+        db.add(agent)
+        db.flush()
+
+    if user and agent not in user.agents:
+        user.agents.append(agent)
+
+    return agent
 
 def process_elevenlabs_event_job(payload: dict):
     """
@@ -29,24 +56,28 @@ def process_elevenlabs_event_job(payload: dict):
     try:
         _process_elevenlabs_event_logic(payload)
     except Exception as e:
-        data = payload.get("data", {})
-        agent_id = data.get("agent_id", "unknown")
+        data = payload.get("data") or {}
+        agent_id = (data.get("agent_id") or "unknown").strip()
         # Safe extraction for error logging
         meta = data.get("metadata") or {}
         phone_meta = meta.get("phone_call") or {}
-        call_id = phone_meta.get("call_sid") or data.get("conversation_id") or "unknown"
+        call_id = (
+            (phone_meta.get("call_sid") or phone_meta.get("callSid") or "").strip()
+            or (data.get("conversation_id") or "").strip()
+            or "unknown"
+        )
 
         log_critical_error(f"Job fallito per agent_id {agent_id}: {e}", context={"agent_id": agent_id, "call_id": call_id})
         raise
 
 def _process_elevenlabs_event_logic(payload: dict):
-    event_type = payload.get("type")
-    data = payload.get("data", {})
-    conversation_id = data.get("conversation_id")
+    event_type = (payload.get("type") or "").strip()
+    data = payload.get("data") or {}
+    conversation_id = (data.get("conversation_id") or "").strip()
 
     logger.info(f"Processing ElevenLabs event type={event_type} conversation_id={conversation_id}")
 
-    agent_id = data.get("agent_id")
+    agent_id = (data.get("agent_id") or "").strip()
 
     # We expect the payload to be already validated as 'post_call_transcription' by the endpoint.
 
@@ -63,15 +94,20 @@ def _process_elevenlabs_event_logic(payload: dict):
     if event_type == "post_call_transcription":
         # For transcription events, metadata.phone_call is often missing/null
         phone_call_meta = metadata.get("phone_call") or {}
-        call_id = phone_call_meta.get("call_sid") or conversation_id
+        call_id = (
+            (phone_call_meta.get("call_sid") or phone_call_meta.get("callSid") or "").strip()
+            or conversation_id
+        )
         logger.info(f"[ELEVEN JOB] processed post_call_transcription conversation_id={conversation_id}")
     else:
         # Default behavior for other events
         phone_call_meta = metadata.get("phone_call") or {}
-        call_id = phone_call_meta.get("call_sid")
+        call_id = (
+            (phone_call_meta.get("call_sid") or phone_call_meta.get("callSid") or "").strip()
+        )
 
     # Inbound Number (to_number)
-    to_number = phone_call_meta.get("number") or phone_call_meta.get("to_number")
+    to_number = (phone_call_meta.get("number") or phone_call_meta.get("to_number") or "").strip()
 
     # Caller Number (from_number)
     caller_number = (
@@ -84,17 +120,24 @@ def _process_elevenlabs_event_logic(payload: dict):
 
     # Correlate via dynamic_variables (matching app.py logic)
     dyn = ((data.get("conversation_initiation_client_data") or {}).get("dynamic_variables") or {})
-    twilio_sid = dyn.get("call_sid") or dyn.get("twilio_call_sid")
+    twilio_sid = (dyn.get("call_sid") or dyn.get("twilio_call_sid") or "").strip()
 
     if twilio_sid:
         call_id = twilio_sid
     elif not call_id:
         # Check explicit call_id in metadata
-        call_id = metadata.get("call_id")
+        call_id = (metadata.get("call_id") or "").strip()
 
     if not call_id:
         # Fallback if not set by branching logic
         call_id = conversation_id
+
+    if not agent_id or not conversation_id:
+        logger.warning(
+            "[JOB] Missing identifiers agent_id=%s conversation_id=%s",
+            agent_id or "missing",
+            conversation_id or "missing"
+        )
 
     # Calculate Timestamps early for UsageEvent
     # 1. Duration Calculation (with fallback to transcript)
@@ -188,10 +231,12 @@ def _process_elevenlabs_event_logic(payload: dict):
 
             user = None
             resolved_user_id = None
+            agent_obj = None
             if active_routing and active_routing.user_id:
                 user = db.query(User).filter(User.id == active_routing.user_id).first()
                 if user:
                     resolved_user_id = user.id
+                    agent_obj = upsert_agent_from_routing(db, active_routing, user)
 
             # Logging Routing Result
             if user:
@@ -199,8 +244,12 @@ def _process_elevenlabs_event_logic(payload: dict):
             else:
                 logger.warning(f"[ROUTING] FAILED agent_id={agent_id}")
 
-            # We still need agent_obj for UsageEvent FK
-            agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+            if not agent_obj:
+                routing_source = active_routing or routing
+                agent_obj = upsert_agent_from_routing(db, routing_source, user)
+
+            if agent_obj:
+                db.commit()
 
             if not user:
                 logger.warning(f"[JOB] Unassigned agent_id={agent_id}. Storing UnassignedEvent.")
@@ -229,14 +278,16 @@ def _process_elevenlabs_event_logic(payload: dict):
             if user:
                 # Ensure subscription exists (sync manual plan if needed)
                 try:
-                    ensure_subscription_for_user(db, user.id)
+                    target_sub = ensure_subscription_for_user(db, user.id)
                 except Exception as e:
                     logger.error(f"Failed to ensure subscription for user {user.id}: {e}")
+                    target_sub = None
 
-                target_sub = db.query(Subscription).filter(
-                    Subscription.user_id == user.id,
-                    Subscription.state == "active"
-                ).first()
+                if not target_sub:
+                    target_sub = db.query(Subscription).filter(
+                        Subscription.user_id == user.id,
+                        Subscription.state == "active"
+                    ).first()
 
                 if not target_sub:
                     # If no active stripe sub (maybe manual override), get the latest one
@@ -250,31 +301,23 @@ def _process_elevenlabs_event_logic(payload: dict):
             # 5. IDEMPOTENCY & LOCKING (Insert UsageEvent)
             if user and target_sub:
                 # A) Resolve DB agent id
-                eleven_agent_id = payload["data"]["agent_id"]
-                db_agent = db.query(Agent).filter(
-                    Agent.agent_id == eleven_agent_id
-                ).one_or_none()
+                db_agent = agent_obj
                 if not db_agent:
-                    logger.error("[USAGE] Agent not found for eleven_agent_id=%s", eleven_agent_id)
+                    logger.error("[USAGE] Agent not found for eleven_agent_id=%s", agent_id)
                     return
 
                 # B) Resolve call_id (MUST be unique)
-                call_id = (
-                    payload["data"].get("metadata", {})
-                    .get("phone_call", {})
-                    .get("call_sid")
-                ) or payload["data"]["conversation_id"]
+                call_id = conversation_id or agent_id
 
                 # C) Compute billed_seconds
-                billed_seconds = payload["data"].get("metadata", {}).get("call_duration_secs")
+                billed_seconds = (metadata.get("call_duration_secs") or 0)
                 if not billed_seconds:
                     billed_seconds = max(
-                        (t.get("time_in_call_secs", 0) for t in payload["data"].get("transcript", [])),
+                        (t.get("time_in_call_secs", 0) for t in (data.get("transcript") or [])),
                         default=0
                     )
-                if billed_seconds <= 0:
-                    logger.warning("[USAGE] billed_seconds=0, skipping")
-                    return
+                if billed_seconds is None:
+                    billed_seconds = 0
 
                 # D) Insert usage (idempotent)
                 try:
@@ -289,7 +332,7 @@ def _process_elevenlabs_event_logic(payload: dict):
                     )
                     db.add(usage)
                     db.commit()
-                    logger.info("[USAGE] inserted call_id=%s seconds=%s", call_id, billed_seconds)
+                    logger.info("[USAGE] Inserted usage_event seconds=%s", billed_seconds)
 
                 # E) Protect against duplicates
                 except IntegrityError:
@@ -362,41 +405,25 @@ def _process_elevenlabs_event_logic(payload: dict):
     upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id)
 
     # ENQUEUE EMAIL
-
-    # 1. Use DB resolved values
-    # Fallback for studio_name: db_studio_name -> user.username -> "Il tuo studio"
-    studio_name = db_studio_name
-    if not studio_name and resolved_user_id:
-        with SessionLocal() as db:
-             u = db.query(User).filter(User.id == resolved_user_id).first()
-             if u:
-                 studio_name = u.username or "Il tuo studio"
-
-    if not studio_name:
-        studio_name = STUDIO_NAME
-
     email_to = db_email_to
+    studio_name = db_studio_name
     unassigned_prefix = ""
 
-    # 2. Fallback: If no user/email found in DB, send to notification email.
-    if not email_to:
-        if resolved_user_id is None:
-            email_to = NOTIFICATION_EMAIL
-            unassigned_prefix = "UNASSIGNED "
-            logger.warning(f"[JOB] Unrouted event for agent_id={agent_id}. Sending to notification email.")
-        else:
-            # Try to fetch user email again if db_email_to was None (should be captured above, but let's be safe)
-            with SessionLocal() as db:
-                 u = db.query(User).filter(User.id == resolved_user_id).first()
-                 if u and u.email:
-                     email_to = u.email
-
-            if not email_to:
-                logger.warning(f"[JOB] Missing email for user_id={resolved_user_id}. Skipping email.")
-                return
+    if resolved_user_id:
+        with SessionLocal() as db:
+            u = db.query(User).filter(User.id == resolved_user_id).first()
+            if u:
+                if not email_to:
+                    email_to = u.email
+                if not studio_name:
+                    studio_name = u.studio_name or u.username or STUDIO_NAME
 
     if not email_to:
-        logger.warning(f"[JOB] Missing notification email for agent_id {agent_id}. Skipping email.")
+        logger.warning(f"[JOB] Missing email for user_id={resolved_user_id}. Skipping email.")
+        return
+
+    if not studio_name:
+        logger.warning(f"[JOB] Missing studio name for user_id={resolved_user_id}. Skipping email.")
         return
 
     try:
