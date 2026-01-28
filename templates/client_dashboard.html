@@ -141,7 +141,12 @@
 
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div>
-                    <h2 id="page-title" class="text-2xl font-bold text-neutral-900 tracking-tight">Panoramica</h2>
+            <div class="flex items-center gap-2">
+                <h2 id="page-title" class="text-2xl font-bold text-neutral-900 tracking-tight">Panoramica</h2>
+                <button id="force-refresh-call" onclick="manualRefresh()" class="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-full transition-colors" title="Aggiorna stato chiamata">
+                    <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                </button>
+            </div>
                     <p class="text-neutral-500 text-sm mt-1">Benvenuto nella tua dashboard.</p>
                 </div>
 

@@ -65,22 +65,82 @@ async function initDashboard() {
 // ACTIVE CALL LOGIC
 // =========================
 
-let activeCallInterval = null;
+let activeCallTimeout = null;
+let consecutiveEmptyPolls = 0;
+let isPollingStopped = false;
 
 function startActiveCallPolling() {
+    // Reset
+    consecutiveEmptyPolls = 0;
+    isPollingStopped = false;
+    if (activeCallTimeout) clearTimeout(activeCallTimeout);
+
+    // Visibility listener
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     checkActiveCall();
-    activeCallInterval = setInterval(checkActiveCall, 3000);
+}
+
+function handleVisibilityChange() {
+    if (!document.hidden && !isPollingStopped) {
+         if (activeCallTimeout) clearTimeout(activeCallTimeout);
+         checkActiveCall();
+    }
+}
+
+async function manualRefresh() {
+    const btn = document.getElementById("force-refresh-call");
+    if(btn) btn.classList.add("animate-spin");
+
+    // Reset backoff logic
+    isPollingStopped = false;
+    consecutiveEmptyPolls = 0;
+    if (activeCallTimeout) clearTimeout(activeCallTimeout);
+
+    try {
+        await checkActiveCall();
+    } finally {
+        if(btn) btn.classList.remove("animate-spin");
+    }
 }
 
 async function checkActiveCall() {
+    if (document.hidden) return; // Resume on visibility change
+
+    let nextDelay = 3000;
+
     try {
         const res = await fetch("/api/client/active-call");
-        if (!res.ok) return; // Silent fail
-        const data = await res.json();
+        if (!res.ok) {
+             consecutiveEmptyPolls++;
+        } else {
+            const data = await res.json();
+            const call = data.active_call;
 
-        renderActiveCallBanner(data.active_call);
+            renderActiveCallBanner(call);
+
+            if (call) {
+                consecutiveEmptyPolls = 0;
+                // If ended, stop polling
+                if (['ended', 'completed', 'failed'].includes(call.status)) {
+                    isPollingStopped = true;
+                    return;
+                }
+            } else {
+                consecutiveEmptyPolls++;
+            }
+        }
     } catch(e) {
-        // Silent
+        consecutiveEmptyPolls++;
+    }
+
+    // Backoff
+    if (consecutiveEmptyPolls >= 3) nextDelay = 10000;
+    if (consecutiveEmptyPolls >= 6) nextDelay = 30000;
+
+    if (!isPollingStopped) {
+        activeCallTimeout = setTimeout(checkActiveCall, nextDelay);
     }
 }
 
