@@ -89,22 +89,50 @@ def _process_elevenlabs_event_logic(payload: dict):
     if twilio_sid:
         call_id = twilio_sid
     elif not call_id:
+        # Check explicit call_id in metadata
+        call_id = metadata.get("call_id")
+
+    if not call_id:
         # Fallback if not set by branching logic
         call_id = conversation_id
 
     # Calculate Timestamps early for UsageEvent
+    # 1. Duration Calculation (with fallback to transcript)
+    if not duration_secs:
+        transcript = data.get("transcript") or []
+        max_time = 0
+        for turn in transcript:
+            # Check various keys ElevenLabs might use
+            time_in_call = turn.get("time_in_call_secs")
+            if time_in_call and isinstance(time_in_call, (int, float)):
+                if time_in_call > max_time:
+                    max_time = time_in_call
+        if max_time > 0:
+            duration_secs = int(max_time)
+            logger.info(f"[JOB] Calculated duration from transcript: {duration_secs}s")
+
+    # 2. Timestamps
     started_at = None
     ended_at = None
+
     if isinstance(start_unix, (int, float)):
         started_dt = datetime.utcfromtimestamp(start_unix)
-        started_at = started_dt.isoformat()
-        if isinstance(duration_secs, (int, float)):
-            ended_dt = datetime.utcfromtimestamp(start_unix + duration_secs)
-            ended_at = ended_dt.isoformat()
+    else:
+        # Fallback: End is now, Start is Now - Duration
+        # If duration is missing, we can't infer much, assume 0 duration or now.
+        dur = duration_secs or 0
+        started_dt = datetime.utcnow() - timedelta(seconds=dur)
 
-    # Defaults for UsageEvent if missing
-    start_dt_obj = datetime.fromisoformat(started_at) if started_at else datetime.utcnow()
-    end_dt_obj = datetime.fromisoformat(ended_at) if ended_at else datetime.utcnow()
+    started_at = started_dt.isoformat()
+    start_dt_obj = started_dt
+
+    if isinstance(duration_secs, (int, float)):
+        ended_dt = started_dt + timedelta(seconds=duration_secs)
+    else:
+        ended_dt = datetime.utcnow()
+
+    ended_at = ended_dt.isoformat()
+    end_dt_obj = ended_dt
 
     # Variables for email sending (resolved via DB)
     db_email_to = None
@@ -222,10 +250,8 @@ def _process_elevenlabs_event_logic(payload: dict):
             # 5. IDEMPOTENCY & LOCKING (Insert UsageEvent)
             # This acts as a lock. If call_id exists, IntegrityError will be raised.
             if user and agent_obj and target_sub and call_id and duration_secs:
-                 # We insert explicitly here to lock.
-                 # billing_service.meter_call might do a commit, which is fine.
-                 # meter_call checks for existing call_id too? Let's check logic or rely on IntegrityError.
-                 # UsageEvent.call_id is UNIQUE.
+
+                 logger.info(f"[USAGE] inserting usage call_id={call_id} seconds={duration_secs} user_id={user.id} subscription_id={target_sub.id}")
 
                  usage_event = UsageEvent(
                     subscription_id=target_sub.id,
