@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from db import Base
-from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, Subscription, Plan
+from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, Subscription, Plan, CallLog
 from jobs.eleven_jobs import process_elevenlabs_event_job
 import logging
 
@@ -80,7 +80,9 @@ class TestMetering(unittest.TestCase):
         process_elevenlabs_event_job(MOCK_TRANSCRIPT_PAYLOAD)
 
         # Verify UsageEvent
-        event = self.db.query(UsageEvent).filter_by(call_id="test_call_id_transcript_fallback").first()
+        call_log = self.db.query(CallLog).filter_by(agent_id="test_agent_id").first()
+        self.assertIsNotNone(call_log)
+        event = self.db.query(UsageEvent).filter_by(call_id=call_log.id).first()
         self.assertIsNotNone(event)
         self.assertEqual(event.billed_seconds, 25) # Max of 10 and 25
 

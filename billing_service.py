@@ -7,7 +7,7 @@ class BillingService:
     def __init__(self, db: Session):
         self.db = db
 
-    def meter_call(self, agent_id: str, duration_secs: int, call_id: str, started_at: datetime, ended_at: datetime):
+    def meter_call(self, agent_id: str, duration_secs: int, call_id: int, started_at: datetime, ended_at: datetime):
         # 1. Resolve tenant from agent_id
         agent = self.db.query(Agent).filter_by(agent_id=agent_id).first()
         if not agent:

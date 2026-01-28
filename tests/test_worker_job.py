@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from db import SessionLocal
-from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription, Plan
+from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription, Plan, CallLog
 from jobs.eleven_jobs import process_elevenlabs_event_job
 
 # Mocks
@@ -109,7 +109,9 @@ def test_process_elevenlabs_event_job_success():
         process_elevenlabs_event_job(MOCK_PAYLOAD)
 
         # Check DB for UsageEvent (Lock)
-        usage = db.query(UsageEvent).filter_by(call_id="test_call_id_unique").first()
+        call_log = db.query(CallLog).filter_by(agent_id="test_agent_id").first()
+        assert call_log is not None
+        usage = db.query(UsageEvent).filter_by(call_id=call_log.id).first()
         assert usage is not None
         assert usage.billed_seconds == 60
 
@@ -137,11 +139,22 @@ def test_process_elevenlabs_event_job_idempotency():
         sub = db.query(Subscription).first()
 
         # PRE-EXISTING LOCK (UsageEvent)
+        call_log = CallLog(
+            agent_id=agent.agent_id,
+            user_id=user.id,
+            timestamp=datetime.utcnow(),
+            text="Test",
+            status="success",
+            raw_data={"data": {"call_id": "test_call_id_unique"}},
+        )
+        db.add(call_log)
+        db.flush()
+
         usage = UsageEvent(
             subscription_id=sub.id,
             user_id=user.id,
             agent_id=agent.id,
-            call_id="test_call_id_unique",
+            call_id=call_log.id,
             started_at=datetime.utcnow(),
             ended_at=datetime.utcnow(),
             billed_seconds=60
@@ -193,7 +206,9 @@ def test_process_elevenlabs_event_job_no_email():
         process_elevenlabs_event_job(MOCK_PAYLOAD)
 
         # Check DB for UsageEvent (Lock) - Should still be created
-        usage = db.query(UsageEvent).filter_by(call_id="test_call_id_unique").first()
+        call_log = db.query(CallLog).filter_by(agent_id="test_agent_id").first()
+        assert call_log is not None
+        usage = db.query(UsageEvent).filter_by(call_id=call_log.id).first()
         assert usage is not None
         assert usage.billed_seconds == 60
 
@@ -239,7 +254,9 @@ def test_process_elevenlabs_event_job_no_studio_name():
         process_elevenlabs_event_job(MOCK_PAYLOAD)
 
         # Check DB for UsageEvent (Lock) - Should still be created
-        usage = db.query(UsageEvent).filter_by(call_id="test_call_id_unique").first()
+        call_log = db.query(CallLog).filter_by(agent_id="test_agent_id").first()
+        assert call_log is not None
+        usage = db.query(UsageEvent).filter_by(call_id=call_log.id).first()
         assert usage is not None
 
         # Check Email Enqueued - SHOULD BE CALLED (Fallback logic)

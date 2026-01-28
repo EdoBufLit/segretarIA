@@ -134,10 +134,19 @@ def _process_elevenlabs_event_logic(payload: dict):
     ended_at = ended_dt.isoformat()
     end_dt_obj = ended_dt
 
+    transcript_text = extract_transcript_text(payload)
+
+    # Status
+    status = "success"
+    if duration_secs and duration_secs < 3:
+        status = "failure"
+
     # Variables for email sending (resolved via DB)
     db_email_to = None
     db_studio_name = None
     resolved_user_id = None
+    usage_inserted = False
+    call_log_result = None
 
     # === DB OPERATIONS (SYNC & VALIDATION & LOCKING) ===
     with SessionLocal() as db:
@@ -279,7 +288,23 @@ def _process_elevenlabs_event_logic(payload: dict):
                 if not target_sub:
                     logger.warning(f"[JOB] User {user.username} has active plan but no Subscription record found. Skipping usage metering.")
 
-            # 5. IDEMPOTENCY & LOCKING (Insert UsageEvent)
+            # 5. Resolve CallLog first (canonical call_id)
+            call_log_payload = {
+                "conversation_id": conversation_id,
+                "transcript_text": transcript_text,
+                "caller_number": caller_number,
+                "call_id": call_id,
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "duration_secs": duration_secs,
+                "status": status,
+            }
+            call_log_result = upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id)
+            if not call_log_result or not call_log_result.get("id"):
+                logger.error("[JOB] Unable to resolve call_log for agent_id=%s. Skipping usage metering.", agent_id)
+                return
+
+            # 6. IDEMPOTENCY & LOCKING (Insert UsageEvent)
             if user and target_sub:
                 # A) Resolve DB agent id
                 db_agent = agent_obj
@@ -287,12 +312,8 @@ def _process_elevenlabs_event_logic(payload: dict):
                     logger.error("[USAGE] Agent not found for eleven_agent_id=%s", agent_id)
                     return
 
-                # B) Resolve call_id (MUST be unique)
-                call_id = (
-                    payload["data"].get("metadata", {})
-                    .get("phone_call", {})
-                    .get("call_sid")
-                ) or payload["data"]["conversation_id"]
+                # B) Resolve canonical call_id (CallLog.id)
+                call_log_id = call_log_result["id"]
 
                 # C) Compute billed_seconds
                 billed_seconds = payload["data"].get("metadata", {}).get("call_duration_secs")
@@ -306,24 +327,30 @@ def _process_elevenlabs_event_logic(payload: dict):
                     return
 
                 # D) Insert usage (idempotent)
+                existing_usage = db.query(UsageEvent).filter_by(call_id=call_log_id).first()
+                if existing_usage:
+                    logger.info("[JOB] Duplicate call_log_id %s detected. Skipping usage.", call_log_id)
+                    return
+
                 try:
                     usage = UsageEvent(
                         subscription_id=target_sub.id,
                         user_id=user.id,
                         agent_id=db_agent.id,
-                        call_id=call_id,
+                        call_id=call_log_id,
                         billed_seconds=int(billed_seconds),
                         started_at=datetime.utcnow() - timedelta(seconds=billed_seconds),
                         ended_at=datetime.utcnow(),
                     )
                     db.add(usage)
                     db.commit()
+                    usage_inserted = True
                     logger.info("[USAGE] Inserted usage_event seconds=%s", billed_seconds)
 
                 # E) Protect against duplicates
                 except IntegrityError:
                     db.rollback()
-                    logger.info(f"[JOB] Duplicate call_id {call_id} detected (IntegrityError). Skipping.")
+                    logger.info(f"[JOB] Duplicate call_log_id {call_log_id} detected (IntegrityError). Skipping.")
                     return
 
         except Exception as e:
@@ -331,26 +358,10 @@ def _process_elevenlabs_event_logic(payload: dict):
             # We treat DB errors as fatal for processing to avoid incorrect billing/logging
             return
 
-    # Extract transcript text
-    transcript_text = extract_transcript_text(payload)
+    if not usage_inserted:
+        logger.info("[JOB] Usage event not inserted; skipping summarization and email.")
+        return
 
-    # Status
-    status = "success"
-    if duration_secs and duration_secs < 3:
-        status = "failure"
-
-    # LOG CALL (initial insert)
-    call_log_payload = {
-        "conversation_id": conversation_id,
-        "transcript_text": transcript_text,
-        "caller_number": caller_number,
-        "call_id": call_id,
-        "started_at": started_at,
-        "ended_at": ended_at,
-        "duration_secs": duration_secs,
-        "status": status
-    }
-    call_log_result = upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id)
     if call_log_result:
         if call_log_result.get("created"):
             logger.info(
