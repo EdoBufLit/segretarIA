@@ -14,6 +14,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from services.call_session import CallSessionManager, CallStatus
 from services.timing import log_duration
+from call_utils import upsert_call_log
 
 logger = logging.getLogger("app.services.realtime_bridge")
 
@@ -394,12 +395,23 @@ class RealtimeSession:
         log_data = {
             "event": "session_closed",
             "agent_id": self.agent_id,
-            "call_sid": self.stream_sid,
+            "call_sid": self.call_sid,
             "frames_in": self.frames_in,
             "frames_out": self.frames_out,
             "duration_ms": duration_ms
         }
         logger.info(json.dumps(log_data))
+
+        if self.agent_id and self.call_sid:
+            call_log_payload = {
+                "call_id": self.call_sid,
+                "metadata": {"phone_call": {"call_sid": self.call_sid}},
+                "duration_ms": duration_ms,
+            }
+            try:
+                upsert_call_log(self.agent_id, call_log_payload)
+            except Exception as exc:
+                logger.warning(f"[LOG] Failed to upsert call_log for session_closed: {exc}")
 
         # Cleanup Call Session
         if self.call_sid:

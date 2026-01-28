@@ -16,7 +16,27 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("call_logs", sa.Column("user_id", sa.Integer(), nullable=True))
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("call_logs") as batch:
+            batch.add_column(sa.Column("user_id", sa.Integer(), nullable=True))
+            batch.create_index("ix_call_logs_user_id", ["user_id"], unique=False)
+            batch.create_foreign_key(
+                "fk_call_logs_user_id_users",
+                "users",
+                ["user_id"],
+                ["id"],
+            )
+    else:
+        op.add_column("call_logs", sa.Column("user_id", sa.Integer(), nullable=True))
+        op.create_index("ix_call_logs_user_id", "call_logs", ["user_id"], unique=False)
+        op.create_foreign_key(
+            "fk_call_logs_user_id_users",
+            "call_logs",
+            "users",
+            ["user_id"],
+            ["id"],
+        )
 
     op.execute(
         """
@@ -34,17 +54,15 @@ def upgrade():
         """
     )
 
-    op.create_index("ix_call_logs_user_id", "call_logs", ["user_id"], unique=False)
-    op.create_foreign_key(
-        "fk_call_logs_user_id_users",
-        "call_logs",
-        "users",
-        ["user_id"],
-        ["id"],
-    )
-
 
 def downgrade():
-    op.drop_constraint("fk_call_logs_user_id_users", "call_logs", type_="foreignkey")
-    op.drop_index("ix_call_logs_user_id", table_name="call_logs")
-    op.drop_column("call_logs", "user_id")
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("call_logs") as batch:
+            batch.drop_constraint("fk_call_logs_user_id_users", type_="foreignkey")
+            batch.drop_index("ix_call_logs_user_id")
+            batch.drop_column("user_id")
+    else:
+        op.drop_constraint("fk_call_logs_user_id_users", "call_logs", type_="foreignkey")
+        op.drop_index("ix_call_logs_user_id", table_name="call_logs")
+        op.drop_column("call_logs", "user_id")

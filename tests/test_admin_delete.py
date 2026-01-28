@@ -15,7 +15,7 @@ import app as app_module
 import db as db_module
 from admin_seed import ensure_default_admin
 from db import Base, get_db
-from models import User, Subscription, Plan, UsageEvent, PhoneNumber, Agent, AgentRouting
+from models import User, Subscription, Plan, UsageEvent, PhoneNumber, Agent, AgentRouting, CallLog
 from auth import hash_password
 
 class AdminDeleteTests(unittest.TestCase):
@@ -205,10 +205,23 @@ class AdminDeleteTests(unittest.TestCase):
         session.add(agent)
         session.commit()
 
+        call_log = CallLog(
+            agent_id=agent.agent_id,
+            user_id=client.id,
+            timestamp=datetime.datetime.utcnow(),
+            text="Test call",
+            status="success",
+            raw_data={"data": {"call_id": "test_call_id"}},
+        )
+        session.add(call_log)
+        session.flush()
+
         evt = UsageEvent(
             subscription_id=sub.id,
             user_id=client.id,
             agent_id=agent.id,
+            call_id="test_call_id",
+            call_log_id=call_log.id,
             started_at=datetime.datetime.utcnow(),
             ended_at=datetime.datetime.utcnow(),
             billed_seconds=60

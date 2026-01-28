@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from db import SessionLocal
-from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription, Plan
+from models import Agent, User, UsageEvent, PhoneNumber, AgentRouting, UnassignedEvent, Subscription, Plan, CallLog
 from jobs.eleven_jobs import process_elevenlabs_event_job
 
 # Mocks
@@ -109,7 +109,9 @@ def test_process_elevenlabs_event_job_success():
         process_elevenlabs_event_job(MOCK_PAYLOAD)
 
         # Check DB for UsageEvent (Lock)
-        usage = db.query(UsageEvent).filter_by(call_id="test_call_id_unique").first()
+        call_log = db.query(CallLog).filter_by(agent_id="test_agent_id").first()
+        assert call_log is not None
+        usage = db.query(UsageEvent).filter_by(call_log_id=call_log.id).first()
         assert usage is not None
         assert usage.billed_seconds == 60
 
@@ -120,7 +122,7 @@ def test_process_elevenlabs_event_job_success():
         mock_summarize.assert_called_once()
 
 def test_process_elevenlabs_event_job_idempotency():
-    """Test idempotency: duplicate call_id should not trigger OpenAI or Email."""
+    """Test idempotency: duplicate call_log_id should still send email but skip usage insert."""
     with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
          patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
          patch("jobs.eleven_jobs.summarize_call") as mock_summarize:
@@ -137,11 +139,23 @@ def test_process_elevenlabs_event_job_idempotency():
         sub = db.query(Subscription).first()
 
         # PRE-EXISTING LOCK (UsageEvent)
+        call_log = CallLog(
+            agent_id=agent.agent_id,
+            user_id=user.id,
+            timestamp=datetime.utcnow(),
+            text="Test",
+            status="success",
+            raw_data={"data": {"call_id": "test_call_id_unique"}},
+        )
+        db.add(call_log)
+        db.flush()
+
         usage = UsageEvent(
             subscription_id=sub.id,
             user_id=user.id,
             agent_id=agent.id,
             call_id="test_call_id_unique",
+            call_log_id=call_log.id,
             started_at=datetime.utcnow(),
             ended_at=datetime.utcnow(),
             billed_seconds=60
@@ -158,9 +172,9 @@ def test_process_elevenlabs_event_job_idempotency():
         # RUN (Duplicate)
         process_elevenlabs_event_job(MOCK_PAYLOAD)
 
-        # Check: No Email, No OpenAI
-        mock_queue_instance.enqueue.assert_not_called()
-        mock_summarize.assert_not_called()
+        # Check: Email and OpenAI still executed (metering skipped)
+        mock_queue_instance.enqueue.assert_called_once()
+        mock_summarize.assert_called_once()
 
 def test_process_elevenlabs_event_job_no_email():
     """Test scenario where user has no email: logic should skip email sending but process usage."""
@@ -193,7 +207,9 @@ def test_process_elevenlabs_event_job_no_email():
         process_elevenlabs_event_job(MOCK_PAYLOAD)
 
         # Check DB for UsageEvent (Lock) - Should still be created
-        usage = db.query(UsageEvent).filter_by(call_id="test_call_id_unique").first()
+        call_log = db.query(CallLog).filter_by(agent_id="test_agent_id").first()
+        assert call_log is not None
+        usage = db.query(UsageEvent).filter_by(call_log_id=call_log.id).first()
         assert usage is not None
         assert usage.billed_seconds == 60
 
@@ -239,7 +255,9 @@ def test_process_elevenlabs_event_job_no_studio_name():
         process_elevenlabs_event_job(MOCK_PAYLOAD)
 
         # Check DB for UsageEvent (Lock) - Should still be created
-        usage = db.query(UsageEvent).filter_by(call_id="test_call_id_unique").first()
+        call_log = db.query(CallLog).filter_by(agent_id="test_agent_id").first()
+        assert call_log is not None
+        usage = db.query(UsageEvent).filter_by(call_log_id=call_log.id).first()
         assert usage is not None
 
         # Check Email Enqueued - SHOULD BE CALLED (Fallback logic)
