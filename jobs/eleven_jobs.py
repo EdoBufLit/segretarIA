@@ -149,18 +149,28 @@ def _process_elevenlabs_event_logic(payload: dict):
                 db.add(routing)
             db.commit()
 
-            # 3. Validation: Agent & User
-            agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+            # 3. Validation: Routing & User Resolution (Canonical)
+            # Query active routing for this agent
+            active_routing = db.query(AgentRouting).filter(
+                AgentRouting.agent_id == agent_id,
+                AgentRouting.is_active == True
+            ).first()
+
             user = None
-            if agent_obj:
-                user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+            if active_routing and active_routing.user_id:
+                user = db.query(User).filter(User.id == active_routing.user_id).first()
 
-            # Fallback to AgentRouting user if standard UserAgentAccess fails or is missing
-            if not user and routing and routing.user_id:
-                user = db.query(User).filter(User.id == routing.user_id).first()
+            # Logging Routing Result
+            if user:
+                logger.info(f"[ROUTING] agent_id={agent_id} -> user_id={user.id}")
+            else:
+                logger.warning(f"[ROUTING] FAILED agent_id={agent_id}")
 
-            if not agent_obj or not user:
-                logger.warning(f"[JOB] Unassigned agent/user for agent_id {agent_id}. Storing UnassignedEvent.")
+            # We still need agent_obj for UsageEvent FK
+            agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+
+            if not user or not agent_obj:
+                logger.warning(f"[JOB] Unassigned/Unknown agent/user for agent_id {agent_id}. Storing UnassignedEvent.")
                 unassigned = UnassignedEvent(
                     agent_id=agent_id,
                     phone_number=to_number,
