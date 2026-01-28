@@ -45,11 +45,17 @@ def _process_elevenlabs_event_logic(payload: dict):
 
     logger.info(f"Processing ElevenLabs event type={event_type} conversation_id={conversation_id}")
 
-    agent_id = data.get("agent_id")
+    # 1) Extract agent_id STRICTLY from payload["data"]["agent_id"]
+    data_agent_id = data.get("agent_id")
+
+    # 2) Defensive logging
+    cand_system = data.get("system_agent_id")
+    cand_meta = (data.get("metadata") or {}).get("agent_id")
+    logger.info(f"[ELEVEN] agent_id candidates: data.agent_id={data_agent_id}, system_agent_id={cand_system}, metadata.agent_id={cand_meta}")
 
     # We expect the payload to be already validated as 'post_call_transcription' by the endpoint.
 
-    if not agent_id:
+    if not data_agent_id:
         logger.error("No agent_id in payload")
         return
 
@@ -132,15 +138,15 @@ def _process_elevenlabs_event_logic(payload: dict):
                     db.flush()
 
             # 2. Upsert AgentRouting
-            routing = db.query(AgentRouting).filter(AgentRouting.agent_id == agent_id).first()
+            routing = db.query(AgentRouting).filter(AgentRouting.agent_id == data_agent_id).first()
             if routing:
                 routing.last_event_at = datetime.utcnow()
                 if not routing.phone_number_id and phone_obj:
                     routing.phone_number_id = phone_obj.id
             else:
-                logger.info(f"[JOB] Discovered new unassigned agent {agent_id}")
+                logger.info(f"[JOB] Discovered new unassigned agent {data_agent_id}")
                 routing = AgentRouting(
-                    agent_id=agent_id,
+                    agent_id=data_agent_id,
                     user_id=None,
                     status="unassigned",
                     phone_number_id=phone_obj.id if phone_obj else None,
@@ -151,9 +157,11 @@ def _process_elevenlabs_event_logic(payload: dict):
 
             # 3. Validation: Routing & User Resolution (Canonical)
             # Query active routing for this agent
+            # STRICTLY use data_agent_id and enforce status='active'
             active_routing = db.query(AgentRouting).filter(
-                AgentRouting.agent_id == agent_id,
-                AgentRouting.is_active == True
+                AgentRouting.agent_id == data_agent_id,
+                AgentRouting.is_active == True,
+                AgentRouting.status == 'active'
             ).first()
 
             user = None
@@ -162,17 +170,17 @@ def _process_elevenlabs_event_logic(payload: dict):
 
             # Logging Routing Result
             if user:
-                logger.info(f"[ROUTING] agent_id={agent_id} -> user_id={user.id}")
+                logger.info(f"[ROUTING] resolved via data.agent_id -> user_id={user.id}")
             else:
-                logger.warning(f"[ROUTING] FAILED agent_id={agent_id}")
+                logger.warning(f"[ROUTING] FAILED agent_id={data_agent_id}")
 
             # We still need agent_obj for UsageEvent FK
-            agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+            agent_obj = db.query(Agent).filter_by(agent_id=data_agent_id).first()
 
             if not user or not agent_obj:
-                logger.warning(f"[JOB] Unassigned/Unknown agent/user for agent_id {agent_id}. Storing UnassignedEvent.")
+                logger.warning(f"[JOB] Unassigned/Unknown agent/user for agent_id {data_agent_id}. Storing UnassignedEvent.")
                 unassigned = UnassignedEvent(
-                    agent_id=agent_id,
+                    agent_id=data_agent_id,
                     phone_number=to_number,
                     payload=payload
                 )
@@ -283,7 +291,7 @@ def _process_elevenlabs_event_logic(payload: dict):
         status = "failure"
 
     # LOG CALL
-    upsert_call_log(agent_id, {
+    upsert_call_log(data_agent_id, {
         "transcript_text": transcript_text,
         "analysis": analysis_structured,
         "caller_number": caller_number,
@@ -303,11 +311,11 @@ def _process_elevenlabs_event_logic(payload: dict):
 
     # 2. Strict Check: If no user/email found in DB, log unrouted and skip.
     if not email_to:
-        logger.warning(f"[JOB] Unrouted event for agent_id={agent_id}. No user/email found in DB. Skipping email.")
+        logger.warning(f"[JOB] Unrouted event for agent_id={data_agent_id}. No user/email found in DB. Skipping email.")
         return
 
     if not studio_name:
-        logger.warning(f"[JOB] Missing studio_name for agent_id {agent_id}. Skipping email.")
+        logger.warning(f"[JOB] Missing studio_name for agent_id {data_agent_id}. Skipping email.")
         return
 
     try:
