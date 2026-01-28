@@ -248,28 +248,54 @@ def _process_elevenlabs_event_logic(payload: dict):
                     logger.warning(f"[JOB] User {user.username} has active plan but no Subscription record found. Skipping usage metering.")
 
             # 5. IDEMPOTENCY & LOCKING (Insert UsageEvent)
-            # This acts as a lock. If call_id exists, IntegrityError will be raised.
-            if user and agent_obj and target_sub and call_id and duration_secs:
+            if user and target_sub:
+                # A) Resolve DB agent id
+                eleven_agent_id = payload["data"]["agent_id"]
+                db_agent = db.query(Agent).filter(
+                    Agent.agent_id == eleven_agent_id
+                ).one_or_none()
+                if not db_agent:
+                    logger.error("[USAGE] Agent not found for eleven_agent_id=%s", eleven_agent_id)
+                    return
 
-                 logger.info(f"[USAGE] inserting usage call_id={call_id} seconds={duration_secs} user_id={user.id} subscription_id={target_sub.id}")
+                # B) Resolve call_id (MUST be unique)
+                call_id = (
+                    payload["data"].get("metadata", {})
+                    .get("phone_call", {})
+                    .get("call_sid")
+                ) or payload["data"]["conversation_id"]
 
-                 usage_event = UsageEvent(
-                    subscription_id=target_sub.id,
-                    user_id=user.id,
-                    agent_id=agent_obj.id,
-                    call_id=call_id,
-                    started_at=start_dt_obj,
-                    ended_at=end_dt_obj,
-                    billed_seconds=int(duration_secs)
-                 )
-                 db.add(usage_event)
-                 db.commit() # This will raise IntegrityError if duplicate
-                 logger.info(f"[JOB] Locked call_id {call_id} via UsageEvent insert.")
+                # C) Compute billed_seconds
+                billed_seconds = payload["data"].get("metadata", {}).get("call_duration_secs")
+                if not billed_seconds:
+                    billed_seconds = max(
+                        (t.get("time_in_call_secs", 0) for t in payload["data"].get("transcript", [])),
+                        default=0
+                    )
+                if billed_seconds <= 0:
+                    logger.warning("[USAGE] billed_seconds=0, skipping")
+                    return
 
-        except IntegrityError:
-            db.rollback()
-            logger.info(f"[JOB] Duplicate call_id {call_id} detected (IntegrityError). Skipping OpenAI/Email.")
-            return
+                # D) Insert usage (idempotent)
+                try:
+                    usage = UsageEvent(
+                        subscription_id=target_sub.id,
+                        user_id=user.id,
+                        agent_id=db_agent.id,
+                        call_id=call_id,
+                        billed_seconds=int(billed_seconds),
+                        started_at=datetime.utcnow() - timedelta(seconds=billed_seconds),
+                        ended_at=datetime.utcnow(),
+                    )
+                    db.add(usage)
+                    db.commit()
+                    logger.info("[USAGE] inserted call_id=%s seconds=%s", call_id, billed_seconds)
+
+                # E) Protect against duplicates
+                except IntegrityError:
+                    db.rollback()
+                    logger.info(f"[JOB] Duplicate call_id {call_id} detected (IntegrityError). Skipping.")
+                    return
 
         except Exception as e:
             logger.error(f"[JOB] DB Error: {e}")

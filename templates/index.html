@@ -59,9 +59,9 @@
         }
 
         /* Hero Rotation */
-        .rotator-text { transform: translate(-50%, 0); opacity: 1; left: 50%; }
-        .rot-out { transform: translate(-50%, -110%); opacity: 0; }
-        .rot-in  { transform: translate(-50%, 110%); opacity: 0; }
+        .rotator-text { opacity: 1; }
+        .rot-out { transform: translateY(-110%); opacity: 0; }
+        .rot-in  { transform: translateY(110%); opacity: 0; }
 
         .rotator-underline{
             bottom: -0.10em;
@@ -146,9 +146,9 @@
                     <span class="block">
                         non dorme mai per
                         <span class="block md:inline-block mt-2 md:mt-0">
-                            <span class="rotator-wrap inline-block align-bottom relative overflow-hidden h-[1.15em] w-[22ch]">
+                            <span class="rotator-wrap inline-block align-bottom relative w-[22ch]">
                                 <span id="hero-rotating-phrase"
-                                      class="rotator-text absolute top-0 transition-all duration-300 ease-out will-change-[transform,opacity] whitespace-nowrap">
+                                      class="rotator-text relative inline-block transition-all duration-300 ease-out will-change-[transform,opacity] whitespace-nowrap">
                                     il tuo studio
                                 </span>
                                 <span id="hero-underline" class="rotator-underline absolute left-0 right-0"></span>
