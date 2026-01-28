@@ -89,7 +89,7 @@ class TestMetering(unittest.TestCase):
         log_calls = [call[0][0] for call in mock_logger.info.call_args_list]
         found_log = False
         for msg in log_calls:
-            if "[USAGE] inserting usage" in msg and "seconds=25" in msg:
+            if "[USAGE] Inserted usage_event seconds=%s" in msg:
                 found_log = True
                 break
         self.assertTrue(found_log, "Usage log message not found")

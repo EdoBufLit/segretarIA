@@ -201,6 +201,27 @@ def _process_elevenlabs_event_logic(payload: dict):
 
             # We still need agent_obj for UsageEvent FK
             agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+            if not agent_obj:
+                routing_source = active_routing or routing
+                phone_number_id = None
+                if routing_source and routing_source.phone_number_id:
+                    phone_number_id = str(routing_source.phone_number_id)
+
+                agent_obj = Agent(
+                    agent_id=agent_id,
+                    phone_number_id=phone_number_id,
+                    display_name="Segreteria IA"
+                )
+                db.add(agent_obj)
+                try:
+                    db.commit()
+                except IntegrityError:
+                    db.rollback()
+                    agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+
+            if user and agent_obj and agent_obj not in user.agents:
+                user.agents.append(agent_obj)
+                db.commit()
 
             if not user:
                 logger.warning(f"[JOB] Unassigned agent_id={agent_id}. Storing UnassignedEvent.")
@@ -244,7 +265,8 @@ def _process_elevenlabs_event_logic(payload: dict):
                         Subscription.user_id == user.id
                     ).order_by(Subscription.id.desc()).first()
 
-                if not target_sub and user.subscription_plan and user.subscription_plan != "NONE":
+                manual_plan_code = (user.subscription_plan or "").strip().lower()
+                if not target_sub and manual_plan_code and manual_plan_code != "none":
                     try:
                         ensure_subscription_for_user(db, user.id)
                     except Exception as e:
@@ -260,12 +282,9 @@ def _process_elevenlabs_event_logic(payload: dict):
             # 5. IDEMPOTENCY & LOCKING (Insert UsageEvent)
             if user and target_sub:
                 # A) Resolve DB agent id
-                eleven_agent_id = payload["data"]["agent_id"]
-                db_agent = db.query(Agent).filter(
-                    Agent.agent_id == eleven_agent_id
-                ).one_or_none()
+                db_agent = agent_obj
                 if not db_agent:
-                    logger.error("[USAGE] Agent not found for eleven_agent_id=%s", eleven_agent_id)
+                    logger.error("[USAGE] Agent not found for eleven_agent_id=%s", agent_id)
                     return
 
                 # B) Resolve call_id (MUST be unique)

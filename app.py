@@ -670,6 +670,34 @@ class AgentRoutingUpdate(BaseModel):
     is_active: Optional[bool] = None
     status: Optional[str] = None
 
+def _upsert_agent_from_routing(db: Session, routing: AgentRouting) -> Optional[Agent]:
+    if not routing or not routing.agent_id:
+        return None
+
+    agent = db.query(Agent).filter(Agent.agent_id == routing.agent_id).first()
+    phone_number_id = str(routing.phone_number_id) if routing.phone_number_id else None
+
+    if agent:
+        if phone_number_id and agent.phone_number_id != phone_number_id:
+            agent.phone_number_id = phone_number_id
+        if not agent.display_name:
+            agent.display_name = "Segreteria IA"
+    else:
+        agent = Agent(
+            agent_id=routing.agent_id,
+            phone_number_id=phone_number_id,
+            display_name="Segreteria IA"
+        )
+        db.add(agent)
+        db.flush()
+
+    if routing.user_id:
+        user = db.query(User).filter(User.id == routing.user_id).first()
+        if user and agent not in user.agents:
+            user.agents.append(agent)
+
+    return agent
+
 @app.get("/api/admin/routing")
 async def api_admin_get_routing(
     db: Session = Depends(get_db),
@@ -723,6 +751,8 @@ async def api_admin_create_routing(
         status=payload.status
     )
     db.add(new_routing)
+    db.flush()
+    _upsert_agent_from_routing(db, new_routing)
     db.commit()
     db.refresh(new_routing)
 
@@ -760,6 +790,8 @@ async def api_admin_update_routing(
     if payload.status is not None:
         routing.status = payload.status
 
+    db.flush()
+    _upsert_agent_from_routing(db, routing)
     db.commit()
     return {"status": "ok"}
 
@@ -2069,7 +2101,11 @@ def _apply_admin_user_update(user: User, payload: AdminUpdateUserRequest, db: Se
         user.studio_name = payload.studio_name
 
     if payload.subscription_plan is not None:
-        user.subscription_plan = payload.subscription_plan
+        raw_plan = payload.subscription_plan.strip()
+        if raw_plan == "" or raw_plan.lower() == "none":
+            user.subscription_plan = "NONE"
+        else:
+            user.subscription_plan = raw_plan.lower()
 
     if payload.plan_expires_at is not None:
         if payload.plan_expires_at == "":
@@ -2485,12 +2521,13 @@ async def dashboard(
     # Manual Plan Check
     manual_plan_active = False
     manual_plan_obj = None
+    manual_plan_code = (user.subscription_plan or "").strip().lower()
     if not sub and user.has_active_plan():
          # If no active stripe sub, but user has active plan (manual)
          # Verify it is indeed manual (subscription_plan is set)
-         if user.subscription_plan and user.subscription_plan != 'NONE':
+         if manual_plan_code and manual_plan_code != "none":
              manual_plan_active = True
-             manual_plan_obj = db.query(Plan).filter(Plan.code == user.subscription_plan).first()
+             manual_plan_obj = db.query(Plan).filter(Plan.code == manual_plan_code).first()
 
     # Fallback to inactive sub if neither active stripe nor manual found
     if not sub and not manual_plan_active:
@@ -2620,8 +2657,9 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
 
         # Check Manual Plan if no active stripe sub
         manual_plan_active = False
+        manual_plan_code = (user.subscription_plan or "").strip().lower()
         if not sub and user.has_active_plan():
-             if user.subscription_plan and user.subscription_plan != 'NONE':
+             if manual_plan_code and manual_plan_code != "none":
                  manual_plan_active = True
 
         if not sub and not manual_plan_active:
@@ -2646,7 +2684,7 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
              cycle_start_dt = cycle_end_dt - timedelta(days=30)
              subscription_data = {
                 "state": "active",
-                "plan_code": user.subscription_plan,
+                "plan_code": manual_plan_code,
                 "cycle_start": cycle_start_dt.isoformat(),
                 "cycle_end": cycle_end_dt.isoformat(),
                 "updated_at": datetime.utcnow().isoformat(),

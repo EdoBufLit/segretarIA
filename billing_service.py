@@ -20,7 +20,8 @@ class BillingService:
             print(f"Metering failed: No client user found for agent '{agent_id}'.")
             return
 
-        # 2. Find current subscription
+        # 2. Ensure subscription and find current subscription
+        ensure_subscription_for_user(self.db, client_user.id)
         now = datetime.utcnow()
         active_subscription = self.db.query(Subscription).filter(
             Subscription.user_id == client_user.id,

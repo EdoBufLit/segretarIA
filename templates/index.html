@@ -60,8 +60,8 @@
 
         /* Hero Rotation */
         .rotator-text { opacity: 1; }
-        .rot-out { transform: translateY(-110%); opacity: 0; }
-        .rot-in  { transform: translateY(110%); opacity: 0; }
+        .rot-out { transform: translateY(-100%); opacity: 0; }
+        .rot-in  { transform: translateY(100%); opacity: 0; }
 
         .rotator-underline{
             bottom: -0.10em;
@@ -421,7 +421,7 @@
             const elLine = document.getElementById('hero-underline');
             if (!elText || !elLine) return;
 
-            const phrases = ["il tuo studio", "la tua azienda", "la tua associazione"];
+            const phrases = ["il tuo studio", "la tua attività", "la tua associazione"];
             let idx = 0;
             const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -449,16 +449,15 @@
 
                     elText.classList.remove("rot-out");
                     elText.classList.add("rot-in");
+                    void elText.offsetWidth;
 
                     elLine.classList.remove("underline-on");
 
                     requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            elText.classList.remove("rot-in");
-                            elLine.classList.add("underline-on");
-                        });
+                        elText.classList.remove("rot-in");
+                        elLine.classList.add("underline-on");
                     });
-                }, 320);
+                }, 280);
             };
 
             // On first load, add underline-on after 50ms so it animates in.
