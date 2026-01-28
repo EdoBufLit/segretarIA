@@ -299,7 +299,7 @@ def _process_elevenlabs_event_logic(payload: dict):
                 "duration_secs": duration_secs,
                 "status": status,
             }
-            call_log_result = upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id)
+            call_log_result = upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id, db=db)
             if not call_log_result or not call_log_result.get("id"):
                 logger.error("[JOB] Unable to resolve call_log for agent_id=%s. Skipping usage metering.", agent_id)
                 return
@@ -327,7 +327,7 @@ def _process_elevenlabs_event_logic(payload: dict):
                     return
 
                 # D) Insert usage (idempotent)
-                existing_usage = db.query(UsageEvent).filter_by(call_id=call_log_id).first()
+                existing_usage = db.query(UsageEvent).filter_by(call_log_id=call_log_id).first()
                 if existing_usage:
                     logger.info("[JOB] Duplicate call_log_id %s detected. Skipping usage.", call_log_id)
                     return
@@ -337,7 +337,8 @@ def _process_elevenlabs_event_logic(payload: dict):
                         subscription_id=target_sub.id,
                         user_id=user.id,
                         agent_id=db_agent.id,
-                        call_id=call_log_id,
+                        call_id=call_id,
+                        call_log_id=call_log_id,
                         billed_seconds=int(billed_seconds),
                         started_at=datetime.utcnow() - timedelta(seconds=billed_seconds),
                         ended_at=datetime.utcnow(),
@@ -345,7 +346,11 @@ def _process_elevenlabs_event_logic(payload: dict):
                     db.add(usage)
                     db.commit()
                     usage_inserted = True
-                    logger.info("[USAGE] Inserted usage_event seconds=%s", billed_seconds)
+                    logger.info(
+                        "[USAGE] inserted usage_event call_log_id=%s billed_seconds=%s",
+                        call_log_id,
+                        billed_seconds,
+                    )
 
                 # E) Protect against duplicates
                 except IntegrityError:
@@ -399,7 +404,8 @@ def _process_elevenlabs_event_logic(payload: dict):
         "analysis": analysis_structured,
         "summary": analysis_structured.get("summary")
     })
-    upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id)
+    with SessionLocal() as db:
+        upsert_call_log(agent_id, call_log_payload, user_id=resolved_user_id, db=db)
 
     # ENQUEUE EMAIL
 

@@ -82,7 +82,7 @@ class TestMetering(unittest.TestCase):
         # Verify UsageEvent
         call_log = self.db.query(CallLog).filter_by(agent_id="test_agent_id").first()
         self.assertIsNotNone(call_log)
-        event = self.db.query(UsageEvent).filter_by(call_id=call_log.id).first()
+        event = self.db.query(UsageEvent).filter_by(call_log_id=call_log.id).first()
         self.assertIsNotNone(event)
         self.assertEqual(event.billed_seconds, 25) # Max of 10 and 25
 
@@ -91,7 +91,7 @@ class TestMetering(unittest.TestCase):
         log_calls = [call[0][0] for call in mock_logger.info.call_args_list]
         found_log = False
         for msg in log_calls:
-            if "[USAGE] Inserted usage_event seconds=%s" in msg:
+            if "[USAGE] inserted usage_event call_log_id=" in msg:
                 found_log = True
                 break
         self.assertTrue(found_log, "Usage log message not found")

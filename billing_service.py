@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Optional
 from sqlalchemy.orm import Session
 from models import User, Agent, Subscription, UsageEvent
 from services.subscription_service import ensure_subscription_for_user
@@ -7,7 +8,15 @@ class BillingService:
     def __init__(self, db: Session):
         self.db = db
 
-    def meter_call(self, agent_id: str, duration_secs: int, call_id: int, started_at: datetime, ended_at: datetime):
+    def meter_call(
+        self,
+        agent_id: str,
+        duration_secs: int,
+        call_log_id: int,
+        started_at: datetime,
+        ended_at: datetime,
+        call_id: Optional[str] = None,
+    ):
         # 1. Resolve tenant from agent_id
         agent = self.db.query(Agent).filter_by(agent_id=agent_id).first()
         if not agent:
@@ -45,9 +54,9 @@ class BillingService:
                 return
 
         # 3. Idempotency check
-        existing_event = self.db.query(UsageEvent).filter_by(call_id=call_id).first()
+        existing_event = self.db.query(UsageEvent).filter_by(call_log_id=call_log_id).first()
         if existing_event:
-            print(f"Metering skipped: UsageEvent with call_id '{call_id}' already exists.")
+            print(f"Metering skipped: UsageEvent with call_log_id '{call_log_id}' already exists.")
             return
 
         # 4. Create UsageEvent
@@ -57,6 +66,7 @@ class BillingService:
             agent_id=agent.id,
             billed_seconds=duration_secs,
             call_id=call_id,
+            call_log_id=call_log_id,
             started_at=started_at,
             ended_at=ended_at,
         )

@@ -220,7 +220,7 @@ class AdminDeleteTests(unittest.TestCase):
             subscription_id=sub.id,
             user_id=client.id,
             agent_id=agent.id,
-            call_id=call_log.id,
+            call_log_id=call_log.id,
             started_at=datetime.datetime.utcnow(),
             ended_at=datetime.datetime.utcnow(),
             billed_seconds=60

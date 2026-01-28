@@ -111,7 +111,7 @@ def test_process_elevenlabs_event_job_success():
         # Check DB for UsageEvent (Lock)
         call_log = db.query(CallLog).filter_by(agent_id="test_agent_id").first()
         assert call_log is not None
-        usage = db.query(UsageEvent).filter_by(call_id=call_log.id).first()
+        usage = db.query(UsageEvent).filter_by(call_log_id=call_log.id).first()
         assert usage is not None
         assert usage.billed_seconds == 60
 
@@ -154,7 +154,7 @@ def test_process_elevenlabs_event_job_idempotency():
             subscription_id=sub.id,
             user_id=user.id,
             agent_id=agent.id,
-            call_id=call_log.id,
+            call_log_id=call_log.id,
             started_at=datetime.utcnow(),
             ended_at=datetime.utcnow(),
             billed_seconds=60
@@ -208,7 +208,7 @@ def test_process_elevenlabs_event_job_no_email():
         # Check DB for UsageEvent (Lock) - Should still be created
         call_log = db.query(CallLog).filter_by(agent_id="test_agent_id").first()
         assert call_log is not None
-        usage = db.query(UsageEvent).filter_by(call_id=call_log.id).first()
+        usage = db.query(UsageEvent).filter_by(call_log_id=call_log.id).first()
         assert usage is not None
         assert usage.billed_seconds == 60
 
@@ -256,7 +256,7 @@ def test_process_elevenlabs_event_job_no_studio_name():
         # Check DB for UsageEvent (Lock) - Should still be created
         call_log = db.query(CallLog).filter_by(agent_id="test_agent_id").first()
         assert call_log is not None
-        usage = db.query(UsageEvent).filter_by(call_id=call_log.id).first()
+        usage = db.query(UsageEvent).filter_by(call_log_id=call_log.id).first()
         assert usage is not None
 
         # Check Email Enqueued - SHOULD BE CALLED (Fallback logic)
