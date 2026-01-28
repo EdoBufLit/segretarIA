@@ -14,6 +14,7 @@ MOCK_PAYLOAD = {
     "type": "post_call_transcription",
     "data": {
         "agent_id": "test_agent_id",
+        "conversation_id": "test_call_id_unique",
         "metadata": {
             "start_time_unix_secs": 1700000000,
             "call_duration_secs": 60,
@@ -64,6 +65,16 @@ def setup_test_db(db):
         text("INSERT INTO user_agent_access (user_id, agent_id) VALUES (:uid, :aid)"),
         {"uid": user.id, "aid": agent.id}
     )
+
+    # Setup AgentRouting (Required for user resolution)
+    routing = AgentRouting(
+        agent_id=agent.agent_id,
+        user_id=user.id,
+        status="active",
+        is_active=True
+    )
+    db.add(routing)
+
     db.commit()
     return user, agent
 
@@ -71,6 +82,7 @@ def test_process_elevenlabs_event_job_success():
     """Test happy path: valid user, sub, agent -> locks, processes, sends email."""
     # We mock get_queue and OpenAI to avoid external calls
     with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
+         patch("call_utils.SessionLocal") as MockCallUtilsSession, \
          patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
          patch("jobs.eleven_jobs.summarize_call") as mock_summarize:
 
@@ -95,6 +107,10 @@ def test_process_elevenlabs_event_job_success():
         mock_queue_instance = MagicMock()
         mock_get_queue.return_value = mock_queue_instance
 
+        # Link CallUtils session to same in-memory DB
+        MockCallUtilsSession.return_value.__enter__.return_value = db
+        MockCallUtilsSession.return_value.__exit__.return_value = None
+
         # RUN
         process_elevenlabs_event_job(MOCK_PAYLOAD)
 
@@ -112,6 +128,7 @@ def test_process_elevenlabs_event_job_success():
 def test_process_elevenlabs_event_job_idempotency():
     """Test idempotency: duplicate call_id should not trigger OpenAI or Email."""
     with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
+         patch("call_utils.SessionLocal") as MockCallUtilsSession, \
          patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
          patch("jobs.eleven_jobs.summarize_call") as mock_summarize:
 
@@ -142,6 +159,9 @@ def test_process_elevenlabs_event_job_idempotency():
         MockSession.return_value.__enter__.return_value = db
         MockSession.return_value.__exit__.return_value = None
 
+        MockCallUtilsSession.return_value.__enter__.return_value = db
+        MockCallUtilsSession.return_value.__exit__.return_value = None
+
         mock_queue_instance = MagicMock()
         mock_get_queue.return_value = mock_queue_instance
 
@@ -155,6 +175,7 @@ def test_process_elevenlabs_event_job_idempotency():
 def test_process_elevenlabs_event_job_no_email():
     """Test scenario where user has no email: logic should skip email sending but process usage."""
     with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
+         patch("call_utils.SessionLocal") as MockCallUtilsSession, \
          patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
          patch("jobs.eleven_jobs.summarize_call") as mock_summarize, \
          patch("jobs.eleven_jobs.logger") as mock_logger:
@@ -174,6 +195,9 @@ def test_process_elevenlabs_event_job_no_email():
 
         MockSession.return_value.__enter__.return_value = db
         MockSession.return_value.__exit__.return_value = None
+
+        MockCallUtilsSession.return_value.__enter__.return_value = db
+        MockCallUtilsSession.return_value.__exit__.return_value = None
 
         mock_summarize.return_value = {"summary": "Test summary", "urgency": "media"}
         mock_queue_instance = MagicMock()
@@ -201,6 +225,7 @@ def test_process_elevenlabs_event_job_no_email():
 def test_process_elevenlabs_event_job_no_studio_name():
     """Test scenario where user has no studio_name: logic should skip email sending."""
     with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
+         patch("call_utils.SessionLocal") as MockCallUtilsSession, \
          patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
          patch("jobs.eleven_jobs.summarize_call") as mock_summarize, \
          patch("jobs.eleven_jobs.logger") as mock_logger:
@@ -220,6 +245,9 @@ def test_process_elevenlabs_event_job_no_studio_name():
 
         MockSession.return_value.__enter__.return_value = db
         MockSession.return_value.__exit__.return_value = None
+
+        MockCallUtilsSession.return_value.__enter__.return_value = db
+        MockCallUtilsSession.return_value.__exit__.return_value = None
 
         mock_summarize.return_value = {"summary": "Test summary", "urgency": "media"}
         mock_queue_instance = MagicMock()

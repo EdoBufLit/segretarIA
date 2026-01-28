@@ -121,6 +121,13 @@
             </div>
             {% endif %}
 
+            {% if missing_routing %}
+            <div class="relative bg-red-100 text-red-900 font-inter py-3 px-4 rounded mb-8 flex items-center gap-3 border border-red-200 shadow-sm">
+                <span class="text-xl">⚠️</span>
+                <span class="font-medium text-sm md:text-base">Attenzione: Configurazione incompleta. Alcuni assistenti non sono correttamente associati al tuo account. Contatta il supporto.</span>
+            </div>
+            {% endif %}
+
             <!-- TOP HEADER -->
             <!-- Active Call Banner (Injected dynamically) -->
             <div id="active-call-banner" class="hidden mb-6 bg-white border border-blue-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in-up">

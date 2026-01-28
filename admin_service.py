@@ -7,7 +7,7 @@ from io import StringIO
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from models import User, Agent, Plan, Subscription, PhoneNumber, UsageEvent
+from models import User, Agent, Plan, Subscription, PhoneNumber, UsageEvent, AgentRouting
 from auth import hash_password, generate_random_password
 from mailer import send_email
 import audit_logger
@@ -43,6 +43,9 @@ class AdminService:
         return new_client
 
     def create_agent(self, agent_id: str, display_name: str, phone_number_id: str = None) -> Agent:
+        if not agent_id or not agent_id.strip():
+            raise ValueError("Agent ID cannot be empty")
+
         existing_agent = self.db.query(Agent).filter_by(agent_id=agent_id).first()
         if existing_agent:
             raise ValueError("Agent ID already exists")
@@ -66,7 +69,28 @@ class AdminService:
         if not agent:
             raise ValueError("Agent not found")
 
-        client.agents.append(agent)
+        # 1. Update Many-to-Many Relationship
+        if agent not in client.agents:
+            client.agents.append(agent)
+
+        # 2. Upsert AgentRouting (Single Source of Truth for Routing)
+        routing = self.db.query(AgentRouting).filter(AgentRouting.agent_id == agent.agent_id).first()
+        if routing:
+            routing.user_id = client.id
+            routing.is_active = True
+            routing.status = "active"
+            # Keep existing phone_number_id if set, or we could update it if we knew which one.
+            # Currently assign_agent doesn't select a phone number, so we leave it as is.
+        else:
+            routing = AgentRouting(
+                user_id=client.id,
+                agent_id=agent.agent_id,
+                status="active",
+                is_active=True,
+                phone_number_id=None # Optional, will be set when phone is linked or discovered
+            )
+            self.db.add(routing)
+
         self.db.commit()
         self.db.refresh(client)
         return client
