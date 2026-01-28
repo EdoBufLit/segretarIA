@@ -31,8 +31,18 @@ class BillingService:
         ).first()
 
         if not active_subscription:
-            print(f"Metering failed: No active subscription found for user '{client_user.username}'.")
-            return
+            if client_user.subscription_plan and client_user.subscription_plan != "NONE":
+                ensure_subscription_for_user(self.db, client_user.id)
+                active_subscription = self.db.query(Subscription).filter(
+                    Subscription.user_id == client_user.id,
+                    Subscription.state == "active",
+                    Subscription.cycle_start <= now,
+                    Subscription.cycle_end > now
+                ).first()
+
+            if not active_subscription:
+                print(f"Metering failed: No active subscription found for user '{client_user.username}'.")
+                return
 
         # 3. Idempotency check
         existing_event = self.db.query(UsageEvent).filter_by(call_id=call_id).first()
