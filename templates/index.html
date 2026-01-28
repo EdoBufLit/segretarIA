@@ -57,6 +57,25 @@
         .intro-glow.visible {
             opacity: 1 !important;
         }
+
+        /* Hero Rotation */
+        #hero-rotating-phrase.rot-out { transform: translateY(-110%); opacity: 0; }
+        #hero-rotating-phrase.rot-in  { transform: translateY(110%); opacity: 0; }
+
+        .underline-anim {
+            position: absolute;
+            left: 0;
+            bottom: -0.10em;
+            height: 2px;
+            width: 100%;
+            background: linear-gradient(90deg, #111827, #374151);
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 420ms ease;
+            opacity: 0.9;
+        }
+
+        .word-active .underline-anim { transform: scaleX(1); }
     </style>
 </head>
 <body class="antialiased selection:bg-neutral-900 selection:text-white">
@@ -125,30 +144,44 @@
                 </div>
 
                 <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-[1.1] text-neutral-900">
-                    L'intelligenza che <br class="hidden md:block" />
-                    <span class="text-neutral-500">risponde per te.</span>
+                    La segretaria che <br class="hidden md:block" />
+                    non dorme mai per
+                    <div class="mt-2 block">
+                        <span class="relative inline-block overflow-hidden align-baseline h-[1.15em] w-[18ch] text-left">
+                            <span id="hero-rotating-phrase"
+                                  class="absolute left-0 top-0 transition-all duration-300 ease-out will-change-[transform,opacity] word-active text-neutral-500">
+                                il tuo studio
+                                <span class="underline-anim"></span>
+                            </span>
+                        </span>
+                    </div>
                 </h1>
 
                 <p class="text-xl text-neutral-600 leading-relaxed mb-12 max-w-2xl mx-auto font-light">
-                    Gestisci le chiamate 24/7 con una voce naturale. Trascrive, analizza e organizza le tue comunicazioni in tempo reale.
+                    Risponde alle chiamate 24/7, raccoglie le informazioni importanti e ti invia un riepilogo via email.
                 </p>
 
-                <div class="flex flex-col sm:flex-row justify-center gap-4">
-                    {% if user %}
-                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
-                        Prenota Demo
-                    </button>
-                    <a href="/dashboard" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105 shadow-sm">
-                        Dashboard
-                    </a>
-                    {% else %}
-                    <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
-                        Inizia Ora
-                    </button>
-                    <a href="/login" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105 shadow-sm">
-                        Accedi
-                    </a>
-                    {% endif %}
+                <div class="flex flex-col items-center gap-6">
+                    <div class="flex flex-col sm:flex-row justify-center gap-4 w-full">
+                        {% if user %}
+                        <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
+                            Prenota una demo
+                        </button>
+                        <a href="/dashboard" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105 shadow-sm">
+                            Dashboard
+                        </a>
+                        {% else %}
+                        <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
+                            Prenota una demo
+                        </button>
+                        <a href="#funzioni" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105 shadow-sm">
+                            Vedi come funziona
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="text-sm text-neutral-500 font-medium">
+                        Sempre attiva • Italiano naturale • Nessuna chiamata persa
+                    </div>
                 </div>
             </div>
         </div>
@@ -379,6 +412,52 @@
         }, { threshold: 0.1 });
 
         document.querySelectorAll('.fade-in-section').forEach(el => observer.observe(el));
+    </script>
+
+    <!-- Hero Rotation Script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const el = document.getElementById('hero-rotating-phrase');
+            if (!el) return;
+
+            const phrases = ["il tuo studio", "la tua azienda", "la tua associazione"];
+            let idx = 0;
+
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                return;
+            }
+
+            setInterval(() => {
+                // 1. Animate Out
+                el.classList.add('rot-out');
+                el.classList.remove('word-active');
+
+                setTimeout(() => {
+                    // 2. Prepare for In-Animation (Jump to bottom)
+                    el.style.transition = 'none';
+                    el.classList.remove('rot-out');
+                    el.classList.add('rot-in');
+
+                    // 3. Swap Text
+                    idx = (idx + 1) % phrases.length;
+                    el.innerHTML = `${phrases[idx]}<span class="underline-anim"></span>`;
+
+                    // Force reflow
+                    void el.offsetWidth;
+
+                    // 4. Animate In
+                    el.style.transition = '';
+                    el.classList.remove('rot-in');
+
+                    // 5. Trigger Underline
+                    requestAnimationFrame(() => {
+                        el.classList.add('word-active');
+                    });
+
+                }, 320); // Match CSS duration (~300ms)
+
+            }, 2400);
+        });
     </script>
 </body>
 </html>
