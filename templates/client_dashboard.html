@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="it">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mr.Automa – Dashboard</title>
+    <title>Segreteria IA – Dashboard</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -11,82 +11,73 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                        display: ['"Newsreader"', 'serif']
                     }
                 }
             }
         }
     </script>
 
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="icon" href="/static/logo.png" type="image/png">
-    <!-- HeroIcons -->
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Newsreader:opsz,wght@6..72,400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/ui.css">`n    <link rel="icon" href="/static/logo.png" type="image/png">
     <script src="https://unpkg.com/feather-icons"></script>
-    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #fafafa; }
-
         /* Custom scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
-
-        .dashboard-card {
-            transition: box-shadow 0.2s ease;
-        }
-        .dashboard-card:hover {
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-        .nav-item-active {
-            background-color: #e5e5e5;
-            color: #171717;
-            font-weight: 600;
-        }
+        ::-webkit-scrollbar-thumb { background: #d3cdc4; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #b9b1a8; }
     </style>
 </head>
-<body class="h-screen flex overflow-hidden bg-neutral-50 text-neutral-900">
+<body class="h-screen flex overflow-hidden ui-shell">
 
     <!-- SIDEBAR -->
-    <aside class="sidebar w-64 flex-shrink-0 flex flex-col hidden md:flex h-full bg-white border-r border-neutral-200">
-        <div class="p-6 border-b border-neutral-100 flex justify-center">
-            <img src="/static/logo.png" alt="Mr.Automa" class="h-12 w-auto object-contain">
+    <aside class="sidebar ui-sidebar w-64 flex-shrink-0 flex flex-col hidden md:flex h-full">
+        <div class="px-6 py-6 border-b border-neutral-200">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-2xl bg-neutral-900 text-white flex items-center justify-center font-semibold">S</div>
+                <div>
+                    <p class="text-sm uppercase tracking-[0.2em] text-neutral-400">Segreteria IA</p>
+                    <p class="font-display text-lg">Dashboard Clienti</p>
+                </div>
+            </div>
         </div>
 
-        <nav class="flex-1 overflow-y-auto p-4 space-y-1">
-            <a href="#" data-section="dashboard" onclick="openSection('dashboard')" class="nav-item nav-item-active flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
+        <nav class="flex-1 overflow-y-auto px-4 py-6 space-y-1">
+            <a href="#" data-section="dashboard" onclick="openSection('dashboard')" class="nav-item nav-item-active ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
                 <i data-feather="grid" class="w-4 h-4"></i>
                 Panoramica
             </a>
-            <a href="#" data-section="logs" onclick="openSection('logs')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
+            <a href="#" data-section="logs" onclick="openSection('logs')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
                 <i data-feather="list" class="w-4 h-4"></i>
                 Storico Chiamate
             </a>
-            <a href="#" data-section="analytics" onclick="openSection('analytics')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
+            <a href="#" data-section="analytics" onclick="openSection('analytics')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
                 <i data-feather="bar-chart-2" class="w-4 h-4"></i>
-                Statistiche
+                Analisi
             </a>
-            <a href="#" data-section="numbers" onclick="openSection('numbers')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
+            <a href="#" data-section="numbers" onclick="openSection('numbers')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
                 <i data-feather="phone" class="w-4 h-4"></i>
                 Numeri
             </a>
-            <a href="#" data-section="chat" onclick="openSection('chat')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors relative">
+            <a href="#" data-section="chat" onclick="openSection('chat')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900 relative">
                 <i data-feather="message-square" class="w-4 h-4"></i>
                 Chat supporto
-                <span id="nav-chat-badge" class="hidden absolute right-2 top-2 w-2 h-2 bg-red-500 rounded-full"></span>
+                <span id="nav-chat-badge" class="hidden absolute right-3 top-2 w-2 h-2 bg-red-500 rounded-full"></span>
             </a>
-            <div class="pt-4 mt-4 border-t border-neutral-100"></div>
-            <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-colors">
+            <div class="pt-6 mt-6 border-t border-neutral-200"></div>
+            <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
                 <i data-feather="settings" class="w-4 h-4"></i>
                 Impostazioni
             </a>
         </nav>
 
-        <div class="p-4 border-t border-neutral-100">
-            <div class="flex items-center gap-3 px-3 py-2 bg-neutral-50 rounded-xl border border-neutral-100">
-                <div class="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-600 text-xs font-bold">
+        <div class="p-4 border-t border-neutral-200">
+            <div class="flex items-center gap-3 px-4 py-3 bg-neutral-100/70 rounded-2xl">
+                <div class="w-9 h-9 rounded-full bg-neutral-900/10 text-neutral-700 flex items-center justify-center text-xs font-bold">
                     {{ user.username[:2].upper() }}
                 </div>
                 <div class="flex-1 min-w-0">
@@ -101,144 +92,164 @@
     </aside>
 
     <!-- MOBILE HEADER -->
-    <div class="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-neutral-200 z-40 flex items-center justify-between px-4">
-        <img src="/static/logo.png" alt="Mr.Automa" class="h-8 w-auto object-contain">
+    <div class="md:hidden fixed top-0 left-0 right-0 h-16 ui-topbar z-40 flex items-center justify-between px-4">
+        <span class="font-display text-lg">Segreteria IA</span>
         <button id="mobile-menu-btn" class="p-2 text-neutral-600">
             <i data-feather="menu"></i>
         </button>
     </div>
 
     <!-- MAIN CONTENT -->
-    <main class="flex-1 overflow-auto bg-neutral-50 pt-16 md:pt-0 relative">
+    <main class="flex-1 overflow-auto pt-16 md:pt-0">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
             {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
 
             {% if not service_active %}
-            <div class="relative bg-yellow-100 text-yellow-900 font-inter py-3 px-4 rounded mb-8 flex items-center gap-3 border border-yellow-200 shadow-sm">
-                <span class="text-xl">⚠️</span>
-                <span class="font-medium text-sm md:text-base">Il tuo piano è scaduto o il servizio è disattivato. Rinnova per continuare a ricevere le chiamate dalla tua segreteria AI.</span>
+            <div class="ui-card-soft px-4 py-3 mb-8 flex items-center gap-3 border border-yellow-200 text-yellow-800">
+                <span class="text-lg">⚠️</span>
+                <span class="text-sm font-medium">Il tuo piano è scaduto o il servizio è disattivato. Rinnova per continuare a ricevere le chiamate.</span>
             </div>
             {% endif %}
 
             <!-- TOP HEADER -->
-            <!-- Active Call Banner (Injected dynamically) -->
-            <div id="active-call-banner" class="hidden mb-6 bg-white border border-blue-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in-up">
-                <div class="flex items-center gap-4">
-                    <div class="relative w-12 h-12 flex items-center justify-center bg-blue-50 rounded-full text-blue-600">
-                        <span class="absolute top-0 right-0 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse"></span>
-                        <i data-feather="phone-call" class="w-6 h-6"></i>
-                    </div>
-                    <div>
-                        <h3 class="font-bold text-neutral-900">Chiamata in corso</h3>
-                        <p id="active-call-info" class="text-sm text-neutral-600">Da: <span class="font-mono">...</span></p>
-                    </div>
-                </div>
-                <div id="active-call-actions" class="w-full sm:w-auto">
-                    <!-- Button injected by JS -->
-                </div>
-            </div>
-
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
                 <div>
-            <div class="flex items-center gap-2">
-                <h2 id="page-title" class="text-2xl font-bold text-neutral-900 tracking-tight">Panoramica</h2>
-                <button id="force-refresh-call" onclick="manualRefresh()" class="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-full transition-colors" title="Aggiorna stato chiamata">
-                    <i data-feather="refresh-cw" class="w-4 h-4"></i>
-                </button>
-            </div>
-                    <p class="text-neutral-500 text-sm mt-1">Benvenuto nella tua dashboard.</p>
+                    <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Panoramica</p>
+                    <h1 id="page-title" class="font-display text-3xl text-neutral-900">Stato del servizio</h1>
+                    <p class="text-neutral-500 mt-2">Tutto quello che serve per capire se la segreteria sta lavorando per te.</p>
                 </div>
 
-                <!-- Status Badges -->
-                <div class="flex items-center gap-3">
-                    {% if service_active %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
-                            <span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5"></span>
+                <div class="flex flex-wrap items-center gap-3">
+                    {% set minutes_exhausted = minutes_remaining <= 0 %}
+                    {% set payment_suspended = (not user.is_active) or (subscription and subscription.state in ['past_due', 'canceled']) %}
+                    {% if minutes_exhausted %}
+                        <span class="ui-badge ui-badge--warn">
+                            <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                            Minuti Esauriti
+                        </span>
+                    {% elif payment_suspended %}
+                        <span class="ui-badge ui-badge--danger">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                            Sospeso (Pagamento)
+                        </span>
+                    {% elif subscription and subscription.state == 'active' and user.is_active %}
+                        <span class="ui-badge ui-badge--success">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                             Servizio Attivo
                         </span>
                     {% else %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">
-                            <span class="w-1.5 h-1.5 rounded-full bg-red-500 mr-1.5"></span>
+                        <span class="ui-badge ui-badge--danger">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
                             Servizio Sospeso
                         </span>
                     {% endif %}
 
                     {% if subscription %}
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white text-neutral-600 border border-neutral-200 uppercase shadow-sm">
-                            {{ subscription.plan_code }}
-                        </span>
-                        {% if plan_expires_formatted %}
-                        <span class="text-xs text-neutral-500 font-medium">
-                            Scade il: {{ plan_expires_formatted }}
-                        </span>
-                        {% endif %}
+                        <span class="ui-badge">{{ subscription.plan_code }}</span>
                     {% endif %}
                 </div>
             </div>
 
+            <!-- ACTIVE CALL BANNER -->
+            <div id="active-call-banner" class="hidden ui-card-soft px-5 py-4 mb-8 border border-emerald-200">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div class="flex items-start gap-3">
+                        <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                            <i data-feather="phone-call" class="w-5 h-5"></i>
+                        </div>
+                        <div id="active-call-info" class="text-sm text-neutral-600"></div>
+                    </div>
+                    <div id="active-call-actions" class="flex items-center gap-3"></div>
+                </div>
+            </div>
+
             <!-- DASHBOARD SECTION -->
-            <section id="section-dashboard" class="section space-y-6">
+            <section id="section-dashboard" class="section space-y-8">
                 {% if not service_active %}
-                <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm text-center">
-                    <div class="mx-auto w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                <div class="dashboard-card p-8 text-center">
+                    <div class="mx-auto w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
                         <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
                     </div>
-                    <h3 class="text-lg font-medium text-neutral-900">Dashboard Limitata</h3>
-                    <p class="text-neutral-500 mt-2 mb-6">Riattiva il tuo piano per accedere alle statistiche e ai grafici.</p>
-                    <a href="/billing/plans" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none">
-                        Gestisci Abbonamento
-                    </a>
+                    <h3 class="font-display text-xl text-neutral-900">Dashboard limitata</h3>
+                    <p class="text-neutral-500 mt-2">Riattiva il tuo piano per accedere ai grafici e alle statistiche.</p>
                 </div>
                 {% else %}
-                <!-- KPI Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <!-- Minuti -->
-                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Minuti</h3>
-                            <i data-feather="clock" class="w-4 h-4 text-neutral-400"></i>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="dashboard-card lg:col-span-2 p-8">
+                        <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+                            <div>
+                                <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Disponibilita</p>
+                                <h2 class="font-display text-2xl text-neutral-900 mt-2">Copertura chiamate 24/7</h2>
+                                <p class="text-neutral-500 mt-2 max-w-xl">La tua segreteria virtuale sta rispondendo in tempo reale. Il riepilogo dei minuti ti indica quando intervenire.</p>
+                            </div>
+                            <div class="ui-card-soft px-5 py-4 rounded-2xl">
+                                <p class="text-xs uppercase tracking-[0.25em] text-neutral-400">Rinnovo</p>
+                                <p class="text-sm font-medium text-neutral-900 mt-2">{{ subscription.cycle_end[:10] if subscription and subscription.cycle_end else '—' }}</p>
+                                <p class="text-xs text-neutral-500">Prossimo reset minuti</p>
+                            </div>
                         </div>
-                        <div class="flex items-baseline gap-2">
-                            <span class="text-3xl font-bold text-neutral-900">{{ minutes_remaining | round(0) | int }}</span>
-                            <span class="text-sm text-neutral-500">/ {{ minutes_limit }}</span>
-                        </div>
-                        <div class="w-full bg-neutral-100 rounded-full h-1.5 mt-3 overflow-hidden">
-                            <div class="bg-neutral-900 h-1.5 rounded-full" style="width: {{ (minutes_used / minutes_limit * 100) if minutes_limit > 0 else 0 }}%"></div>
+
+                        <div class="mt-10">
+                            <div class="flex items-end gap-4">
+                                <span class="ui-kpi text-5xl text-neutral-900">{{ minutes_remaining | round(0) | int }}</span>
+                                <div class="pb-1">
+                                    <p class="text-sm text-neutral-500">minuti disponibili</p>
+                                    <p class="text-xs text-neutral-400">su {{ minutes_limit }} totali</p>
+                                </div>
+                            </div>
+                            <div class="ui-progress h-2 mt-4">
+                                <div class="ui-progress__bar" style="width: {{ (minutes_used / minutes_limit * 100) if minutes_limit > 0 else 0 }}%"></div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Chiamate Oggi -->
-                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Oggi</h3>
-                            <i data-feather="phone-incoming" class="w-4 h-4 text-neutral-400"></i>
+                    <div class="dashboard-card p-6 flex flex-col justify-between">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Piano</p>
+                            <h3 class="font-display text-xl text-neutral-900 mt-2">{{ subscription.plan_code | upper if subscription else '—' }}</h3>
+                            <p class="text-sm text-neutral-500 mt-2">Pensato per offrire una copertura continua, con report sintetici dopo ogni chiamata.</p>
                         </div>
-                        <span id="kpi-today" class="text-3xl font-bold text-neutral-900">—</span>
-                    </div>
-
-                    <!-- Chiamate Settimana -->
-                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider">7 Giorni</h3>
-                            <i data-feather="calendar" class="w-4 h-4 text-neutral-400"></i>
+                        <div class="mt-6">
+                            <a href="/billing/plans" class="ui-button ui-button-ghost inline-flex items-center px-4 py-2 text-sm">Gestisci piano</a>
                         </div>
-                        <span id="kpi-week" class="text-3xl font-bold text-neutral-900">—</span>
-                    </div>
-
-                    <!-- Errori -->
-                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Errori</h3>
-                            <i data-feather="alert-circle" class="w-4 h-4 text-neutral-400"></i>
-                        </div>
-                        <span id="kpi-errors" class="text-3xl font-bold text-red-600">—</span>
                     </div>
                 </div>
 
-                <!-- Main Chart -->
-                <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
-                    <h3 class="text-base font-semibold text-neutral-900 mb-6">Attività Recente</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="dashboard-card p-6">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Oggi</p>
+                            <i data-feather="phone-incoming" class="w-4 h-4 text-neutral-400"></i>
+                        </div>
+                        <span id="kpi-today" class="font-display text-3xl text-neutral-900 block mt-4">—</span>
+                        <p class="text-xs text-neutral-500 mt-2">Chiamate gestite oggi</p>
+                    </div>
+                    <div class="dashboard-card p-6">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">7 Giorni</p>
+                            <i data-feather="calendar" class="w-4 h-4 text-neutral-400"></i>
+                        </div>
+                        <span id="kpi-week" class="font-display text-3xl text-neutral-900 block mt-4">—</span>
+                        <p class="text-xs text-neutral-500 mt-2">Volume settimanale</p>
+                    </div>
+                    <div class="dashboard-card p-6">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Criticita</p>
+                            <i data-feather="alert-circle" class="w-4 h-4 text-neutral-400"></i>
+                        </div>
+                        <span id="kpi-errors" class="font-display text-3xl text-red-600 block mt-4">—</span>
+                        <p class="text-xs text-neutral-500 mt-2">Eventi da rivedere</p>
+                    </div>
+                </div>
+
+                <div class="dashboard-card p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Trend</p>
+                            <h3 class="font-display text-xl text-neutral-900">Attivita recente</h3>
+                        </div>
+                        <span class="text-xs text-neutral-400">Ultimi 30 giorni</span>
+                    </div>
                     <div class="relative h-64 w-full">
                         <canvas id="chart_all_clients"></canvas>
                     </div>
@@ -249,18 +260,18 @@
             <!-- LOGS SECTION -->
             <section id="section-logs" class="section hidden space-y-6">
                 {% if not service_active %}
-                <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm text-center">
-                    <div class="mx-auto w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                <div class="dashboard-card p-8 text-center">
+                    <div class="mx-auto w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
                         <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
                     </div>
-                    <h3 class="text-lg font-medium text-neutral-900">Registro Bloccato</h3>
+                    <h3 class="font-display text-xl text-neutral-900">Registro bloccato</h3>
                     <p class="text-neutral-500 mt-2">Riattiva il servizio per consultare lo storico chiamate.</p>
                 </div>
                 {% else %}
-                <div class="dashboard-card bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
-                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-white">
-                        <h3 class="text-base font-semibold text-neutral-900">Registro Chiamate</h3>
-                        <button onclick="loadLogsTable(null)" class="p-2 hover:bg-neutral-100 rounded-lg transition-colors text-neutral-500">
+                <div class="dashboard-card overflow-hidden">
+                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center">
+                        <h3 class="font-display text-lg text-neutral-900">Registro chiamate</h3>
+                        <button onclick="loadLogsTable(null)" class="p-2 hover:bg-neutral-100 rounded-full transition-colors text-neutral-500">
                             <i data-feather="refresh-cw" class="w-4 h-4"></i>
                         </button>
                     </div>
@@ -293,29 +304,28 @@
             <!-- ANALYTICS SECTION -->
             <section id="section-analytics" class="section hidden space-y-6">
                 {% if not service_active %}
-                <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm text-center">
-                    <div class="mx-auto w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                <div class="dashboard-card p-8 text-center">
+                    <div class="mx-auto w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
                         <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
                     </div>
-                    <h3 class="text-lg font-medium text-neutral-900">Analytics Bloccati</h3>
+                    <h3 class="font-display text-xl text-neutral-900">Analytics bloccati</h3>
                     <p class="text-neutral-500 mt-2">Le statistiche non sono disponibili senza un piano attivo.</p>
                 </div>
                 {% else %}
-                <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
-                    <h3 class="text-base font-semibold text-neutral-900 mb-6">Distribuzione Oraria</h3>
+                <div class="dashboard-card p-6">
+                    <h3 class="font-display text-xl text-neutral-900 mb-6">Distribuzione oraria</h3>
                     <div id="heatmap-container" class="w-full overflow-x-auto pb-2">
-                        <!-- JS Injection -->
                         <div class="text-neutral-400 text-sm animate-pulse">Caricamento dati...</div>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
-                        <h3 class="text-base font-semibold text-neutral-900 mb-4">Categorie</h3>
+                    <div class="dashboard-card p-6">
+                        <h3 class="font-display text-lg text-neutral-900 mb-4">Categorie</h3>
                         <ul id="analytics-category-list" class="space-y-2 text-sm text-neutral-600"></ul>
                     </div>
-                    <div class="dashboard-card bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
-                        <h3 class="text-base font-semibold text-neutral-900 mb-4">Urgenza</h3>
+                    <div class="dashboard-card p-6">
+                        <h3 class="font-display text-lg text-neutral-900 mb-4">Urgenza</h3>
                         <ul id="analytics-urgency-list" class="space-y-2 text-sm text-neutral-600"></ul>
                     </div>
                 </div>
@@ -325,18 +335,18 @@
             <!-- NUMBERS SECTION -->
             <section id="section-numbers" class="section hidden space-y-6">
                 {% if not service_active %}
-                <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm text-center">
-                    <div class="mx-auto w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                <div class="dashboard-card p-8 text-center">
+                    <div class="mx-auto w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
                         <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
                     </div>
-                    <h3 class="text-lg font-medium text-neutral-900">Gestione Numeri Bloccata</h3>
+                    <h3 class="font-display text-xl text-neutral-900">Gestione numeri bloccata</h3>
                     <p class="text-neutral-500 mt-2">Non puoi gestire i numeri finché il servizio è sospeso.</p>
                 </div>
                 {% else %}
-                <div class="dashboard-card bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
-                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-white">
-                        <h3 class="text-base font-semibold text-neutral-900">Numeri Assegnati</h3>
-                        <button onclick="loadClientNumbers()" class="p-2 hover:bg-neutral-100 rounded-lg transition-colors text-neutral-500" title="Aggiorna">
+                <div class="dashboard-card overflow-hidden">
+                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center">
+                        <h3 class="font-display text-lg text-neutral-900">Numeri assegnati</h3>
+                        <button onclick="loadClientNumbers()" class="p-2 hover:bg-neutral-100 rounded-full transition-colors text-neutral-500" title="Aggiorna">
                             <i data-feather="refresh-cw" class="w-4 h-4"></i>
                         </button>
                     </div>
@@ -352,7 +362,6 @@
                                 </tr>
                             </thead>
                             <tbody id="numbers-table-body" class="divide-y divide-neutral-100 bg-white">
-                                <!-- Populated by JS -->
                                 <tr><td colspan="5" class="text-center py-8 text-neutral-500 text-sm">Caricamento...</td></tr>
                             </tbody>
                         </table>
@@ -363,27 +372,23 @@
 
             <!-- CHAT SECTION -->
             <section id="section-chat" class="section hidden h-[calc(100vh-12rem)] flex flex-col">
-                <div class="bg-white rounded-xl border border-neutral-200 shadow-sm flex flex-col h-full overflow-hidden">
-                    <!-- Chat Header -->
-                    <div class="px-6 py-4 border-b border-neutral-100 bg-neutral-50 flex justify-between items-center">
-                        <h3 class="text-base font-semibold text-neutral-900 flex items-center gap-2">
+                <div class="dashboard-card flex flex-col h-full overflow-hidden">
+                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
+                        <h3 class="font-display text-lg text-neutral-900 flex items-center gap-2">
                             <i data-feather="message-circle" class="w-4 h-4 text-neutral-500"></i>
-                            Supporto Diretto
+                            Supporto diretto
                         </h3>
                         <div class="text-xs text-neutral-400">Rispondiamo il prima possibile</div>
                     </div>
 
-                    <!-- Chat Messages -->
                     <div id="chat-messages-container" class="flex-1 overflow-y-auto p-6 space-y-4 bg-white flex flex-col">
-                        <!-- Messages injected here -->
                         <div class="text-center text-neutral-400 text-sm my-auto">Caricamento messaggi...</div>
                     </div>
 
-                    <!-- Chat Input -->
                     <div class="p-4 border-t border-neutral-100 bg-neutral-50">
                         <form onsubmit="handleSendChat(event)" class="flex gap-2">
-                            <textarea id="chat-input" required placeholder="Scrivi un messaggio..." class="flex-1 p-3 rounded-lg border border-neutral-300 focus:ring-2 focus:ring-neutral-900 focus:border-transparent outline-none resize-none text-sm h-12 min-h-[3rem] max-h-32 transition-all"></textarea>
-                            <button type="submit" class="bg-neutral-900 hover:bg-neutral-800 text-white p-3 rounded-lg shadow-sm transition-colors flex items-center justify-center h-12 w-12 flex-shrink-0">
+                            <textarea id="chat-input" required placeholder="Scrivi un messaggio..." class="ui-input text-sm h-12 min-h-[3rem] max-h-32 resize-none flex-1"></textarea>
+                            <button type="submit" class="ui-button ui-button-primary h-12 w-12 flex items-center justify-center">
                                 <i data-feather="send" class="w-4 h-4"></i>
                             </button>
                         </form>
@@ -393,23 +398,23 @@
 
             <!-- SETTINGS SECTION -->
             <section id="section-settings" class="section hidden">
-                <div class="dashboard-card bg-white p-8 rounded-xl border border-neutral-200 shadow-sm max-w-2xl">
-                    <h3 class="text-xl font-bold text-neutral-900 mb-2">Impostazioni Account</h3>
-                    <p class="text-neutral-500 mb-8">Gestisci le preferenze del tuo servizio.</p>
+                <div class="dashboard-card p-8 max-w-2xl">
+                    <h3 class="font-display text-2xl text-neutral-900 mb-2">Impostazioni account</h3>
+                    <p class="text-neutral-500 mb-8">Gestisci le preferenze principali del tuo servizio.</p>
 
                     <div class="space-y-6">
                         <div class="pb-6 border-b border-neutral-100">
-                            <h4 class="text-sm font-semibold text-neutral-900 mb-1">Piano Attivo</h4>
+                            <h4 class="text-sm font-semibold text-neutral-900 mb-1">Piano attivo</h4>
                             <div class="flex items-center justify-between">
                                 <span class="text-neutral-600">{{ subscription.plan_code | upper if subscription else 'Nessuno' }}</span>
-                                <a href="/billing/plans" class="text-sm font-medium text-blue-600 hover:text-blue-700">Cambia piano</a>
+                                <a href="/billing/plans" class="text-sm font-medium text-neutral-900 hover:underline">Cambia piano</a>
                             </div>
                         </div>
 
                         <div>
                             <h4 class="text-sm font-semibold text-neutral-900 mb-1">Supporto</h4>
                             <p class="text-sm text-neutral-500 mb-4">Hai bisogno di aiuto con la configurazione?</p>
-                            <a href="mailto:support@segreteriaia.it" class="inline-flex items-center px-4 py-2 border border-neutral-300 shadow-sm text-sm font-medium rounded-md text-neutral-700 bg-white hover:bg-neutral-50">
+                            <a href="mailto:support@segreteriaia.it" class="ui-button ui-button-ghost inline-flex items-center px-4 py-2 text-sm">
                                 Contatta il supporto
                             </a>
                         </div>
@@ -421,10 +426,10 @@
     </main>
 
     <!-- LOG DETAIL MODAL -->
-    <div id="log-detail-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden transform transition-all scale-100 opacity-100 border border-neutral-200" role="dialog" aria-modal="true">
+    <div id="log-detail-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity">
+        <div class="ui-card max-w-lg w-full overflow-hidden" role="dialog" aria-modal="true">
             <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
-                <h3 class="text-lg font-bold text-neutral-900">Dettaglio Chiamata</h3>
+                <h3 class="font-display text-lg text-neutral-900">Dettaglio chiamata</h3>
                 <button onclick="closeLogDetail()" class="text-neutral-400 hover:text-neutral-600 transition-colors">
                     <i data-feather="x" class="w-5 h-5"></i>
                 </button>
@@ -435,7 +440,7 @@
                 </div>
             </div>
             <div class="px-6 py-4 bg-neutral-50 text-right border-t border-neutral-100">
-                <button onclick="closeLogDetail()" class="px-4 py-2 bg-neutral-900 text-white text-sm font-medium rounded-lg hover:bg-neutral-800 transition-colors shadow-sm">Chiudi</button>
+                <button onclick="closeLogDetail()" class="ui-button ui-button-primary px-4 py-2 text-sm">Chiudi</button>
             </div>
         </div>
     </div>
@@ -449,3 +454,4 @@
     </script>
 </body>
 </html>
+

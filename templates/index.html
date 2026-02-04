@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mr.Automa - Segreteria Telefonica AI per Professionisti e Imprese</title>
+    <title>Segreteria IA - Segreteria Telefonica AI per Professionisti e Imprese</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -11,298 +11,80 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                    keyframes: {
-                        fadeInUp: {
-                            '0%': { opacity: '0', transform: 'translateY(10px)' },
-                            '100%': { opacity: '1', transform: 'translateY(0)' },
-                        }
-                    },
-                    animation: {
-                        'fade-in-up': 'fadeInUp 0.2s ease-out forwards',
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                        display: ['"Newsreader"', 'serif']
                     }
                 }
             }
         }
     </script>
 
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Newsreader:opsz,wght@6..72,400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/ui.css">
     <link rel="icon" href="/static/logo.png" type="image/png">
-
-    <!-- Removed effects.css to ensure clean Light Theme -->
-
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #fafafa; color: #171717; }
-        .nav-scrolled {
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid #e5e5e5;
-        }
-        .fade-in-section {
-            opacity: 0;
-            transform: translateY(20px);
-            transition: opacity 0.8s ease-out, transform 0.8s ease-out;
-            will-change: opacity, transform;
-        }
-        .fade-in-section.is-visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
-        /* Intro Animation Classes */
-        .intro-wordmark.animate {
-            opacity: 1 !important;
-            transform: translateY(0) !important;
-        }
-        .intro-glow.visible {
-            opacity: 1 !important;
-        }
-
-        /* Hero Rotation */
-        .rotator-text { opacity: 1; }
-        .rot-out { transform: translateY(-100%); opacity: 0; }
-        .rot-in  { transform: translateY(100%); opacity: 0; }
-
-        .rotator-underline{
-            bottom: -0.10em;
-            height: 2px;
-            opacity: 0.85;
-            background: linear-gradient(90deg, #111827, #374151);
-            transform: scaleX(0);
-            transform-origin: left;
-            transition: transform 420ms ease;
-        }
-
-        .underline-on { transform: scaleX(1); }
-    </style>
 </head>
-<body class="antialiased selection:bg-neutral-900 selection:text-white">
+<body class="antialiased ui-shell">
 
-    <!-- Intro Splash Screen -->
-    <div id="premium-intro" class="fixed inset-0 z-[100] flex items-center justify-center bg-white transition-opacity duration-700 ease-out" style="opacity: 0;">
-        <div class="relative flex flex-col items-center">
-            <!-- Glow effect -->
-            <div class="intro-glow absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-blue-400/20 rounded-full blur-[80px] opacity-0 transition-opacity duration-1000"></div>
-
-            <!-- Logo/Wordmark -->
-            <div class="intro-wordmark flex flex-col items-center transform translate-y-4 opacity-0 transition-all duration-700 ease-out">
-                <img src="/static/logo.png" alt="Mr.Automa" class="w-20 h-20 mb-6 shadow-xl rounded-2xl">
-                <span class="text-3xl font-bold tracking-tight text-neutral-900">Mr.Automa</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Fixed Navbar -->
-    <nav class="fixed top-0 left-0 w-full z-50 transition-all duration-300 border-b border-transparent bg-white/50 backdrop-blur-sm">
-        <div class="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
-            <!-- Left: Logo -->
-            <a href="#" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;" class="flex items-center hover:opacity-80 transition-opacity">
-                <img src="/static/logo.png" alt="Mr.Automa" class="h-12 w-auto object-contain">
+    <!-- Navbar -->
+    <nav class="fixed top-0 left-0 w-full z-50 ui-topbar bg-white/90 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+            <a href="#" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;" class="flex items-center gap-3">
+                <span class="w-9 h-9 rounded-2xl bg-neutral-900 text-white flex items-center justify-center font-semibold">S</span>
+                <span class="font-display text-lg text-neutral-900">Segreteria IA</span>
             </a>
-
-            <!-- Right: CTA -->
             <div class="flex items-center gap-6">
+                <a href="#pricing" class="text-sm text-neutral-600 hover:text-neutral-900 transition-colors hidden md:block">Prezzi</a>
+                <a href="#come-funziona" class="text-sm text-neutral-600 hover:text-neutral-900 transition-colors hidden md:block">Come funziona</a>
                 {% if user %}
-                <a href="/dashboard" class="text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors hidden sm:block">Dashboard</a>
+                <a href="/dashboard" class="text-sm text-neutral-600 hover:text-neutral-900 transition-colors hidden sm:block">Dashboard</a>
                 {% else %}
-                <a href="/login" class="text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors hidden sm:block">Accedi</a>
+                <a href="/login" class="text-sm text-neutral-600 hover:text-neutral-900 transition-colors hidden sm:block">Accedi</a>
                 {% endif %}
-
-                <button type="button" data-booking-open class="px-5 py-2 rounded-xl bg-neutral-900 text-white font-medium text-sm hover:bg-neutral-800 transition-transform duration-150 hover:scale-105 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-neutral-900 shadow-lg shadow-neutral-900/20">
-                    Contattaci
+                <button type="button" data-booking-open class="ui-button ui-button-primary px-5 py-2.5 text-sm">
+                    Richiedi contatto
                 </button>
             </div>
         </div>
     </nav>
 
-    <script>
-        const nav = document.querySelector('nav');
-        window.addEventListener('scroll', () => {
-            if (window.scrollY > 20) {
-                nav.classList.add('nav-scrolled');
-                nav.classList.remove('bg-white/50');
-            } else {
-                nav.classList.remove('nav-scrolled');
-                nav.classList.add('bg-white/50');
-            }
-        });
-    </script>
-
-    <!-- Hero Section -->
-    <section class="relative pt-40 pb-32 lg:pt-56 lg:pb-40 overflow-hidden">
-        <!-- Subtle Gradient Blob -->
-        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-blue-100/40 blur-[120px] rounded-full pointer-events-none -z-10"></div>
-        <div class="absolute bottom-0 right-0 w-[600px] h-[400px] bg-purple-100/30 blur-[100px] rounded-full pointer-events-none -z-10"></div>
-
-        <div class="max-w-5xl mx-auto px-6 relative z-10 text-center">
-            <div class="fade-in-section is-visible">
-                <div class="inline-flex items-center px-3 py-1 rounded-full bg-white border border-neutral-200 text-xs font-medium text-neutral-600 mb-8 shadow-sm">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2"></span>
-                    AI Voice Assistant Enterprise
-                </div>
-
-                <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-[1.1] text-neutral-900 flex flex-col items-center max-w-4xl mx-auto">
-                    <span>La segretaria che</span>
-                    <span class="block">
-                        non dorme mai per
-                        <span class="block md:inline-block mt-2 md:mt-0">
-                            <span class="rotator-wrap inline-flex justify-center align-bottom relative min-w-[22ch] text-center">
-                                <span id="hero-rotating-phrase"
-                                      class="rotator-text relative inline-block w-full text-center transition-all duration-300 ease-out will-change-[transform,opacity] whitespace-nowrap">
-                                    il tuo studio
-                                </span>
-                                <span id="hero-underline" class="rotator-underline absolute left-0 right-0"></span>
-                            </span>
-                        </span>
-                    </span>
-                </h1>
-
-                <p class="text-xl text-neutral-600 leading-relaxed mb-12 max-w-2xl mx-auto font-light">
-                    Risponde alle chiamate 24/7, raccoglie le informazioni importanti e ti invia un riepilogo via email.
-                </p>
-
-                <div class="flex flex-col items-center gap-6">
-                    <div class="flex flex-col sm:flex-row justify-center gap-4 w-full">
-                        {% if user %}
-                        <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
+    <!-- Hero -->
+    <section class="ui-ambient pt-40 pb-28">
+        <div class="max-w-6xl mx-auto px-6 relative">
+            <div class="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-12 items-center">
+                <div class="fade-in-up">
+                    <p class="text-xs uppercase tracking-[0.35em] text-neutral-400">Segreteria telefonica AI</p>
+                    <h1 class="font-display text-4xl md:text-6xl leading-[1.1] text-neutral-900 mt-4">
+                        Una segreteria affidabile,
+                        <span class="text-neutral-500">sempre presente.</span>
+                    </h1>
+                    <p class="text-lg text-neutral-600 mt-6 leading-relaxed">
+                        Rispondi a ogni chiamata con una voce naturale, ricevi riepiloghi chiari e mantieni il controllo dei minuti in tempo reale.
+                    </p>
+                    <div class="mt-8 flex flex-col sm:flex-row gap-4">
+                        <button type="button" data-booking-open class="ui-button ui-button-primary px-6 py-3 text-sm">
                             Prenota una demo
                         </button>
-                        <a href="/dashboard" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105 shadow-sm">
-                            Dashboard
-                        </a>
-                        {% else %}
-                        <button type="button" data-booking-open class="px-8 py-3.5 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
-                            Prenota una demo
-                        </button>
-                        <a href="#funzioni" class="px-8 py-3.5 rounded-2xl bg-white text-neutral-900 font-medium text-lg border border-neutral-200 hover:bg-neutral-50 transition-all duration-200 hover:scale-105 shadow-sm">
-                            Vedi come funziona
-                        </a>
-                        {% endif %}
+                        <a href="/billing/plans" class="ui-button ui-button-ghost px-6 py-3 text-sm">Vedi i piani</a>
                     </div>
-                    <div class="text-sm text-neutral-500 font-medium">
-                        Sempre attiva • Italiano naturale • Nessuna chiamata persa
+                    <div class="mt-10 flex flex-wrap gap-4 text-sm text-neutral-500">
+                        <span class="ui-badge">Risposte 24/7</span>
+                        <span class="ui-badge">GDPR Ready</span>
+                        <span class="ui-badge">Setup in 48h</span>
                     </div>
                 </div>
-            </div>
-        </div>
-    </section>
 
-    <!-- Stats / Trust Section -->
-    <section class="border-y border-neutral-200 bg-white">
-        <div class="max-w-7xl mx-auto px-6 py-12">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-                <div class="flex flex-col gap-1">
-                    <span class="text-3xl font-bold text-neutral-900">24/7</span>
-                    <span class="text-sm text-neutral-500 font-medium tracking-wide uppercase">Operatività</span>
-                </div>
-                <div class="flex flex-col gap-1">
-                    <span class="text-3xl font-bold text-neutral-900">&lt;1s</span>
-                    <span class="text-sm text-neutral-500 font-medium tracking-wide uppercase">Latenza</span>
-                </div>
-                <div class="flex flex-col gap-1">
-                    <span class="text-3xl font-bold text-neutral-900">100%</span>
-                    <span class="text-sm text-neutral-500 font-medium tracking-wide uppercase">Accuratezza</span>
-                </div>
-                <div class="flex flex-col gap-1">
-                    <span class="text-3xl font-bold text-neutral-900">GDPR</span>
-                    <span class="text-sm text-neutral-500 font-medium tracking-wide uppercase">Compliant</span>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Features Section -->
-    <section id="funzioni" class="py-32 relative bg-neutral-50">
-        <div class="max-w-7xl mx-auto px-6">
-            <div class="text-center mb-24 fade-in-section">
-                <h2 class="text-4xl md:text-5xl font-bold mb-6 tracking-tight text-neutral-900">Funzionalità Core</h2>
-                <p class="text-neutral-500 max-w-xl mx-auto text-lg leading-relaxed">Strumenti essenziali progettati per la massima efficienza e chiarezza.</p>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <!-- Card 1 -->
-                <div class="group p-8 rounded-3xl bg-white border border-neutral-200 hover:border-neutral-300 hover:shadow-xl transition-all duration-300 fade-in-section">
-                    <div class="w-12 h-12 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    </div>
-                    <h3 class="text-xl font-bold mb-3 text-neutral-900">Disponibilità Totale</h3>
-                    <p class="text-neutral-500 leading-relaxed">Nessuna attesa, nessuna chiamata persa. Gestione simultanea di volumi elevati senza compromessi sulla qualità.</p>
-                </div>
-
-                <!-- Card 2 -->
-                <div class="group p-8 rounded-3xl bg-white border border-neutral-200 hover:border-neutral-300 hover:shadow-xl transition-all duration-300 fade-in-section" style="transition-delay: 100ms;">
-                    <div class="w-12 h-12 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    </div>
-                    <h3 class="text-xl font-bold mb-3 text-neutral-900">Sintesi Intelligente</h3>
-                    <p class="text-neutral-500 leading-relaxed">L'IA estrae i punti chiave di ogni conversazione, fornendoti report strutturati e azionabili immediatamente.</p>
-                </div>
-
-                <!-- Card 3 -->
-                <div class="group p-8 rounded-3xl bg-white border border-neutral-200 hover:border-neutral-300 hover:shadow-xl transition-all duration-300 fade-in-section" style="transition-delay: 200ms;">
-                    <div class="w-12 h-12 rounded-xl bg-neutral-50 border border-neutral-100 flex items-center justify-center mb-6 text-neutral-900 group-hover:scale-110 transition-transform duration-300 shadow-sm">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
-                    </div>
-                    <h3 class="text-xl font-bold mb-3 text-neutral-900">Metriche in Tempo Reale</h3>
-                    <p class="text-neutral-500 leading-relaxed">Dashboard analitica per monitorare trend, volumi e tipologie di richieste con precisione chirurgica.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- How It Works -->
-    <section class="py-32 border-t border-neutral-200 bg-white">
-        <div class="max-w-7xl mx-auto px-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
-                <div class="fade-in-section">
-                    <h2 class="text-4xl font-bold mb-8 tracking-tight text-neutral-900">Integrazione fluida nel tuo workflow</h2>
-                    <div class="space-y-10">
-                        <div class="flex gap-6">
-                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-900 font-semibold bg-neutral-50 shadow-sm">1</span>
-                            <div>
-                                <h3 class="text-xl font-semibold text-neutral-900 mb-2">Setup Immediato</h3>
-                                <p class="text-neutral-500">Configura il tuo assistente in pochi minuti o richiedi il nostro supporto white-glove.</p>
-                            </div>
+                <div class="dashboard-card p-8 grid-soft fade-in-up">
+                    <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Stato servizio</p>
+                    <h2 class="font-display text-2xl text-neutral-900 mt-4">Sempre operativo</h2>
+                    <p class="text-sm text-neutral-500 mt-2">Monitoraggio continuo con report automatici dopo ogni chiamata.</p>
+                    <div class="mt-8">
+                        <p class="text-sm text-neutral-500">Minuti disponibili</p>
+                        <div class="flex items-end gap-3">
+                            <span class="font-display text-4xl text-neutral-900">180</span>
+                            <span class="text-xs text-neutral-400 pb-1">su 180</span>
                         </div>
-                        <div class="flex gap-6">
-                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-900 font-semibold bg-neutral-50 shadow-sm">2</span>
-                            <div>
-                                <h3 class="text-xl font-semibold text-neutral-900 mb-2">Personalizzazione</h3>
-                                <p class="text-neutral-500">Definisci tono, script e regole di ingaggio. L'IA si adatta alla tua identità aziendale.</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-6">
-                            <span class="flex-shrink-0 w-10 h-10 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-900 font-semibold bg-neutral-50 shadow-sm">3</span>
-                            <div>
-                                <h3 class="text-xl font-semibold text-neutral-900 mb-2">Deploy</h3>
-                                <p class="text-neutral-500">Attiva l'inoltro e lascia che l'IA gestisca il flusso, notificandoti solo ciò che conta.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="relative fade-in-section">
-                    <div class="absolute inset-0 bg-gradient-to-r from-blue-50 to-purple-50 blur-3xl -z-10"></div>
-                    <div class="p-8 rounded-3xl bg-white border border-neutral-200 shadow-2xl">
-                        <div class="flex items-center justify-between mb-8 pb-6 border-b border-neutral-100">
-                            <div class="flex gap-2">
-                                <div class="w-3 h-3 rounded-full bg-neutral-200"></div>
-                                <div class="w-3 h-3 rounded-full bg-neutral-200"></div>
-                            </div>
-                            <span class="text-xs font-mono text-neutral-400">LIVE MONITOR</span>
-                        </div>
-                        <div class="space-y-6">
-                            <div class="flex gap-4">
-                                <div class="w-8 h-8 rounded-full bg-neutral-100 flex-shrink-0"></div>
-                                <div class="bg-neutral-50 border border-neutral-100 p-4 rounded-2xl rounded-tl-none text-sm text-neutral-600 max-w-[85%]">
-                                    Buongiorno, vorrei prenotare una visita specialistica per la prossima settimana.
-                                </div>
-                            </div>
-                            <div class="flex gap-4 flex-row-reverse">
-                                <div class="w-8 h-8 rounded-full bg-neutral-900 flex-shrink-0"></div>
-                                <div class="bg-neutral-900 text-white p-4 rounded-2xl rounded-tr-none text-sm max-w-[85%] shadow-lg">
-                                    Certamente. Preferisce la mattina o il pomeriggio? Ho disponibilità martedì alle 10:00.
-                                </div>
-                            </div>
+                        <div class="ui-progress h-2 mt-3">
+                            <div class="ui-progress__bar" style="width: 100%"></div>
                         </div>
                     </div>
                 </div>
@@ -310,169 +92,147 @@
         </div>
     </section>
 
-    <!-- Pricing -->
-    <section id="prezzi" class="py-32 relative bg-neutral-50">
-        <div class="max-w-7xl mx-auto px-6">
-            <div class="text-center mb-20 fade-in-section">
-                <h2 class="text-4xl font-bold mb-6 tracking-tight text-neutral-900">Piani & Tariffe</h2>
-                <p class="text-neutral-500">Trasparenza totale. Nessun costo nascosto.</p>
+    <!-- Trust / Metrics -->
+    <section class="bg-white border-y border-neutral-200">
+        <div class="max-w-6xl mx-auto px-6 py-12 grid grid-cols-2 md:grid-cols-4 gap-8">
+            <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Copertura</p>
+                <p class="font-display text-3xl text-neutral-900 mt-2">24/7</p>
+            </div>
+            <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Tempo risposta</p>
+                <p class="font-display text-3xl text-neutral-900 mt-2">&lt; 1s</p>
+            </div>
+            <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Lingua</p>
+                <p class="font-display text-3xl text-neutral-900 mt-2">Italiano</p>
+            </div>
+            <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Conformita</p>
+                <p class="font-display text-3xl text-neutral-900 mt-2">GDPR</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="py-24">
+        <div class="max-w-6xl mx-auto px-6">
+            <div class="max-w-2xl">
+                <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Valore</p>
+                <h2 class="font-display text-3xl md:text-4xl text-neutral-900 mt-4">Meno rumore, piu chiarezza</h2>
+                <p class="text-neutral-500 mt-4">Riduci le interruzioni e ricevi solo informazioni utili, pronte per essere lavorate.</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+                <div class="dashboard-card p-6">
+                    <h3 class="font-display text-xl text-neutral-900">Sintesi immediata</h3>
+                    <p class="text-sm text-neutral-500 mt-3">Ogni chiamata diventa un report chiaro con priorita e prossimi passi.</p>
+                </div>
+                <div class="dashboard-card p-6">
+                    <h3 class="font-display text-xl text-neutral-900">Controllo dei minuti</h3>
+                    <p class="text-sm text-neutral-500 mt-3">Dashboard sempre aggiornata per sapere quando agire o fare upgrade.</p>
+                </div>
+                <div class="dashboard-card p-6">
+                    <h3 class="font-display text-xl text-neutral-900">Esperienza umana</h3>
+                    <p class="text-sm text-neutral-500 mt-3">Una voce naturale che rappresenta il tuo studio senza frizioni.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="come-funziona" class="py-24 bg-white border-y border-neutral-200">
+        <div class="max-w-6xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+            <div>
+                <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Processo</p>
+                <h2 class="font-display text-3xl md:text-4xl text-neutral-900 mt-4">Setup guidato, risultato immediato</h2>
+                <p class="text-neutral-500 mt-4">Ti accompagniamo nella configurazione, poi l'assistente lavora in autonomia.</p>
+            </div>
+            <div class="space-y-6">
+                <div class="dashboard-card p-6">
+                    <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Step 1</p>
+                    <h3 class="font-display text-xl text-neutral-900 mt-2">Configura il tuo script</h3>
+                    <p class="text-sm text-neutral-500 mt-3">Definisci tono, obiettivi e domande chiave. Inizia con i nostri template.</p>
+                </div>
+                <div class="dashboard-card p-6">
+                    <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Step 2</p>
+                    <h3 class="font-display text-xl text-neutral-900 mt-2">Attiva l'inoltro</h3>
+                    <p class="text-sm text-neutral-500 mt-3">Collega il tuo numero: noi monitoriamo il flusso e la qualita.</p>
+                </div>
+                <div class="dashboard-card p-6">
+                    <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Step 3</p>
+                    <h3 class="font-display text-xl text-neutral-900 mt-2">Ricevi riepiloghi</h3>
+                    <p class="text-sm text-neutral-500 mt-3">Ogni conversazione produce un riassunto sintetico e pronto all'azione.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing preview -->
+    <section id="pricing" class="py-24">
+        <div class="max-w-6xl mx-auto px-6">
+            <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-12">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Prezzi</p>
+                    <h2 class="font-display text-3xl md:text-4xl text-neutral-900 mt-4">Piani trasparenti</h2>
+                    <p class="text-neutral-500 mt-3">Scegli il livello di copertura che ti serve. Nessun costo nascosto.</p>
+                </div>
+                <a href="/billing/plans" class="ui-button ui-button-ghost px-5 py-2 text-sm">Tutti i piani</a>
             </div>
             {% include 'pricing_partial.html' %}
         </div>
     </section>
 
-    <!-- CTA Footer -->
-    <section class="py-32 border-t border-neutral-200 bg-white">
-        <div class="max-w-4xl mx-auto px-6 text-center fade-in-section">
-            <h2 class="text-4xl md:text-5xl font-bold mb-8 text-neutral-900 tracking-tight">Pronto a trasformare la tua segreteria?</h2>
-            <p class="text-xl text-neutral-500 mb-12 font-light">Unisciti alle aziende che hanno scelto l'efficienza senza compromessi.</p>
-
-            <div class="flex flex-col sm:flex-row justify-center gap-4">
-                <button type="button" data-booking-open class="px-8 py-4 rounded-2xl bg-neutral-900 text-white font-semibold text-lg hover:bg-neutral-800 transition-all duration-200 hover:scale-105 shadow-xl shadow-neutral-900/20">
-                    Inizia il Test Gratuito
-                </button>
+    <!-- CTA -->
+    <section class="py-20 bg-white border-t border-neutral-200">
+        <div class="max-w-4xl mx-auto px-6 text-center">
+            <h2 class="font-display text-3xl md:text-4xl text-neutral-900">Pronto a far rispondere la tua segreteria?</h2>
+            <p class="text-neutral-500 mt-4">Parla con il nostro team e valuta il piano piu adatto al tuo volume di chiamate.</p>
+            <div class="mt-8 flex flex-col sm:flex-row justify-center gap-4">
+                <button type="button" data-booking-open class="ui-button ui-button-primary px-6 py-3 text-sm">Parla con noi</button>
+                <a href="/login" class="ui-button ui-button-ghost px-6 py-3 text-sm">Accedi</a>
             </div>
         </div>
     </section>
 
-    <!-- Footer -->
-    <footer class="py-12 border-t border-neutral-200 bg-neutral-50">
-        <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-            <div class="text-neutral-500 text-sm">
-                &copy; 2026 Mr.Automa. All rights reserved.
-            </div>
-            <div class="flex gap-8">
-                <a href="/privacy" class="text-sm text-neutral-500 hover:text-neutral-900 transition-colors">Privacy</a>
-                <a href="/terms" class="text-sm text-neutral-500 hover:text-neutral-900 transition-colors">Terms</a>
-                <a href="mailto:info@automa.ai" class="text-sm text-neutral-500 hover:text-neutral-900 transition-colors">Contact</a>
-            </div>
-        </div>
-    </footer>
-
+    <!-- Booking Wizard -->
     <div id="booking-wizard" class="fixed inset-0 z-50 hidden items-center justify-center p-4 sm:p-6" aria-hidden="true">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-neutral-900/60 backdrop-blur-sm transition-opacity" data-booking-close></div>
-
-        <!-- Card -->
-        <div class="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden transform transition-all p-8 md:p-10" role="dialog" aria-modal="true" aria-labelledby="booking-wizard-title">
-
-            <!-- Close Button -->
-            <button type="button" class="absolute top-6 right-6 text-neutral-400 hover:text-neutral-900 transition-colors p-2 rounded-xl hover:bg-neutral-50" data-booking-close aria-label="Chiudi wizard">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" data-booking-close></div>
+        <div class="relative ui-card w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden p-8 md:p-10" role="dialog" aria-modal="true" aria-labelledby="booking-wizard-title">
+            <button type="button" data-booking-close class="absolute top-5 right-5 text-neutral-400 hover:text-neutral-600">
+                <span class="sr-only">Chiudi</span>
+                ?
             </button>
 
-            <!-- Header -->
-            <div class="flex flex-col gap-1 mb-8">
-                <p class="text-sm font-semibold text-neutral-500 tracking-wide uppercase" id="booking-wizard-progress">1/4</p>
-                <h3 id="booking-wizard-title" class="text-3xl font-bold text-neutral-900 tracking-tight">Richiesta Contatto</h3>
+            <div class="space-y-4">
+                <p class="text-sm font-semibold text-neutral-400 tracking-wide uppercase" id="booking-wizard-progress">1/4</p>
+                <h3 id="booking-wizard-title" class="font-display text-3xl text-neutral-900">Richiesta Contatto</h3>
             </div>
 
-            <!-- Progress Bar -->
-            <div class="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden mb-8">
+            <div class="mt-6 h-1 bg-neutral-100 rounded-full overflow-hidden">
                 <div class="h-full bg-neutral-900 transition-all duration-500 ease-out" id="booking-wizard-progress-bar" style="width: 0%"></div>
             </div>
 
-            <!-- Form -->
-            <form id="booking-wizard-form" class="flex flex-col flex-1 overflow-y-auto" novalidate>
-                <div id="booking-wizard-step" class="flex-1 min-h-[200px]"></div>
-
-                <div class="mt-8 pt-6 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <form id="booking-wizard-form" class="flex flex-col flex-1 overflow-y-auto mt-6" novalidate>
+                <div id="booking-wizard-step" class="space-y-6 flex-1 min-h-[200px]"></div>
+                <div class="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <p id="booking-wizard-error" class="text-sm text-red-500 font-medium" role="alert" aria-live="polite"></p>
-                    <div class="flex gap-3 w-full sm:w-auto">
-                        <button type="button" class="flex-1 sm:flex-none px-6 py-3 rounded-xl text-neutral-600 font-medium hover:bg-neutral-50 hover:text-neutral-900 transition-colors" id="booking-wizard-prev">Indietro</button>
-                        <button type="button" class="flex-1 sm:flex-none px-8 py-3 rounded-xl bg-neutral-900 text-white font-semibold shadow-lg shadow-neutral-900/20 hover:bg-neutral-800 hover:scale-105 transition-all active:scale-95" id="booking-wizard-next">Avanti</button>
+                    <div class="flex gap-3">
+                        <button type="button" class="ui-button ui-button-ghost px-5 py-2 text-sm" id="booking-wizard-prev">Indietro</button>
+                        <button type="button" class="ui-button ui-button-primary px-6 py-2 text-sm" id="booking-wizard-next">Avanti</button>
                     </div>
                 </div>
             </form>
 
-            <!-- Success State -->
-            <div id="booking-wizard-success" class="flex flex-col items-center justify-center text-center py-12 space-y-6 hidden">
-                <div class="w-20 h-20 rounded-full bg-green-100 text-green-600 flex items-center justify-center mb-2">
-                    <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                </div>
-                <div>
-                    <h4 class="text-2xl font-bold text-neutral-900 mb-2">Richiesta Inviata!</h4>
-                    <p class="text-neutral-500">Un nostro consulente ti contatterà a breve.</p>
-                </div>
-                <button type="button" class="px-8 py-3 rounded-xl bg-neutral-900 text-white font-semibold hover:bg-neutral-800 transition-all" data-booking-close>Chiudi</button>
+            <div id="booking-wizard-success" class="flex flex-col items-center justify-center text-center py-12 space-y-4 hidden">
+                <div class="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-2xl">?</div>
+                <h4 class="font-display text-2xl text-neutral-900">Grazie, richiesta inviata</h4>
+                <p class="text-neutral-500">Ti contatteremo entro 24 ore lavorative.</p>
+                <button type="button" data-booking-close class="ui-button ui-button-ghost px-5 py-2 text-sm">Chiudi</button>
             </div>
         </div>
     </div>
 
     <script src="/static/js/intro.js" defer></script>
     <script src="/static/booking_wizard.js" defer></script>
-    <script>
-        // Intersection Observer for Fade-in
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('is-visible');
-                }
-            });
-        }, { threshold: 0.1 });
-
-        document.querySelectorAll('.fade-in-section').forEach(el => observer.observe(el));
-    </script>
-
-    <!-- Hero Rotation Script -->
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const elText = document.getElementById('hero-rotating-phrase');
-            const elLine = document.getElementById('hero-underline');
-            if (!elText || !elLine) return;
-
-            const phrases = ["il tuo studio", "la tua attività", "la tua associazione"];
-            let idx = 0;
-            const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-            const retriggerUnderline = () => {
-                elLine.classList.remove("underline-on");
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        elLine.classList.add("underline-on");
-                    });
-                });
-            };
-
-            const swapReduced = () => {
-                idx = (idx + 1) % phrases.length;
-                elText.textContent = phrases[idx];
-                retriggerUnderline();
-            };
-
-            const swapAnimated = () => {
-                elText.classList.add("rot-out");
-
-                setTimeout(() => {
-                    idx = (idx + 1) % phrases.length;
-                    elText.textContent = phrases[idx];
-
-                    elText.classList.remove("rot-out");
-                    elText.classList.add("rot-in");
-                    void elText.offsetWidth;
-
-                    elLine.classList.remove("underline-on");
-
-                    requestAnimationFrame(() => {
-                        elText.classList.remove("rot-in");
-                        elLine.classList.add("underline-on");
-                    });
-                }, 280);
-            };
-
-            // On first load, add underline-on after 50ms so it animates in.
-            setTimeout(() => {
-                elLine.classList.add("underline-on");
-            }, 50);
-
-            setInterval(() => {
-                if (reduced) {
-                    swapReduced();
-                } else {
-                    swapAnimated();
-                }
-            }, 2400);
-        });
-    </script>
 </body>
 </html>

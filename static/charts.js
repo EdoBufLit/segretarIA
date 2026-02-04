@@ -51,21 +51,50 @@ async function renderGlobalChart() {
             globalChart.destroy();
         }
 
+        const ctx = canvas.getContext("2d");
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        gradient.addColorStop(0, "rgba(31, 111, 92, 0.25)");
+        gradient.addColorStop(1, "rgba(31, 111, 92, 0.03)");
+
         globalChart = new Chart(canvas, {
-            type: "bar",
+            type: "line",
             data: {
                 labels: days,
                 datasets: [{
                     label: "Chiamate totali",
                     data: counts,
-                    backgroundColor: "rgba(37, 99, 235, 0.6)"
+                    borderColor: "#1f6f5c",
+                    backgroundColor: gradient,
+                    tension: 0.35,
+                    fill: true,
+                    pointRadius: 2,
+                    pointHoverRadius: 4,
+                    pointBackgroundColor: "#1f6f5c"
                 }]
             },
             options: {
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     y: {
                         beginAtZero: true,
-                        ticks: { precision: 0 }
+                        ticks: { precision: 0, color: "#6e6a64", font: { family: "IBM Plex Sans", size: 11 } },
+                        grid: { color: "#ece6df", drawBorder: false }
+                    },
+                    x: {
+                        ticks: { color: "#6e6a64", font: { family: "IBM Plex Sans", size: 11 } },
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: "#1b1a18",
+                        titleFont: { family: "IBM Plex Sans", size: 13 },
+                        bodyFont: { family: "IBM Plex Sans", size: 12 },
+                        padding: 10,
+                        cornerRadius: 8,
+                        displayColors: false
                     }
                 }
             }
@@ -96,16 +125,29 @@ async function renderClientChart(agent_id) {
             datasets: [{
                 label: "Chiamate",
                 data: points.map(() => 1),
-                borderColor: "rgb(37, 99, 235)",
-                tension: 0.3
+                borderColor: "#1f6f5c",
+                tension: 0.35,
+                pointRadius: 2,
+                pointHoverRadius: 4,
+                pointBackgroundColor: "#1f6f5c"
             }]
         },
         options: {
+            responsive: true,
+            maintainAspectRatio: false,
             scales: {
                 y: {
                     beginAtZero: true,
-                    ticks: { precision: 0 }
+                    ticks: { precision: 0, color: "#6e6a64", font: { family: "IBM Plex Sans", size: 11 } },
+                    grid: { color: "#ece6df", drawBorder: false }
+                },
+                x: {
+                    ticks: { color: "#6e6a64", font: { family: "IBM Plex Sans", size: 11 } },
+                    grid: { display: false }
                 }
+            },
+            plugins: {
+                legend: { display: false }
             }
         }
     });
@@ -156,11 +198,11 @@ async function renderHeatmap() {
         let html = `
             <div class="heatmap-grid w-full min-h-[600px] overflow-y-auto" style="width: 100%;">
                 <div class="heatmap-header-row contents">
-                    <div class="heatmap-corner p-2 text-xs font-bold text-gray-400"></div>
+                    <div class="heatmap-corner p-2 text-xs font-bold text-neutral-400"></div>
         `;
 
         days.forEach(d => {
-            html += `<div class="heatmap-col-header p-2 text-center text-xs font-bold text-gray-300 border-b border-white/10 sticky top-0 bg-gray-900 z-10">${d}</div>`;
+            html += `<div class="heatmap-col-header p-2 text-center text-xs font-bold text-neutral-400 border-b border-neutral-200 sticky top-0 bg-white z-10">${d}</div>`;
         });
 
         html += `</div>`;
@@ -169,28 +211,28 @@ async function renderHeatmap() {
         for (let hour = 0; hour < 24; hour++) {
             // Time label
             const hourLabel = `${hour.toString().padStart(2, '0')}:00`;
-            html += `<div class="heatmap-row-label p-2 text-xs text-gray-400 border-r border-white/10 text-right font-mono">${hourLabel}</div>`;
+            html += `<div class="heatmap-row-label p-2 text-xs text-neutral-400 border-r border-neutral-100 text-right font-mono bg-neutral-50/60">${hourLabel}</div>`;
 
             for (let day = 0; day < 7; day++) {
                 const val = heatmap[hour][day];
 
                 // Color scale
-                let bgClass = "bg-white/5";
-                let textClass = "text-transparent";
+                let bgClass = "bg-white";
+                let textClass = "text-neutral-300";
                 let tooltip = `${days[day]} ${hour}:00 - ${val} chiamate`;
 
                 if (val > 0) {
-                    textClass = "text-white/80 font-bold";
-                    if (val < 2) bgClass = "bg-blue-900/40";
-                    else if (val < 5) bgClass = "bg-blue-700/60";
-                    else if (val < 10) bgClass = "bg-blue-600/80";
-                    else bgClass = "bg-blue-500";
+                    textClass = "text-emerald-900 font-semibold";
+                    if (val < 2) bgClass = "bg-emerald-50";
+                    else if (val < 5) bgClass = "bg-emerald-100";
+                    else if (val < 10) bgClass = "bg-emerald-200";
+                    else bgClass = "bg-emerald-300";
                 } else {
-                    textClass = "text-white/10";
+                    textClass = "text-neutral-300";
                 }
 
                 html += `
-                    <div class="heatmap-cell relative group p-1 flex items-center justify-center border-b border-r border-white/5 hover:border-white/20 transition-all cursor-default ${bgClass}" title="${tooltip}">
+                    <div class="heatmap-cell relative group p-1 flex items-center justify-center border-b border-r border-neutral-100 hover:border-neutral-200 transition-all cursor-default ${bgClass}" title="${tooltip}">
                         <span class="text-xs ${textClass}">${val > 0 ? val : '-'}</span>
                     </div>
                 `;

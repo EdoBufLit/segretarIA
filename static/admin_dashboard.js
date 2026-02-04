@@ -85,11 +85,11 @@ function renderDashboardUI() {
 
             <!-- MODAL LOGS -->
             <div id="logModal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
-                <div class="bg-white rounded-xl shadow-2xl w-11/12 max-w-2xl p-6 border border-neutral-200">
+                <div class="ui-card w-11/12 max-w-2xl p-6">
                     <h2 class="text-xl font-semibold mb-4 text-neutral-900">Log chiamate</h2>
                     <canvas id="clientChart" class="mb-4"></canvas>
-                    <div id="logContent" class="bg-neutral-50 p-3 rounded h-80 overflow-auto text-sm font-mono text-neutral-600 border border-neutral-200"></div>
-                    <button onclick="closeModal()" class="mt-4 bg-neutral-900 text-white px-4 py-2 rounded-lg hover:bg-neutral-800 transition-colors shadow-sm">
+                    <div id="logContent" class="ui-card-soft p-3 h-80 overflow-auto text-sm font-mono text-neutral-600"></div>
+                    <button onclick="closeModal()" class="ui-button ui-button-primary mt-4 px-4 py-2">
                         Chiudi
                     </button>
                 </div>
@@ -99,11 +99,11 @@ function renderDashboardUI() {
         // Admin View
         container.innerHTML = `
             <div id="logModal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
-                <div class="bg-white rounded-xl shadow-2xl w-11/12 max-w-2xl p-6 border border-neutral-200">
+                <div class="ui-card w-11/12 max-w-2xl p-6">
                     <h2 class="text-xl font-semibold mb-4 text-neutral-900">Log chiamate</h2>
                     <canvas id="clientChart" class="mb-4"></canvas>
-                    <div id="logContent" class="bg-neutral-50 p-3 rounded h-80 overflow-auto text-sm font-mono text-neutral-600 border border-neutral-200"></div>
-                    <button onclick="closeModal()" class="mt-4 bg-neutral-900 text-white px-4 py-2 rounded-lg hover:bg-neutral-800 transition-colors shadow-sm">
+                    <div id="logContent" class="ui-card-soft p-3 h-80 overflow-auto text-sm font-mono text-neutral-600"></div>
+                    <button onclick="closeModal()" class="ui-button ui-button-primary mt-4 px-4 py-2">
                         Chiudi
                     </button>
                 </div>
@@ -469,8 +469,7 @@ async function loadAdminMetrics() {
                         <td class="px-6 py-3 text-xs">${p.email}</td>
                         <td class="px-6 py-3 font-mono text-xs">${p.amount}</td>
                         <td class="px-6 py-3">
-                            <span class="px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wide
-                                ${p.status === 'succeeded' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-yellow-100 text-yellow-700 border border-yellow-200'}">
+                            <span class="${p.status === 'succeeded' ? 'ui-badge ui-badge--success' : 'ui-badge ui-badge--warn'} text-[10px] uppercase tracking-wide">
                                 ${p.status}
                             </span>
                         </td>
@@ -525,27 +524,27 @@ async function loadUsersTable(offsetOverride = null) {
                 </label>
             `;
 
-            let subBadgeClass = "bg-neutral-100 text-neutral-500 border border-neutral-200";
-            if (u.subscription_status === 'active') subBadgeClass = "bg-green-100 text-green-700 border border-green-200";
-            if (u.subscription_status === 'past_due') subBadgeClass = "bg-yellow-100 text-yellow-700 border border-yellow-200";
-            if (u.subscription_status === 'canceled') subBadgeClass = "bg-red-100 text-red-700 border border-red-200";
+            let subBadgeClass = "ui-badge";
+            if (u.subscription_status === 'active') subBadgeClass = "ui-badge ui-badge--success";
+            if (u.subscription_status === 'past_due') subBadgeClass = "ui-badge ui-badge--warn";
+            if (u.subscription_status === 'canceled') subBadgeClass = "ui-badge ui-badge--danger";
 
-            const subBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${subBadgeClass}">${u.subscription_status.toUpperCase()}</span>`;
+            const subBadge = `<span class="${subBadgeClass} text-[10px] uppercase tracking-wide">${u.subscription_status.toUpperCase()}</span>`;
 
             const safeUsername = u.username.replace(/'/g, "\\'");
-            const deleteBtn = `<button onclick="deleteUser(${u.id}, '${safeUsername}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors ml-2">ELIMINA</button>`;
+            const deleteBtn = `<button onclick="deleteUser(${u.id}, '${safeUsername}')" class="ui-button ui-button-danger px-2 py-1 text-xs">ELIMINA</button>`;
 
             // Plan Select
             const plans = ['NONE', 'starter', 'pro', 'business'];
             let planOptions = plans.map(p => `<option value="${p}" ${u.subscription_plan === p ? 'selected' : ''}>${p.toUpperCase()}</option>`).join('');
-            const planSelect = u.role === 'client' ? `<select onchange="updateUserPlan(${u.id}, 'subscription_plan', this.value)" class="bg-white border border-neutral-300 rounded text-xs p-1 outline-none focus:ring-2 focus:ring-neutral-900">${planOptions}</select>` : '-';
+            const planSelect = u.role === 'client' ? `<select onchange="updateUserPlan(${u.id}, 'subscription_plan', this.value)" class="ui-input text-xs w-28">${planOptions}</select>` : '-';
 
             // Expiration Date
             let dateValue = '';
             if (u.plan_expires_at) {
                 dateValue = u.plan_expires_at.split('T')[0];
             }
-            const dateInput = u.role === 'client' ? `<input type="date" value="${dateValue}" onchange="updateUserPlan(${u.id}, 'plan_expires_at', this.value)" class="bg-white border border-neutral-300 rounded text-xs p-1 outline-none focus:ring-2 focus:ring-neutral-900 w-32">` : '-';
+            const dateInput = u.role === 'client' ? `<input type="date" value="${dateValue}" onchange="updateUserPlan(${u.id}, 'plan_expires_at', this.value)" class="ui-input text-xs w-32">` : '-';
 
             tr.innerHTML = `
                 <td class="px-6 py-3 font-mono text-xs text-neutral-500">${u.id}</td>
@@ -864,25 +863,25 @@ async function loadPhoneNumbersTable() {
             tr.className = "hover:bg-neutral-50 transition-colors border-b border-neutral-100 text-sm text-neutral-600";
 
             let statusBadge = "";
-            if (n.status === 'active') statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">ATTIVO</span>`;
-            else if (n.status === 'released') statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-500 border border-neutral-200">RILASCIATO</span>`;
-            else if (n.status === 'pending_deprovision') statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">IN RILASCIO</span>`;
-            else statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">${n.status}</span>`;
+            if (n.status === 'active') statusBadge = `<span class="ui-badge ui-badge--success text-[10px] uppercase tracking-wide">ATTIVO</span>`;
+            else if (n.status === 'released') statusBadge = `<span class="ui-badge text-[10px] uppercase tracking-wide">RILASCIATO</span>`;
+            else if (n.status === 'pending_deprovision') statusBadge = `<span class="ui-badge ui-badge--warn text-[10px] uppercase tracking-wide">IN RILASCIO</span>`;
+            else statusBadge = `<span class="ui-badge ui-badge--danger text-[10px] uppercase tracking-wide">${n.status}</span>`;
 
             let actions = "";
             if (n.status === 'active') {
-                actions = `<button onclick="releasePhoneNumber(${n.id}, '${n.e164}')" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors mr-1">RILASCIA</button>`;
+                actions = `<button onclick="releasePhoneNumber(${n.id}, '${n.e164}')" class="ui-button ui-button-danger px-2 py-1 text-xs">RILASCIA</button>`;
             } else if (n.status === 'pending_deprovision') {
-                actions = `<button onclick="cancelDeprovision(${n.id}, '${n.e164}')" class="text-green-600 hover:text-green-800 text-xs font-semibold border border-green-200 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition-colors mr-1">ANNULLA</button>`;
+                actions = `<button onclick="cancelDeprovision(${n.id}, '${n.e164}')" class="ui-button ui-button-ghost px-2 py-1 text-xs">ANNULLA</button>`;
             } else if (n.status === 'released') {
-                actions = `<button onclick="openReactivateModal(${n.id}, '${n.e164}')" class="text-blue-600 hover:text-blue-800 text-xs font-semibold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors mr-1">RIATTIVA</button>`;
+                actions = `<button onclick="openReactivateModal(${n.id}, '${n.e164}')" class="ui-button ui-button-ghost px-2 py-1 text-xs">RIATTIVA</button>`;
             }
 
             // Add Edit Button
-            actions += `<button onclick='openEditPhoneNumberModal(${JSON.stringify(n)})' class="text-neutral-600 hover:text-neutral-900 text-xs font-semibold border border-neutral-200 bg-white hover:bg-neutral-50 px-2 py-1 rounded transition-colors mr-1">MODIFICA</button>`;
+            actions += `<button onclick='openEditPhoneNumberModal(${JSON.stringify(n)})' class="ui-button ui-button-ghost px-2 py-1 text-xs">MODIFICA</button>`;
 
             // Aggiungi bottone ELIMINA a tutti
-            actions += `<button onclick="deletePhoneNumberPermanent(${n.id}, '${n.e164}')" class="text-neutral-600 hover:text-red-800 text-xs font-semibold border border-neutral-200 bg-neutral-50 hover:bg-red-50 px-2 py-1 rounded transition-colors">ELIMINA</button>`;
+            actions += `<button onclick="deletePhoneNumberPermanent(${n.id}, '${n.e164}')" class="ui-button ui-button-danger px-2 py-1 text-xs">ELIMINA</button>`;
 
             const username = n.username ? `${n.username} (ID: ${n.user_id})` : `<span class="text-yellow-600 font-medium">Non assegnato</span>`;
             const created = n.created_at ? n.created_at.split('T')[0] : "-";
@@ -1319,10 +1318,10 @@ async function loadRoutingTable() {
             tr.className = "hover:bg-neutral-50 transition-colors border-b border-neutral-100 text-sm text-neutral-600";
 
             const statusBadge = r.is_active
-                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">ATTIVO</span>`
-                : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-500 border border-neutral-200">INATTIVO</span>`;
+                ? `<span class="ui-badge ui-badge--success text-[10px] uppercase tracking-wide">ATTIVO</span>`
+                : `<span class="ui-badge text-[10px] uppercase tracking-wide">INATTIVO</span>`;
 
-            const actions = `<button onclick="deleteRouting(${r.id})" class="text-red-600 hover:text-red-800 text-xs font-semibold border border-red-200 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors">ELIMINA</button>`;
+            const actions = `<button onclick="deleteRouting(${r.id})" class="ui-button ui-button-danger px-2 py-1 text-xs">ELIMINA</button>`;
 
             let username = `<span class="text-yellow-600 font-medium">Sconosciuto</span>`;
             if (r.username && r.username !== "Unknown") {
@@ -1603,13 +1602,13 @@ async function updateDashboardStatus() {
     if (srvEl) {
         if (isAdmin || (isUserActive && isSubActive)) {
             srvEl.textContent = "ATTIVO";
-            srvEl.className = "px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30";
+            srvEl.className = "ui-badge ui-badge--success";
         } else if (!isUserActive) {
             srvEl.textContent = "SOSPESO";
-            srvEl.className = "px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30";
+            srvEl.className = "ui-badge ui-badge--danger";
         } else {
             srvEl.textContent = "NON ATTIVO";
-            srvEl.className = "px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400 border border-gray-500/30";
+            srvEl.className = "ui-badge";
         }
     }
 
@@ -1621,11 +1620,11 @@ async function updateDashboardStatus() {
 
         // Color coding
         if (state === "ACTIVE") {
-                billEl.className = "text-green-400 font-bold";
+                billEl.className = "ui-badge ui-badge--success";
         } else if (state === "PAST_DUE" || state === "CANCELED") {
-                billEl.className = "text-red-400 font-bold";
+                billEl.className = "ui-badge ui-badge--danger";
         } else {
-                billEl.className = "text-[var(--muted)]";
+                billEl.className = "ui-badge";
         }
     }
 
@@ -1907,7 +1906,7 @@ async function loadLogsTable(offsetOverride = null) {
             <td class="px-6 py-3 text-sm text-neutral-900 font-medium">${window.isClientUser ? "Me" : client}</td>
             <td class="px-6 py-3 text-xs text-neutral-500 font-mono">${item.caller}</td>
             <td class="px-6 py-3">
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${item.status === "failure" ? "bg-red-100 text-red-700 border border-red-200" : "bg-green-100 text-green-700 border border-green-200"}">
+                <span class="${item.status === "failure" ? "ui-badge ui-badge--danger" : "ui-badge ui-badge--success"} text-xs">
                     ${item.status.toUpperCase()}
                 </span>
             </td>
@@ -2034,7 +2033,7 @@ function openLogDetail(item) {
 
     content.innerHTML = `
       <!-- box titolo + riassunto -->
-      <div class="border border-neutral-200 rounded-xl bg-neutral-50 p-4 mb-6">
+      <div class="ui-card-soft p-4 mb-6">
         <p class="text-xs text-neutral-400 mb-2 font-medium">${escapeHtml(timestamp)}</p>
         <h4 class="font-bold mb-2 text-lg text-neutral-900">${escapeHtml(title)}</h4>
         ${summary
@@ -2045,7 +2044,7 @@ function openLogDetail(item) {
 
       <!-- griglia con info contatto e chiamata -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div class="border border-neutral-200 rounded-xl p-4 bg-white shadow-sm">
+        <div class="ui-card p-4">
           <h5 class="font-bold text-xs uppercase text-neutral-400 tracking-wider mb-3">Dati contatto</h5>
           <div class="space-y-2 text-sm">
               <p class="flex justify-between"><span class="text-neutral-500">Nome:</span> <span class="font-medium text-neutral-900">${escapeHtml(contact_name || "–")}</span></p>
@@ -2054,7 +2053,7 @@ function openLogDetail(item) {
               <p class="flex justify-between"><span class="text-neutral-500">Richiamare:</span> <span class="font-medium text-neutral-900">${escapeHtml(callback || "–")}</span></p>
           </div>
         </div>
-        <div class="border border-neutral-200 rounded-xl p-4 bg-white shadow-sm">
+        <div class="ui-card p-4">
           <h5 class="font-bold text-xs uppercase text-neutral-400 tracking-wider mb-3">Info chiamata</h5>
           <div class="space-y-2 text-sm">
              <p class="flex justify-between"><span class="text-neutral-500">Stato:</span> <span class="font-medium text-neutral-900">${escapeHtml(status || "–")}</span></p>
@@ -2067,7 +2066,7 @@ function openLogDetail(item) {
 
       ${transcript
             ? `
-        <div class="border border-neutral-200 rounded-xl p-4 bg-neutral-50">
+        <div class="ui-card-soft p-4">
           <h5 class="font-bold text-xs uppercase text-neutral-400 tracking-wider mb-3">Transcript</h5>
           <p class="text-xs text-neutral-600 whitespace-pre-wrap break-words leading-relaxed font-mono">
             ${escapeHtml(transcript)}

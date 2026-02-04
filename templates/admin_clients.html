@@ -3,13 +3,14 @@
 {% block title %}Lista Clienti - Mr.Automa{% endblock %}
 
 {% block content %}
+<div class="admin-density">
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
     <div class="mb-8">
-        <h1 class="text-3xl font-bold text-neutral-900 tracking-tight">Gestione Clienti</h1>
+        <h1 class="font-display text-2xl text-neutral-900 tracking-tight">Gestione Clienti</h1>
         <p class="text-neutral-500 mt-2">Lista completa di tutti i clienti registrati.</p>
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
+    <div class="ui-card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-left">
                 <thead class="bg-neutral-50 border-b border-neutral-200">
@@ -32,7 +33,7 @@
                         <td class="px-6 py-4 text-sm">
                             {% if client.subscriptions %}
                                 {% set sub = client.subscriptions[0] %}
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ 'bg-green-100 text-green-800' if sub.state == 'active' else 'bg-yellow-100 text-yellow-800' }}">
+                                <span class="ui-badge {{ 'ui-badge--success' if sub.state == 'active' else 'ui-badge--warn' }}">
                                     {{ sub.plan.code|upper }} ({{ sub.state }})
                                 </span>
                             {% else %}
@@ -57,5 +58,6 @@
         </div>
         {% endif %}
     </div>
+</div>
 </div>
 {% endblock %}

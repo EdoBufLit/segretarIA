@@ -13,7 +13,7 @@ function openSection(name) {
     const titles = {
         'dashboard': 'Panoramica',
         'logs': 'Storico Chiamate',
-        'analytics': 'Statistiche',
+        'analytics': 'Analisi',
         'numbers': 'Numeri Assegnati',
         'settings': 'Impostazioni'
     };
@@ -272,16 +272,25 @@ function renderMainChart(data) {
         globalChart.destroy();
     }
 
+    const ctx = canvas.getContext("2d");
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, "rgba(31, 111, 92, 0.25)");
+    gradient.addColorStop(1, "rgba(31, 111, 92, 0.02)");
+
     globalChart = new Chart(canvas, {
-        type: "bar",
+        type: "line",
         data: {
             labels: days,
             datasets: [{
                 label: "Chiamate",
                 data: counts,
-                backgroundColor: "#171717", // Neutral-900
-                borderRadius: 4,
-                hoverBackgroundColor: "#262626" // Neutral-800
+                borderColor: "#1f6f5c",
+                backgroundColor: gradient,
+                tension: 0.35,
+                fill: true,
+                pointRadius: 2,
+                pointHoverRadius: 4,
+                pointBackgroundColor: "#1f6f5c"
             }]
         },
         options: {
@@ -290,20 +299,20 @@ function renderMainChart(data) {
             scales: {
                 y: {
                     beginAtZero: true,
-                    ticks: { precision: 0, color: '#737373', font: { family: 'Inter', size: 11 } },
-                    grid: { color: '#f5f5f5', drawBorder: false }
+                    ticks: { precision: 0, color: '#6e6a64', font: { family: 'IBM Plex Sans', size: 11 } },
+                    grid: { color: '#ece6df', drawBorder: false }
                 },
                 x: {
-                    ticks: { color: '#737373', font: { family: 'Inter', size: 11 } },
+                    ticks: { color: '#6e6a64', font: { family: 'IBM Plex Sans', size: 11 } },
                     grid: { display: false }
                 }
             },
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    backgroundColor: '#171717',
-                    titleFont: { family: 'Inter', size: 13 },
-                    bodyFont: { family: 'Inter', size: 12 },
+                    backgroundColor: '#1b1a18',
+                    titleFont: { family: 'IBM Plex Sans', size: 13 },
+                    bodyFont: { family: 'IBM Plex Sans', size: 12 },
                     padding: 10,
                     cornerRadius: 8,
                     displayColors: false

@@ -1,36 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Client Portal</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f4f4f4;
+    <title>Client Portal - Segreteria IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                        display: ['"Newsreader"', 'serif']
+                    }
+                }
+            }
         }
-        .container {
-            text-align: center;
-            padding: 2rem;
-            border-radius: 8px;
-            background-color: #fff;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
-        }
-    </style>
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Newsreader:opsz,wght@6..72,400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/ui.css">
 </head>
-<body>
-    <div class="container">
-        <h1>Client portal coming soon</h1>
-        <p>We are working hard to bring you a new and improved client portal.</p>
-        <p><a href="/logout">Logout</a></p>
-    </div>
+<body class="ui-shell">
+    <main class="min-h-screen flex items-center justify-center px-6">
+        <div class="ui-card w-full max-w-xl p-10 text-center">
+            <h1 class="font-display text-3xl text-neutral-900">Client portal in arrivo</h1>
+            <p class="text-neutral-500 mt-3">Stiamo preparando una nuova esperienza dedicata ai tuoi clienti.</p>
+            <a href="/logout" class="ui-button ui-button-ghost mt-8 inline-flex px-5 py-2 text-sm">Logout</a>
+        </div>
+    </main>
 </body>
 </html>
