@@ -433,6 +433,62 @@ class StripeService:
             logger.error(f"Stripe Checkout Error: {e}")
             raise
 
+    def schedule_cancel_subscription(self, user: User) -> Dict[str, Any]:
+        if not user:
+            raise ValueError("User not found")
+
+        subscription = self.db.query(Subscription).filter(
+            Subscription.user_id == user.id,
+            Subscription.state == "active",
+            Subscription.stripe_subscription_id != None
+        ).first()
+
+        if not subscription or not subscription.stripe_subscription_id:
+            raise ValueError("No active Stripe subscription to cancel")
+
+        if subscription.cancel_requested_at:
+            return {
+                "status": "ok",
+                "already_requested": True,
+                "cancel_at_period_end": True,
+                "cycle_end": subscription.cycle_end.isoformat() if subscription.cycle_end else None
+            }
+
+        if not self.api_key:
+            raise ValueError("Stripe not configured")
+
+        try:
+            if self.api_key == "mock":
+                stripe_sub = {
+                    "cancel_at_period_end": True,
+                    "current_period_end": int(subscription.cycle_end.timestamp()) if subscription.cycle_end else None
+                }
+            else:
+                stripe_sub = stripe.Subscription.modify(
+                    subscription.stripe_subscription_id,
+                    cancel_at_period_end=True
+                )
+
+            current_period_end = self._safe_get(stripe_sub, "current_period_end")
+            if current_period_end:
+                subscription.cycle_end = datetime.fromtimestamp(current_period_end)
+                user.plan_expires_at = subscription.cycle_end
+
+            subscription.cancel_requested_at = datetime.utcnow()
+            self.db.commit()
+
+            logger.info("Scheduled cancellation for user %s (subscription %s)", user.id, subscription.stripe_subscription_id)
+
+            return {
+                "status": "ok",
+                "cancel_at_period_end": True,
+                "cycle_end": subscription.cycle_end.isoformat() if subscription.cycle_end else None
+            }
+        except Exception as exc:
+            self.db.rollback()
+            logger.error("Failed to schedule cancellation for user %s: %s", user.id, exc)
+            raise
+
     def verify_webhook_event(self, payload: bytes, sig_header: str):
         """Verifies signature and returns (event_type, data)."""
         # MOCK FOR QA
@@ -689,6 +745,16 @@ class StripeService:
             logger.error("Failed to upsert subscription for user %s", user.id)
             self.db.rollback()
             return
+
+        cancel_at_period_end = self._safe_get(subscription, "cancel_at_period_end", False)
+        cancel_at_ts = self._safe_get(subscription, "cancel_at") or self._safe_get(subscription, "canceled_at")
+        if cancel_at_period_end:
+            if cancel_at_ts:
+                subscription_row.cancel_requested_at = datetime.fromtimestamp(cancel_at_ts)
+            elif not subscription_row.cancel_requested_at:
+                subscription_row.cancel_requested_at = datetime.utcnow()
+        elif state == "active":
+            subscription_row.cancel_requested_at = None
 
         self.db.commit()
 

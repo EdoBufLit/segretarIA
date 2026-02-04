@@ -1033,6 +1033,18 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/api/billing/subscription/cancel")
+async def cancel_billing_subscription(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = StripeService(db)
+    try:
+        result = service.schedule_cancel_subscription(current_user)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Cancel subscription failed")
+        raise HTTPException(status_code=500, detail="Unable to cancel subscription")
+
 
 @app.get("/billing/plans", response_class=HTMLResponse)
 async def billing_plans(request: Request, db: Session = Depends(get_db)):
@@ -2570,6 +2582,9 @@ async def dashboard(
             "cycle_start": sub.cycle_start.isoformat() if sub.cycle_start else None,
             "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
             "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
+            "stripe_subscription_id": sub.stripe_subscription_id,
+            "cancel_requested_at": sub.cancel_requested_at.isoformat() if sub.cancel_requested_at else None,
+            "is_manual": False
         }
 
         if sub.plan:
@@ -2595,7 +2610,8 @@ async def dashboard(
             "cycle_start": cycle_start_dt.isoformat(),
             "cycle_end": cycle_end_dt.isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
-            "is_manual": True
+            "is_manual": True,
+            "cancel_requested_at": None
         }
 
         minutes_limit = manual_plan_obj.minutes_per_cycle
@@ -2690,7 +2706,9 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
                 "cycle_end": sub.cycle_end.isoformat() if sub.cycle_end else None,
                 "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
                 "stripe_subscription_id": sub.stripe_subscription_id,
-                "stripe_price_id": sub.stripe_price_id
+                "stripe_price_id": sub.stripe_price_id,
+                "cancel_requested_at": sub.cancel_requested_at.isoformat() if sub.cancel_requested_at else None,
+                "is_manual": False
             }
         elif manual_plan_active:
              cycle_end_dt = user.plan_expires_at if user.plan_expires_at else datetime.utcnow() + timedelta(days=30)
@@ -2701,7 +2719,8 @@ async def read_users_me(current_user: User = Depends(get_current_user), db: Sess
                 "cycle_start": cycle_start_dt.isoformat(),
                 "cycle_end": cycle_end_dt.isoformat(),
                 "updated_at": datetime.utcnow().isoformat(),
-                "is_manual": True
+                "is_manual": True,
+                "cancel_requested_at": None
             }
 
         return {

@@ -59,6 +59,7 @@ async function initDashboard() {
     openSection('dashboard');
     startStatusPolling();
     startActiveCallPolling();
+    initCancelSubscription();
 }
 
 // =========================
@@ -662,6 +663,104 @@ function closeLogDetail() {
         modal.classList.add("hidden");
         modal.classList.remove("flex");
     }, 150);
+}
+
+// =========================
+// SUBSCRIPTION CANCELLATION
+// =========================
+
+function initCancelSubscription() {
+    const btn = document.getElementById("cancel-subscription-btn");
+    if (!btn) return;
+
+    const confirmBtn = document.getElementById("confirm-cancel-subscription");
+    const dismissBtn = document.getElementById("cancel-subscription-dismiss");
+    const closeBtn = document.getElementById("cancel-subscription-close");
+
+    btn.addEventListener("click", openCancelSubscriptionModal);
+    if (confirmBtn) confirmBtn.addEventListener("click", submitCancelSubscription);
+    if (dismissBtn) dismissBtn.addEventListener("click", closeCancelSubscriptionModal);
+    if (closeBtn) closeBtn.addEventListener("click", closeCancelSubscriptionModal);
+}
+
+function openCancelSubscriptionModal() {
+    const modal = document.getElementById("cancel-subscription-modal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+
+    const card = modal.querySelector("div[role='dialog']");
+    if (card) {
+        card.classList.remove("scale-95", "opacity-0");
+        card.classList.add("scale-100", "opacity-100");
+    }
+}
+
+function closeCancelSubscriptionModal() {
+    const modal = document.getElementById("cancel-subscription-modal");
+    if (!modal) return;
+
+    const card = modal.querySelector("div[role='dialog']");
+    if (card) {
+        card.classList.remove("scale-100", "opacity-100");
+        card.classList.add("scale-95", "opacity-0");
+    }
+
+    setTimeout(() => {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+    }, 150);
+}
+
+async function submitCancelSubscription() {
+    const confirmBtn = document.getElementById("confirm-cancel-subscription");
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = "Operazione in corso...";
+    }
+
+    try {
+        const res = await fetch("/api/billing/subscription/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "Impossibile disdire il piano");
+        }
+
+        const data = await res.json();
+        applyCancelSubscriptionUI(data.cycle_end);
+        closeCancelSubscriptionModal();
+    } catch (e) {
+        alert("Errore: " + e.message);
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = "Conferma disdetta";
+        }
+    }
+}
+
+function applyCancelSubscriptionUI(cycleEnd) {
+    const btn = document.getElementById("cancel-subscription-btn");
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add("opacity-60", "cursor-not-allowed");
+        btn.textContent = "Disdetta programmata";
+    }
+
+    const status = document.getElementById("cancel-subscription-status");
+    if (status) {
+        status.classList.remove("hidden");
+        const dateEl = document.getElementById("cancel-subscription-date");
+        const label = cycleEnd ? cycleEnd.slice(0, 10) : status.getAttribute("data-cycle-end") || "—";
+        if (dateEl) {
+            dateEl.textContent = label;
+        }
+    }
 }
 
 // =========================

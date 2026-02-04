@@ -103,6 +103,8 @@
     <main class="flex-1 overflow-auto pt-16 md:pt-0">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
+            {% set cancel_requested = subscription and subscription.cancel_requested_at %}
+            {% set can_cancel = subscription and subscription.state == 'active' and not subscription.is_manual and subscription.stripe_subscription_id and not cancel_requested %}
 
             {% if not service_active %}
             <div class="ui-card-soft px-4 py-3 mb-8 flex items-center gap-3 border border-yellow-200 text-yellow-800">
@@ -209,8 +211,16 @@
                             <h3 class="font-display text-xl text-neutral-900 mt-2">{{ subscription.plan_code | upper if subscription else '—' }}</h3>
                             <p class="text-sm text-neutral-500 mt-2">Pensato per offrire una copertura continua, con report sintetici dopo ogni chiamata.</p>
                         </div>
-                        <div class="mt-6">
-                            <a href="/billing/plans" class="ui-button ui-button-ghost inline-flex items-center px-4 py-2 text-sm">Gestisci piano</a>
+                        <div class="mt-6 flex flex-col gap-3">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <a href="/billing/plans" class="ui-button ui-button-ghost inline-flex items-center px-4 py-2 text-sm">Gestisci piano</a>
+                                {% if can_cancel %}
+                                <button id="cancel-subscription-btn" class="ui-button ui-button-danger inline-flex items-center px-4 py-2 text-sm">Disdici piano</button>
+                                {% endif %}
+                            </div>
+                            <div id="cancel-subscription-status" class="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-lg {{ '' if cancel_requested else 'hidden' }}" data-cycle-end="{{ subscription.cycle_end[:10] if subscription and subscription.cycle_end else '—' }}">
+                                Disdetta programmata · attivo fino al <span id="cancel-subscription-date">{{ subscription.cycle_end[:10] if subscription and subscription.cycle_end else '—' }}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -424,6 +434,26 @@
 
         </div>
     </main>
+
+    <!-- CANCEL SUBSCRIPTION MODAL -->
+    <div id="cancel-subscription-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity">
+        <div class="ui-card max-w-md w-full overflow-hidden scale-95 opacity-0 transition-all" role="dialog" aria-modal="true">
+            <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
+                <h3 class="font-display text-lg text-neutral-900">Disdici piano</h3>
+                <button id="cancel-subscription-close" class="text-neutral-400 hover:text-neutral-600 transition-colors">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-3 text-sm text-neutral-600">
+                <p>Confermi la disdetta? Il piano rimarrà attivo fino alla fine del periodo corrente.</p>
+                <p class="text-xs text-neutral-500">Potrai riattivare in qualsiasi momento prima della scadenza.</p>
+            </div>
+            <div class="px-6 py-4 bg-neutral-50 text-right border-t border-neutral-100 flex justify-end gap-3">
+                <button id="cancel-subscription-dismiss" class="ui-button ui-button-ghost px-4 py-2 text-sm">Annulla</button>
+                <button id="confirm-cancel-subscription" class="ui-button ui-button-danger px-4 py-2 text-sm">Conferma disdetta</button>
+            </div>
+        </div>
+    </div>
 
     <!-- LOG DETAIL MODAL -->
     <div id="log-detail-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity">
