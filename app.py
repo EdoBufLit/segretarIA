@@ -292,17 +292,29 @@ def get_plans_context(db: Session) -> Dict[str, Any]:
     for p in plans_db:
         if p.code in PLANS_DISPLAY:
             # Merge: Display Config + DB Minutes + Stripe Price
-            price_info = prices.get(p.code, {"price_display": "—"})
+            price_info = prices.get(p.code, {"price_display": "—", "marketing_features": []})
+            display_info = PLANS_DISPLAY.get(p.code, {})
 
             interval = price_info.get("interval", "month")
             interval_map = {"month": "/mese", "year": "/anno", "week": "/settimana", "day": "/giorno"}
             interval_display = interval_map.get(interval, f"/{interval}") if price_info.get("price_display") != "—" else ""
 
+            stripe_description = price_info.get("description")
+            fallback_description = display_info.get("description", "")
+            description = stripe_description if stripe_description else fallback_description
+
+            marketing_features = price_info.get("marketing_features") or []
+            if not isinstance(marketing_features, list):
+                marketing_features = []
+
             plans_ctx[p.code] = {
-                **PLANS_DISPLAY[p.code],
+                "name": display_info.get("name", p.code.title()),
+                "description": description,
+                "marketing_features": marketing_features,
                 "minutes": p.minutes_per_cycle,
                 "code": p.code,
                 "price_display": price_info.get("price_display", "—"),
+                "currency": price_info.get("currency"),
                 "interval": interval,
                 "interval_display": interval_display
             }
@@ -3431,6 +3443,15 @@ async def test_call(agent_id: str, db: Session = Depends(get_db), admin: User = 
             ).first()
             if not active_sub:
                  raise HTTPException(status_code=403, detail="No active subscription.")
+
+            minutes_status = BillingService(db).get_minutes_status(active_sub)
+            if minutes_status["minutes_remaining"] <= 0:
+                 logger.warning(
+                     "Minutes exhausted for user %s (sub %s). Blocking test call.",
+                     user.username,
+                     active_sub.id,
+                 )
+                 raise HTTPException(status_code=402, detail="Minuti esauriti.")
 
     settings = db.query(AgentSettings).filter(AgentSettings.agent_id == agent_id).first()
     if not settings:

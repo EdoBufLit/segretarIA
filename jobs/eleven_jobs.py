@@ -11,6 +11,7 @@ from jobs.email_jobs import send_email_job
 from call_utils import upsert_call_log, summarize_call, build_email_body_html, extract_transcript_text
 from queue_utils import get_queue
 from services.subscription_service import ensure_subscription_for_user
+from billing_service import BillingService
 from alerting import log_critical_error
 import os
 
@@ -292,6 +293,16 @@ def _process_elevenlabs_event_logic(payload: dict):
 
                 if not target_sub:
                     logger.warning(f"[JOB] User {user.username} has active plan but no Subscription record found. Skipping usage metering.")
+
+            if user and target_sub:
+                minutes_status = BillingService(db).get_minutes_status(target_sub)
+                if minutes_status["minutes_remaining"] <= 0:
+                    logger.warning(
+                        "[JOB] Minutes exhausted for user %s (sub %s). Blocking workflow.",
+                        user.username,
+                        target_sub.id,
+                    )
+                    return
 
             # 5. Resolve CallLog first (canonical call_id)
             call_log_payload = {

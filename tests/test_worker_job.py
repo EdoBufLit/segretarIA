@@ -30,10 +30,10 @@ MOCK_PAYLOAD = {
     }
 }
 
-def setup_test_db(db):
+def setup_test_db(db, minutes_per_cycle=1000):
     # Setup dependencies
     # Plan
-    plan = Plan(code="test_plan", minutes_per_cycle=1000)
+    plan = Plan(code="test_plan", minutes_per_cycle=minutes_per_cycle)
     db.add(plan)
     db.flush()
 
@@ -78,7 +78,7 @@ def setup_test_db(db):
     return user, agent
 
 def test_process_elevenlabs_event_job_success():
-    """Test happy path: valid user, sub, agent -> locks, processes, sends email."""
+    """Test happy path (minutes available): valid user, sub, agent -> locks, processes, sends email."""
     # We mock get_queue and OpenAI to avoid external calls
     with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
          patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
@@ -120,6 +120,54 @@ def test_process_elevenlabs_event_job_success():
 
         # Check OpenAI called
         mock_summarize.assert_called_once()
+
+def test_process_elevenlabs_event_job_minutes_exhausted():
+    """When minutes are exhausted, job should block AI/email and skip metering."""
+    with patch("jobs.eleven_jobs.SessionLocal") as MockSession, \
+         patch("jobs.eleven_jobs.get_queue") as mock_get_queue, \
+         patch("jobs.eleven_jobs.summarize_call") as mock_summarize:
+
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from db import Base
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        db = Session()
+
+        user, agent = setup_test_db(db, minutes_per_cycle=1)
+        sub = db.query(Subscription).first()
+
+        # Consume all minutes (1 minute)
+        usage = UsageEvent(
+            subscription_id=sub.id,
+            user_id=user.id,
+            agent_id=agent.id,
+            call_id="existing_call_id",
+            started_at=datetime.utcnow(),
+            ended_at=datetime.utcnow(),
+            billed_seconds=60
+        )
+        db.add(usage)
+        db.commit()
+
+        MockSession.return_value.__enter__.return_value = db
+        MockSession.return_value.__exit__.return_value = None
+
+        mock_queue_instance = MagicMock()
+        mock_get_queue.return_value = mock_queue_instance
+
+        # RUN
+        process_elevenlabs_event_job(MOCK_PAYLOAD)
+
+        # No new UsageEvent for this call
+        usage_new = db.query(UsageEvent).filter_by(call_id="test_call_id_unique").first()
+        assert usage_new is None
+
+        # No Email, No OpenAI
+        mock_queue_instance.enqueue.assert_not_called()
+        mock_summarize.assert_not_called()
 
 def test_process_elevenlabs_event_job_idempotency():
     """Test idempotency: duplicate call_log_id should still send email but skip usage insert."""

@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import math
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from models import User, Agent, Subscription, UsageEvent
 from services.subscription_service import ensure_subscription_for_user
@@ -7,6 +9,32 @@ from services.subscription_service import ensure_subscription_for_user
 class BillingService:
     def __init__(self, db: Session):
         self.db = db
+
+    def get_minutes_status(self, subscription: Subscription) -> dict:
+        if not subscription or not subscription.plan:
+            return {
+                "minutes_total": 0,
+                "minutes_used": 0,
+                "minutes_remaining": 0,
+                "subscription_id": subscription.id if subscription else None,
+            }
+
+        usage_seconds = self.db.query(func.sum(UsageEvent.billed_seconds)) \
+            .filter(UsageEvent.subscription_id == subscription.id) \
+            .filter(UsageEvent.created_at >= subscription.cycle_start) \
+            .filter(UsageEvent.created_at <= subscription.cycle_end) \
+            .scalar() or 0
+
+        minutes_used = math.ceil(usage_seconds / 60) if usage_seconds else 0
+        minutes_total = subscription.plan.minutes_per_cycle
+        minutes_remaining = max(0, minutes_total - minutes_used)
+
+        return {
+            "minutes_total": minutes_total,
+            "minutes_used": minutes_used,
+            "minutes_remaining": minutes_remaining,
+            "subscription_id": subscription.id,
+        }
 
     def meter_call(
         self,
