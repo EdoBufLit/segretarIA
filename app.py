@@ -2626,6 +2626,18 @@ async def dashboard(
         minutes_remaining = max(0, minutes_limit - minutes_used)
 
 
+    # Check for missing routing
+    missing_routing = False
+    if user.agents:
+         agent_ids = [a.agent_id for a in user.agents]
+         if agent_ids:
+             routings_count = db.query(AgentRouting).filter(
+                 AgentRouting.agent_id.in_(agent_ids),
+                 AgentRouting.user_id == user.id
+             ).count()
+             if routings_count < len(agent_ids):
+                 missing_routing = True
+
     # Convert User to dict safe for JSON
     user_dict = {
         "username": user.username,
@@ -2652,7 +2664,8 @@ async def dashboard(
         "minutes_limit": minutes_limit,
         "minutes_used": minutes_used,
         "minutes_remaining": minutes_remaining,
-        "plan_expires_formatted": plan_expires_formatted
+        "plan_expires_formatted": plan_expires_formatted,
+        "missing_routing": missing_routing
     })
 
 

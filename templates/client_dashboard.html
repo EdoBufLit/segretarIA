@@ -113,6 +113,13 @@
             </div>
             {% endif %}
 
+            {% if missing_routing %}
+            <div class="relative bg-red-100 text-red-900 font-inter py-3 px-4 rounded mb-8 flex items-center gap-3 border border-red-200 shadow-sm">
+                <span class="text-xl">⚠️</span>
+                <span class="font-medium text-sm md:text-base">Attenzione: Configurazione incompleta. Alcuni assistenti non sono correttamente associati al tuo account. Contatta il supporto.</span>
+            </div>
+            {% endif %}
+
             <!-- TOP HEADER -->
             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
                 <div>
