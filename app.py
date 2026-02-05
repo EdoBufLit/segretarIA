@@ -471,6 +471,18 @@ async def admin_cancel_deprovision(phone_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.post("/admin/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        new_password = service.reset_password_random(user_id, admin.username)
+        # We might return it to the admin so they can see it if needed,
+        # or just confirm it was sent.
+        return {"status": "ok", "message": "Password reset successfully. Email sent.", "new_password": new_password}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 # ================== CLIENT ENDPOINTS ==================
 
 @app.get("/subscription/status")
