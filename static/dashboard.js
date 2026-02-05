@@ -218,6 +218,27 @@ function closeModal() {
 }
 
 
+// =========================
+// LOGS POLLING
+// =========================
+let logsPollInterval = null;
+
+function startLogsPolling() {
+    if (logsPollInterval) clearInterval(logsPollInterval);
+    // Poll every 10 seconds
+    logsPollInterval = setInterval(() => {
+        // Keep current offset
+        loadLogsTable(null);
+    }, 10000);
+}
+
+function stopLogsPolling() {
+    if (logsPollInterval) {
+        clearInterval(logsPollInterval);
+        logsPollInterval = null;
+    }
+}
+
 async function initLogsSection() {
     const select = document.getElementById("log-filter-client");
     select.innerHTML = "";
@@ -323,6 +344,37 @@ async function saveClientSettings() {
     await renderGlobalChart();
 }
 
+// =========================
+// EXPORT LOGIC
+// =========================
+
+function triggerExport(type) {
+    const fromEl = document.getElementById("export-from");
+    const toEl = document.getElementById("export-to");
+
+    if (!fromEl || !toEl) return;
+
+    const fromVal = fromEl.value;
+    const toVal = toEl.value;
+
+    if (!fromVal || !toVal) {
+        alert("Seleziona data inizio e fine.");
+        return;
+    }
+
+    showToast("Download avviato...", "info");
+
+    // Build URL
+    // /admin/export/minutes?from=YYYY-MM-DD&to=YYYY-MM-DD
+    // /admin/export/logs?from=YYYY-MM-DD&to=YYYY-MM-DD
+
+    const url = `/admin/export/${type}?from=${fromVal}&to=${toVal}`;
+
+    // Trigger download via hidden iframe or new window, or just window.location
+    // Using window.location works for downloads and allows browser to handle it.
+    window.location.href = url;
+}
+
 async function triggerTestCall() {
     const agentId = window.currentSettingsAgentId;
     if (!agentId) {
@@ -371,11 +423,187 @@ async function triggerTestCall() {
 // =========================
 
 // =========================
+// POLLING STATUS (Fase 4A Async)
+// =========================
+
+let dashboardPollInterval = null;
+
+async function updateDashboardStatus() {
+    try {
+        const res = await fetch("/me");
+        if (res.status === 401 || res.status === 403) {
+            // Stop polling if unauthorized
+            if (dashboardPollInterval) clearInterval(dashboardPollInterval);
+            window.location.href = "/login";
+            return;
+        }
+
+        const data = await res.json();
+        const user = data.user || {};
+        const sub = data.subscription || {};
+
+        // Return active state for the caller (fast polling check)
+        // If sub.state is active, we return true
+        let isActive = (sub.state === "active");
+
+        // 1. Service Status (user.is_active)
+        const srvEl = document.getElementById("status-service");
+        if (srvEl) {
+            if (user.is_active) {
+                srvEl.textContent = "ATTIVO";
+                srvEl.className = "px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30";
+            } else {
+                srvEl.textContent = "SOSPESO";
+                srvEl.className = "px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30";
+            }
+        }
+
+        // 2. Billing Status (sub.state)
+        const billEl = document.getElementById("status-billing");
+        if (billEl) {
+            const state = (sub.state || "unknown").toUpperCase();
+            billEl.textContent = state;
+
+            // Color coding
+            if (state === "ACTIVE") {
+                 billEl.className = "text-green-400 font-bold";
+            } else if (state === "PAST_DUE" || state === "CANCELED") {
+                 billEl.className = "text-red-400 font-bold";
+            } else {
+                 billEl.className = "text-[var(--muted)]";
+            }
+        }
+
+        // 3. Plan Label
+        const planContainer = document.getElementById("status-plan-container");
+        const planEl = document.getElementById("status-plan");
+        if (planContainer && planEl) {
+             if (sub.plan_code) {
+                 planEl.textContent = sub.plan_code.toUpperCase();
+                 planContainer.classList.remove("hidden");
+             } else {
+                 planContainer.classList.add("hidden");
+             }
+        }
+
+        return isActive;
+
+    } catch (e) {
+        console.warn("Polling status failed", e);
+        return false;
+    }
+}
+
+// Helper: Show Toast
+function showToast(message, type = "info") {
+    // Check if container exists, else create
+    let container = document.getElementById("toast-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "toast-container";
+        container.className = "fixed bottom-4 right-4 z-50 flex flex-col gap-2";
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement("div");
+    // Styling based on type
+    const baseClass = "px-4 py-3 rounded shadow-lg text-white font-medium flex items-center gap-2 animate-bounce-in";
+    if (type === "success") {
+        toast.className = `${baseClass} bg-green-600`;
+    } else if (type === "error") {
+        toast.className = `${baseClass} bg-red-600`;
+    } else {
+        toast.className = `${baseClass} bg-blue-600`;
+    }
+
+    toast.innerHTML = `<span>${message}</span>`;
+
+    container.appendChild(toast);
+
+    // Auto remove after 4s
+    setTimeout(() => {
+        toast.remove();
+    }, 4000);
+}
+
+
+// Handle Redirects (Success/Cancel)
+async function handleBillingRedirect() {
+    const params = new URLSearchParams(window.location.search);
+    const billingStatus = params.get("billing"); // success | cancel
+    // Also support 'stripe' for backward compat or if used elsewhere
+    const stripeStatus = params.get("stripe");
+
+    const status = billingStatus || stripeStatus;
+
+    if (!status) return;
+
+    // Clean URL
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    if (status === "cancel") {
+        showToast("Operazione annullata.", "error");
+        return;
+    }
+
+    if (status === "success") {
+        showToast("Pagamento ricevuto, sto verificando...", "info");
+
+        // Start FAST polling
+        if (dashboardPollInterval) clearInterval(dashboardPollInterval);
+
+        let attempts = 0;
+        const maxAttempts = 15; // 30 seconds total (15 * 2s)
+
+        // Fast poll loop
+        const fastPoll = setInterval(async () => {
+            attempts++;
+            const done = await updateDashboardStatus(); // returns true if active
+
+            if (done) {
+                // Subscription became active!
+                clearInterval(fastPoll);
+                showToast("Abbonamento attivato con successo!", "success");
+                // Resume normal polling
+                dashboardPollInterval = setInterval(updateDashboardStatus, 15000);
+            } else if (attempts >= maxAttempts) {
+                // Timeout
+                clearInterval(fastPoll);
+                showToast("Verifica in corso... controlla tra poco.", "info");
+                // Resume normal polling
+                dashboardPollInterval = setInterval(updateDashboardStatus, 15000);
+            }
+        }, 2000);
+    }
+}
+
+
+// Start polling
+function startStatusPolling() {
+    // Initial call
+    updateDashboardStatus();
+    // Poll every 15s normally
+    dashboardPollInterval = setInterval(updateDashboardStatus, 15000);
+}
+
+
+// =========================
 // BOOTSTRAP ESPORTATO
 // =========================
 
 async function initDashboard() {
+    // Render static structure
     renderDashboardUI();
+
+    // Check for redirects (fast polling if success)
+    await handleBillingRedirect();
+
+    // Start Polling Status Bar (if not already handled by fast polling)
+    if (!dashboardPollInterval) {
+         startStatusPolling();
+    }
+
+    // Existing Logic
     await loadClients();
     await renderGlobalChart();
 }
