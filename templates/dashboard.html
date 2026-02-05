@@ -314,6 +314,38 @@
 
             <!-- SECTION: SETTINGS -->
             <section id="section-settings" class="section hidden">
+                <!-- BILLING CARD -->
+                <div class="glass-card p-6 mb-6 max-w-2xl">
+                    <h3 class="text-xl font-bold mb-6 text-white flex items-center gap-2">
+                        <i data-feather="credit-card"></i> Abbonamento & Fatturazione
+                    </h3>
+
+                    <div id="billing-loading" class="text-[var(--muted)] text-sm">Caricamento stato abbonamento...</div>
+
+                    <div id="billing-info" class="hidden space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-[var(--panel2)] p-4 rounded-xl border border-[var(--border)]">
+                                <div class="text-xs uppercase tracking-wider text-[var(--muted)] font-semibold mb-1">Piano Attuale</div>
+                                <div id="billing-plan-name" class="text-lg font-bold text-white capitalize">--</div>
+                            </div>
+                            <div class="bg-[var(--panel2)] p-4 rounded-xl border border-[var(--border)]">
+                                <div class="text-xs uppercase tracking-wider text-[var(--muted)] font-semibold mb-1">Stato</div>
+                                <div id="billing-status" class="text-lg font-bold text-white capitalize">--</div>
+                            </div>
+                        </div>
+
+                        <div id="billing-details" class="text-sm text-[var(--muted)] space-y-1 bg-[var(--panel2)] p-3 rounded-lg border border-[var(--border)] hidden">
+                            <!-- Minutes usage or expiry can go here if needed -->
+                            <div>Scadenza ciclo: <span id="billing-cycle-end" class="text-white">--</span></div>
+                            <div>Minuti usati: <span id="billing-usage" class="text-white">--</span></div>
+                        </div>
+
+                        <div class="pt-2 flex flex-wrap gap-3" id="billing-actions">
+                            <!-- Buttons injected via JS based on state -->
+                        </div>
+                    </div>
+                </div>
+
                 <div class="glass-card p-6 mb-6 max-w-2xl">
                     <h3 class="text-xl font-bold mb-6 text-white flex items-center gap-2">
                         <i data-feather="settings"></i> Impostazioni Studio

@@ -1,3 +1,4 @@
+import stripe
 import os
 import json
 from datetime import datetime
@@ -25,6 +26,7 @@ from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
 from client_service import ClientService
 from billing_service import BillingService
+from stripe_service import StripeService
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -488,6 +490,124 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+class CheckoutRequest(BaseModel):
+    plan_code: str
+
+@app.post("/billing/checkout")
+async def billing_checkout(
+    payload: CheckoutRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    plan_code = payload.plan_code.lower()
+
+    if plan_code == "basic":
+        price_id = os.getenv("STRIPE_PRICE_BASIC")
+    elif plan_code == "pro":
+        price_id = os.getenv("STRIPE_PRICE_PRO")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid plan code")
+
+    if not price_id:
+         raise HTTPException(status_code=500, detail=f"Price ID for {plan_code} not configured")
+
+    metadata = {
+        "user_id": str(current_user.id),
+        "username": current_user.username
+    }
+
+    try:
+        session = StripeService.create_checkout_session(current_user, price_id, db, metadata)
+        return {"checkout_url": session.url}
+    except Exception as e:
+        logger.exception("Error creating checkout session")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ChangePlanRequest(BaseModel):
+    plan_code: str
+
+@app.post("/billing/change-plan")
+async def billing_change_plan(
+    payload: ChangePlanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    plan_code = payload.plan_code.lower()
+
+    if plan_code == "basic":
+        new_price_id = os.getenv("STRIPE_PRICE_BASIC")
+    elif plan_code == "pro":
+        new_price_id = os.getenv("STRIPE_PRICE_PRO")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid plan code")
+
+    if not new_price_id:
+         raise HTTPException(status_code=500, detail=f"Price ID for {plan_code} not configured")
+
+    try:
+        result = StripeService.change_subscription_plan(current_user, new_price_id, db)
+
+        # Send admin email about change
+        # Assuming current plan was different (checked in service), we send alert
+        if result:
+             admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
+             subject = f"[PLAN CHANGE] User {current_user.username} switched to {plan_code}"
+             body = f"<p>User <b>{current_user.username}</b> (ID: {current_user.id}) changed plan to {plan_code}.</p><p>Status: {result}</p>"
+             send_email(admin_email, subject, body)
+
+        return {"status": "ok", "message": "Plan change initiated", "result": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Error changing plan")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/billing/portal")
+async def billing_portal(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        session = StripeService.create_customer_portal_session(current_user, db)
+        return {"url": session.url}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Error creating portal session")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+
+    try:
+        event = StripeService.construct_event(payload, sig_header)
+    except ValueError as e:
+        # Invalid payload
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    try:
+        StripeService.handle_webhook_event(event, db)
+    except Exception as e:
+        logger.exception(f"Error handling Stripe webhook event: {e}")
+        # Return 200 to acknowledge receipt even if handling failed, to prevent retries loop if bug?
+        # Or 500 to retry? Standard Stripe practice: 200 if business logic fail but message received?
+        # Usually 500 triggers retry. If it's a code bug, retry won't help.
+        # But if it's a DB lock, it might.
+        # For now, let's log and return 200 to keep Stripe happy, or 500 if we want retries.
+        # Let's return 200 and log error.
+        return {"status": "error", "reason": str(e)}
+
+    return {"status": "success"}
+
 
 # ================== WEBHOOK ELEVENLABS ==================
 
@@ -507,28 +627,13 @@ def extract_transcript_text(payload: dict) -> str:
     return "\n".join(lines)
 
 @app.post("/elevenlabs/webhook")
-async def elevenlabs_webhook(request: Request):
+async def elevenlabs_webhook(request: Request, db: Session = Depends(get_db)):
     """
     Webhook ElevenLabs.
     """
     # Controlla se clients.json è cambiato e, se sì, ricarica
     maybe_reload_clients()
-    raw_body = await request.body()
-    payload = json.loads(raw_body.decode("utf-8"))
 
-    # estrai transcript
-    transcript_text = extract_transcript_text(payload)
-
-    # arricchimento AI
-    ai_data = enrich_call_with_ai(transcript_text)
-
-    # quando costruisci l'entry di log:
-    entry = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "data": payload,
-        "transcript_text": transcript_text,
-        "ai_enrichment": ai_data,
-    }
     # 1) Body grezzo
     try:
         raw_body = await request.body()
@@ -548,6 +653,12 @@ async def elevenlabs_webhook(request: Request):
         logger.exception("[WEBHOOK] JSON non valido")
         return {"status": "ignored", "reason": f"invalid json: {e}"}
 
+    # estrai transcript
+    transcript_text = extract_transcript_text(payload)
+
+    # arricchimento AI
+    ai_data = enrich_call_with_ai(transcript_text)
+
     logger.info("[WEBHOOK] Payload ElevenLabs ricevuto")
 
     # 3) Tipo evento
@@ -560,6 +671,19 @@ async def elevenlabs_webhook(request: Request):
 
     # 3b) Agent ID (chi identifica il cliente)
     agent_id: Optional[str] = data.get("agent_id")
+
+    # Check suspension
+    from models import Agent
+    agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
+    if agent:
+        # Check associated user
+        # We assume 1 user per agent or check all? Usually 1 client user.
+        # Use UserAgentAccess table or relationship
+        for user in agent.users:
+            if not user.is_active:
+                logger.warning(f"[WEBHOOK] Blocked call for suspended user {user.username} (agent {agent_id})")
+                return {"status": "suspended", "reason": "User is inactive"}
+
     client_cfg = get_client_config(agent_id)
     studio_name = client_cfg["studio_name"]
     email_to = client_cfg["email_to"]
