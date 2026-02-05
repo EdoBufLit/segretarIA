@@ -5,9 +5,8 @@ from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Request, Body, Query
 from fastapi.responses import HTMLResponse
-from email.message import EmailMessage
-import smtplib
 from dotenv import load_dotenv
+from mailer import send_email
 from openai import OpenAI
 import logging
 from pathlib import Path
@@ -16,11 +15,20 @@ from datetime import datetime, date, timedelta
 from openai import OpenAI
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse
-from fastapi import Form
+from fastapi import Form, Depends
+from fastapi.templating import Jinja2Templates
 import httpx
+from sqlalchemy.orm import Session
+from db import get_db
+from models import User
+from auth import verify_password, get_current_user, get_current_admin_user
+from admin_service import AdminService
+from client_service import ClientService
+from billing_service import BillingService
 # ================== CONFIG BASE ==================
 
 load_dotenv()
+templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
 app.add_middleware(
@@ -368,41 +376,116 @@ def build_email_body_html(
     return html
 
 
-def send_email(to_addr: str, subject: str, html_body: str):
-    """
-    Invia una mail in formato HTML + fallback text.
-    """
-
-    if not all([EMAIL_FROM, SMTP_HOST, SMTP_USER, SMTP_PASSWORD]):
-        raise RuntimeError("Configurazione SMTP incompleta (controlla .env).")
-
-    if not to_addr:
-        raise RuntimeError("Destinatario email mancante (to_addr).")
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = EMAIL_FROM
-    msg["To"] = to_addr
-
-    # Fallback text (in caso il client non supporti HTML)
-    msg.set_content("La tua email richiede un client che supporta HTML.")
-
-    # Parte HTML
-    msg.add_alternative(html_body, subtype="html")
-
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.send_message(msg)
-
-    logger.info(f"[EMAIL] Inviata email a {to_addr} con subject='{subject}'")
-
-
 # ================== ENDPOINT DI TEST ==================
 
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "Segreteria IA ElevenLabs backend attivo."}
+
+
+# ================== ADMIN ENDPOINTS ==================
+
+@app.get("/admin/clients", response_class=HTMLResponse)
+async def admin_get_clients(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    clients = service.get_clients()
+    return templates.TemplateResponse("admin_clients.html", {"request": request, "clients": clients})
+
+@app.post("/admin/clients/create")
+async def admin_create_client(username: str = Form(...), email: str = Form(...), password: str = Form(...), studio_name: str = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        client = service.create_client(username, email, password, studio_name)
+        service.sync_clients_to_json()
+        return {"status": "ok", "client_id": client.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/agents/create")
+async def admin_create_agent(agent_id: str = Form(...), display_name: str = Form(...), phone_number_id: str = Form(None), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        agent = service.create_agent(agent_id, display_name, phone_number_id)
+        service.sync_clients_to_json()
+        return {"status": "ok", "agent_id": agent.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/clients/{user_id}/assign-agent")
+async def admin_assign_agent(user_id: int, agent_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        client = service.assign_agent_to_client(user_id, agent_id)
+        service.sync_clients_to_json()
+        return {"status": "ok", "client_id": client.id, "assigned_agents": [a.id for a in client.agents]}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/clients/{user_id}/create-subscription")
+async def admin_create_subscription(user_id: int, plan_code: str = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        subscription = service.create_or_update_subscription(user_id, plan_code)
+        return {"status": "ok", "subscription_id": subscription.id, "state": subscription.state}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/sync-clients-json")
+async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    summary = service.sync_clients_to_json()
+    return {"status": "ok", **summary}
+
+@app.get("/admin/phone-numbers", response_class=HTMLResponse)
+async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    numbers = service.get_all_phone_numbers()
+    return templates.TemplateResponse("admin_phonenumbers.html", {"request": request, "numbers": numbers})
+
+@app.post("/admin/phone-numbers/create") # Temporary for testing
+async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        phone = service.create_phone_number(e164, user_id)
+        return {"status": "ok", "phone_number_id": phone.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/phone-numbers/{phone_id}/mark-released")
+async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        service.mark_phone_number_released(phone_id)
+        return RedirectResponse(url="/admin/phone-numbers", status_code=303)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/admin/phone-numbers/{phone_id}/cancel-deprovision")
+async def admin_cancel_deprovision(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        service.cancel_phone_number_deprovisioning(phone_id)
+        return RedirectResponse(url="/admin/phone-numbers", status_code=303)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ================== CLIENT ENDPOINTS ==================
+
+@app.get("/subscription/status")
+async def get_subscription_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = ClientService(db, current_user)
+    status = service.get_subscription_status()
+    return status
+
+@app.post("/subscription/cancel")
+async def cancel_subscription(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    service = ClientService(db, current_user)
+    try:
+        result = service.cancel_subscription()
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ================== WEBHOOK ELEVENLABS ==================
@@ -575,6 +658,23 @@ async def elevenlabs_webhook(request: Request):
         return {"status": "error", "reason": f"email error: {e}"}
 
     logger.info(f"[WEBHOOK] Chiamata gestita correttamente per {studio_name} ({agent_id})")
+
+    # Meter the call
+    if duration_secs and agent_id:
+        call_id = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
+        if call_id:
+            with SessionLocal() as db:
+                billing_service = BillingService(db)
+                billing_service.meter_call(
+                    agent_id=agent_id,
+                    duration_secs=int(duration_secs),
+                    call_id=call_id,
+                    started_at=datetime.fromisoformat(started_at) if started_at else datetime.utcnow() - timedelta(seconds=duration_secs),
+                    ended_at=datetime.fromisoformat(ended_at) if ended_at else datetime.utcnow()
+                )
+        else:
+            logger.warning("[METERING] No unique call_id found in webhook payload.")
+
     return {"status": "ok", "message": "Webhook ricevuto e email inviata."}
 
 @app.get("/clients")
@@ -893,15 +993,14 @@ async def analytics_client(agent_id: str):
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    user = request.session.get("user")
-    if not user:
-        return RedirectResponse(url="/login", status_code=302)
-
-    maybe_reload_clients()
-    with open("templates/dashboard.html", "r", encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(content=html)
+async def dashboard(request: Request, current_user: User = Depends(get_current_user)):
+    if current_user.role == "admin":
+        maybe_reload_clients()
+        with open("templates/dashboard.html", "r", encoding="utf-8") as f:
+            html = f.read()
+        return HTMLResponse(content=html)
+    else:
+        return templates.TemplateResponse("client_portal.html", {"request": request})
 
 
 @app.get("/logout")
@@ -909,6 +1008,14 @@ async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/login", status_code=302)
 
+
+@app.get("/me")
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    return {
+        "username": current_user.username,
+        "role": current_user.role,
+        "studio_name": current_user.studio_name,
+    }
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -923,14 +1030,20 @@ async def login_form(request: Request):
 async def login_submit(
     request: Request,
     username: str = Form(...),
-    password: str = Form(...)
+    password: str = Form(...),
+    db: Session = Depends(get_db)
 ):
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-        request.session["user"] = username
-        return RedirectResponse(url="/dashboard", status_code=302)
-    else:
-        # credenziali sbagliate → rimando al login con ?error=1
+    user = db.query(User).filter(User.username == username).first()
+
+    if not user or not user.is_active or not verify_password(password, user.password_hash):
         return RedirectResponse(url="/login?error=1", status_code=302)
+
+    request.session["user"] = {
+        "user_id": user.id,
+        "username": user.username,
+        "role": user.role,
+    }
+    return RedirectResponse(url="/dashboard", status_code=302)
 
 
 @app.get("/logs/{agent_id}/list")

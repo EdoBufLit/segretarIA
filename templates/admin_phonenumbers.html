@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Phone Numbers</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 2em; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .action-btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            cursor: pointer;
+        }
+        .action-btn.cancel { background-color: #f44336; }
+    </style>
+</head>
+<body>
+    <h1>Phone Number Management</h1>
+
+    <h2>Numbers</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Number (E.164)</th>
+                <th>Client</th>
+                <th>Status</th>
+                <th>Deprovision At</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for number in numbers %}
+            <tr>
+                <td>{{ number.id }}</td>
+                <td>{{ number.e164 }}</td>
+                <td>{{ number.user.username }}</td>
+                <td>{{ number.status }}</td>
+                <td>{{ number.deprovision_at.strftime('%Y-%m-%d') if number.deprovision_at else '' }}</td>
+                <td>
+                    <form action="/admin/phone-numbers/{{ number.id }}/mark-released" method="post" style="display:inline;">
+                        <button type="submit" class="action-btn">Mark Released</button>
+                    </form>
+                    {% if number.status == 'pending_deprovision' %}
+                    <form action="/admin/phone-numbers/{{ number.id }}/cancel-deprovision" method="post" style="display:inline;">
+                        <button type="submit" class="action-btn cancel">Cancel Deprovision</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+</body>
+</html>
