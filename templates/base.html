@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="it" class="h-full bg-neutral-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Segreteria IA{% endblock %}</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                        display: ['"Newsreader"', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Newsreader:opsz,wght@6..72,400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/ui.css">
+    <link rel="icon" href="/static/logo.png" type="image/png">
+
+    <!-- Icons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+
+    <style>
+        body { font-family: "IBM Plex Sans", sans-serif; }
+        /* Smooth fade in */
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+
+    {% block head %}{% endblock %}
+</head>
+<body class="h-full text-neutral-900 antialiased selection:bg-neutral-900 selection:text-white ui-shell">
+
+    {% block content %}{% endblock %}
+
+    <!-- Common Toast Container (if needed) -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
+    <script>
+        // Common Feather Icons replacement
+        document.addEventListener("DOMContentLoaded", () => {
+            if (typeof feather !== 'undefined') {
+                feather.replace();
+            }
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

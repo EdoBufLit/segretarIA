@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Segreteria IA – Dashboard</title>
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Newsreader:opsz,wght@6..72,400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/ui.css">
+    <link rel="icon" href="/static/logo.png" type="image/png">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['\"IBM Plex Sans\"', 'sans-serif'],
+                        display: ['\"Newsreader\"', 'serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- HeroIcons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body { font-family: 'IBM Plex Sans', sans-serif; background-color: #f6f4f1; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
+
+        .nav-item-active {
+            background-color: #f2eee8;
+            color: #171717;
+            font-weight: 600;
+        }
+
+        /* Transition utilities */
+        .fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+
+<body class="h-screen flex overflow-hidden text-neutral-900 ui-shell admin-density">
+
+    <!-- LOG DETAIL MODAL -->
+    <div id="log-detail-modal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="ui-card w-11/12 md:w-3/4 lg:w-1/2 flex flex-col max-h-[85vh] overflow-hidden fade-in">
+            <div class="p-4 border-b border-neutral-200 flex justify-between items-center bg-neutral-50">
+                <h3 class="text-lg font-bold text-neutral-900">Dettaglio chiamata</h3>
+                <button onclick="closeLogDetail()" class="text-neutral-500 hover:text-neutral-900 transition-colors">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="p-6 flex-1 overflow-auto bg-white">
+                <div id="log-detail-content" class="space-y-4 text-sm text-neutral-600"></div>
+            </div>
+
+            <div class="p-4 border-t border-neutral-200 bg-neutral-50 text-right">
+                <button onclick="closeLogDetail()"
+                    class="ui-button ui-button-primary px-4 py-2">
+                    Chiudi
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD PHONE NUMBER MODAL -->
+    <div id="add-phonenumber-modal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="ui-card w-11/12 max-w-md p-6 fade-in">
+            <div class="flex justify-between items-center mb-6">
+                 <h3 class="text-xl font-bold text-neutral-900">Aggiungi Numero</h3>
+                 <button onclick="closeAddPhoneNumberModal()" class="text-neutral-400 hover:text-neutral-600"><i data-feather="x"></i></button>
+            </div>
+            <form id="add-phonenumber-form" onsubmit="handleCreatePhoneNumber(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Numero (E.164)</label>
+                    <input type="text" name="e164" required placeholder="+39..." class="ui-input">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Assegna a Utente (ID)</label>
+                    <input type="number" name="user_id" required class="ui-input">
+                    <p class="text-xs text-neutral-500 mt-1">ID dell'utente proprietario.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Note</label>
+                    <textarea name="notes" class="ui-input h-20"></textarea>
+                </div>
+                <div class="border-t border-neutral-100 pt-4 mt-4">
+                    <h4 class="text-sm font-bold text-neutral-900 mb-4">Inoltro Ufficio & Orari</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Numero Ufficio (E.164)</label>
+                            <input type="text" name="office_phone_e164" placeholder="+3902..." class="ui-input">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Fuso Orario</label>
+                            <select name="timezone" class="ui-input">
+                                <option value="Europe/Rome" selected>Europe/Rome</option>
+                                <option value="Europe/London">Europe/London</option>
+                                <option value="America/New_York">America/New_York</option>
+                                <option value="UTC">UTC</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="add-business-hours-container" class="space-y-2 ui-card-soft p-3 text-xs">
+                        <!-- JS will populate this -->
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" onclick="closeAddPhoneNumberModal()" class="ui-button ui-button-ghost px-4 py-2">Annulla</button>
+                    <button type="submit" class="ui-button ui-button-primary px-4 py-2">Salva</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ADD ROUTING MODAL -->
+    <div id="add-routing-modal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="ui-card w-11/12 max-w-md p-6 fade-in">
+            <div class="flex justify-between items-center mb-6">
+                 <h3 class="text-xl font-bold text-neutral-900">Nuovo Instradamento</h3>
+                 <button onclick="closeAddRoutingModal()" class="text-neutral-400 hover:text-neutral-600"><i data-feather="x"></i></button>
+            </div>
+            <form id="add-routing-form" onsubmit="handleCreateRouting(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Utente (ID)</label>
+                    <input type="number" name="user_id" required class="ui-input">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Agente (ElevenLabs ID)</label>
+                    <input type="text" name="agent_id" required placeholder="agent_..." class="ui-input font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Numero (ID Database)</label>
+                    <select id="routing-phone-select" name="phone_number_id" required class="ui-input">
+                        <option value="" disabled selected>Seleziona un numero...</option>
+                    </select>
+                    <p class="text-xs text-neutral-500 mt-1">Lo trovi nella colonna ID nella sezione Numeri.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" name="is_active" id="routing-active" checked class="w-4 h-4 text-neutral-900 border-neutral-300 rounded focus:ring-neutral-900">
+                    <label for="routing-active" class="text-sm text-neutral-700">Attivo</label>
+                </div>
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" onclick="closeAddRoutingModal()" class="ui-button ui-button-ghost px-4 py-2">Annulla</button>
+                    <button type="submit" class="ui-button ui-button-primary px-4 py-2">Salva</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- EDIT PHONE NUMBER MODAL -->
+    <div id="edit-phonenumber-modal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="ui-card w-11/12 max-w-2xl p-6 fade-in max-h-[90vh] overflow-auto">
+            <div class="flex justify-between items-center mb-6">
+                 <h3 class="text-xl font-bold text-neutral-900">Modifica Numero</h3>
+                 <button onclick="closeEditPhoneNumberModal()" class="text-neutral-400 hover:text-neutral-600"><i data-feather="x"></i></button>
+            </div>
+            <form id="edit-phonenumber-form" onsubmit="handleEditPhoneNumber(event)" class="space-y-4">
+                <input type="hidden" name="phone_id" id="edit-phone-id">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Numero (E.164)</label>
+                        <input type="text" id="edit-e164" disabled class="ui-input bg-neutral-100 text-neutral-500 cursor-not-allowed">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Note</label>
+                        <input type="text" name="notes" id="edit-notes" class="ui-input">
+                    </div>
+                </div>
+
+                <div class="border-t border-neutral-100 pt-4">
+                    <h4 class="text-sm font-bold text-neutral-900 mb-4">Inoltro Ufficio & Orari</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Numero Ufficio (E.164)</label>
+                            <input type="text" name="office_phone_e164" id="edit-office-phone" placeholder="+3902..." class="ui-input">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Fuso Orario</label>
+                            <select name="timezone" id="edit-timezone" class="ui-input">
+                                <option value="Europe/Rome">Europe/Rome</option>
+                                <option value="Europe/London">Europe/London</option>
+                                <option value="America/New_York">America/New_York</option>
+                                <option value="UTC">UTC</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="edit-business-hours-container" class="space-y-2 ui-card-soft p-3 text-xs">
+                        <!-- JS will populate this -->
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" onclick="closeEditPhoneNumberModal()" class="ui-button ui-button-ghost px-4 py-2">Annulla</button>
+                    <button type="submit" class="ui-button ui-button-primary px-4 py-2">Salva Modifiche</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- REACTIVATE PHONE NUMBER MODAL -->
+    <div id="reactivate-phonenumber-modal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="ui-card w-11/12 max-w-md p-6 fade-in">
+            <div class="flex justify-between items-center mb-6">
+                 <h3 class="text-xl font-bold text-neutral-900">Riattiva Numero</h3>
+                 <button onclick="closeReactivateModal()" class="text-neutral-400 hover:text-neutral-600"><i data-feather="x"></i></button>
+            </div>
+            <p class="text-sm text-neutral-500 mb-4">Vuoi riattivare questo numero e riassegnarlo?</p>
+            <form id="reactivate-phonenumber-form" onsubmit="handleReactivatePhoneNumber(event)" class="space-y-4">
+                <input type="hidden" name="phone_id" id="reactivate-phone-id">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Numero</label>
+                    <input type="text" id="reactivate-phone-e164" disabled class="ui-input bg-neutral-100 text-neutral-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Nuovo Utente</label>
+                    <select id="reactivate-user-select" name="user_id" required class="ui-input">
+                        <option value="" disabled selected>Caricamento...</option>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" onclick="closeReactivateModal()" class="ui-button ui-button-ghost px-4 py-2">Annulla</button>
+                    <button type="submit" class="ui-button ui-button-primary px-4 py-2">Riattiva</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- CONFIRMATION MODAL -->
+    <div id="confirm-modal" class="fixed inset-0 bg-neutral-900/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="ui-card w-11/12 max-w-md p-6 text-center fade-in">
+            <div class="mb-6">
+                <div class="w-16 h-16 mx-auto rounded-full bg-red-50 flex items-center justify-center mb-4">
+                    <i data-feather="alert-triangle" class="w-8 h-8 text-red-500"></i>
+                </div>
+                <h3 id="confirm-title" class="text-xl font-bold text-neutral-900 mb-2">Conferma azione</h3>
+                <p id="confirm-message" class="text-neutral-500 text-sm leading-relaxed"></p>
+                <div id="confirm-input-container" class="hidden mt-4">
+                    <input type="text" id="confirm-input" class="ui-input text-center uppercase" placeholder="Digita ELIMINA">
+                </div>
+            </div>
+            <div class="flex gap-3 justify-center">
+                <button id="confirm-cancel-btn"
+                    class="ui-button ui-button-ghost px-5 py-2.5">
+                    Annulla
+                </button>
+                <button id="confirm-ok-btn"
+                    class="ui-button ui-button-danger px-5 py-2.5">
+                    Conferma
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN LAYOUT -->
+    <div class="flex w-full h-full ui-shell">
+
+        <!-- SIDEBAR -->
+        <aside class="w-64 flex flex-col ui-sidebar shadow-sm z-20">
+                <div class="flex items-center gap-3 px-6 py-6 border-b border-neutral-100">
+                    <div class="w-10 h-10 rounded-xl bg-white border border-neutral-200 flex items-center justify-center shadow-sm">
+                        <img src="/static/logo.png" alt="Segreteria IA" class="h-6 w-auto object-contain">
+                    </div>
+                    <h1 class="font-bold text-xl tracking-tight text-neutral-900">Segreteria <span class="text-neutral-500 font-normal">IA</span></h1>
+                </div>
+
+            <nav class="flex-1 overflow-y-auto p-4 space-y-1">
+                <a href="#" data-section="dashboard" onclick="openSection('dashboard')"
+                    class="nav-item ui-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 transition-all font-medium">
+                    <i data-feather="grid" class="w-5 h-5"></i>
+                    <span>Dashboard</span>
+                </a>
+
+                <a href="#" data-section="logs" onclick="openSection('logs')"
+                    class="nav-item ui-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 transition-all font-medium">
+                    <i data-feather="list" class="w-5 h-5"></i>
+                    <span>Logs</span>
+                </a>
+
+                <a href="#" data-section="analytics" onclick="openSection('analytics')"
+                    class="nav-item ui-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 transition-all font-medium">
+                    <i data-feather="bar-chart-2" class="w-5 h-5"></i>
+                    <span>Analytics</span>
+                </a>
+
+                <!-- ADMIN ONLY: Clienti & Numeri -->
+                {% if user.role == 'admin' %}
+                <div class="px-4 py-2 mt-4 text-xs font-semibold text-neutral-400 uppercase tracking-wider">Amministrazione</div>
+                <a href="#" data-section="users" onclick="openSection('users')"
+                    class="nav-item ui-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 transition-all font-medium">
+                    <i data-feather="users" class="w-5 h-5"></i>
+                    <span>Clienti</span>
+                </a>
+                <a href="#" data-section="phonenumbers" onclick="openSection('phonenumbers')"
+                    class="nav-item ui-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 transition-all font-medium">
+                    <i data-feather="phone" class="w-5 h-5"></i>
+                    <span>Numeri</span>
+                </a>
+                <a href="#" data-section="routing" onclick="openSection('routing')"
+                    class="nav-item ui-nav-item flex items-center gap-3 px-3 py-2.5 rounded-xl text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 transition-all font-medium">
+                    <i data-feather="shuffle" class="w-5 h-5"></i>
+                    <span>Instradamenti</span>
+                </a>
+                {% endif %}
+
+                <div class="my-4 border-t border-neutral-100 mx-4"></div>
+
+                <a href="#" data-section="settings" onclick="openSection('settings')"
+                    class="nav-item ui-nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900 transition-all font-medium">
+                    <i data-feather="settings" class="w-5 h-5"></i>
+                    <span>Impostazioni</span>
+                </a>
+            </nav>
+
+            <div class="p-4 border-t border-neutral-200 bg-neutral-50">
+                <a href="/logout"
+                    class="flex items-center gap-3 px-4 py-2 rounded-lg text-neutral-500 hover:text-red-600 hover:bg-red-50 transition-colors font-medium text-sm">
+                    <i data-feather="log-out" class="w-4 h-4"></i>
+                    Esci
+                </a>
+            </div>
+        </aside>
+
+        <!-- MAIN AREA -->
+        <main class="flex-1 flex flex-col min-w-0 bg-neutral-50">
+
+            <!-- TOPBAR -->
+            <div class="h-16 ui-topbar flex items-center justify-between px-6 shadow-sm z-10">
+                <div class="flex items-center gap-4">
+                    <h2 id="page-title" class="text-xl font-semibold text-neutral-900 tracking-tight">Panoramica</h2>
+                </div>
+
+                <!-- STATUS BAR -->
+                <div id="status-bar" class="hidden md:flex items-center gap-3 px-3 py-1.5 ui-card-soft rounded-full text-xs font-medium shadow-sm">
+                    <!-- Service Status -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-neutral-500">Servizio:</span>
+                        {% set service_active = (user.is_active and subscription and subscription.state == 'active') or user.role == 'admin' %}
+                        {% set service_suspended = not user.is_active and user.role != 'admin' %}
+
+                        {% if service_active %}
+                            <span id="status-service" class="ui-badge ui-badge--success">ATTIVO</span>
+                        {% elif service_suspended %}
+                             <span id="status-service" class="ui-badge ui-badge--danger">SOSPESO</span>
+                        {% else %}
+                             <span id="status-service" class="ui-badge">NON ATTIVO</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="w-px h-4 bg-neutral-300"></div>
+
+                    <!-- Billing Status -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-neutral-500">Billing:</span>
+                        {% if subscription %}
+                            {% set state = subscription.state|upper %}
+                            {% set bill_class = "ui-badge ui-badge--success" if state == 'ACTIVE' else ("ui-badge ui-badge--danger" if state in ['PAST_DUE', 'CANCELED'] else "ui-badge") %}
+                            <span id="status-billing" class="{{ bill_class }}">{{ state }}</span>
+                        {% else %}
+                            <span id="status-billing" class="text-neutral-500">NESSUNO</span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Plan -->
+                    <div id="status-plan-container" class="flex items-center gap-2 {% if not subscription or not subscription.plan_code %}hidden{% endif %}">
+                         <span id="status-plan" class="ui-badge">
+                            {{ subscription.plan_code|upper if subscription and subscription.plan_code else '' }}
+                         </span>
+                    </div>
+
+                     <button onclick="updateDashboardStatus()" title="Aggiorna stato" class="hover:bg-neutral-200 p-1 rounded-full transition-colors text-neutral-500">
+                        <i data-feather="refresh-cw" class="w-3 h-3"></i>
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-4">
+                     <div class="w-10 h-10 rounded-full bg-neutral-200 border border-neutral-300 flex items-center justify-center text-neutral-600 font-bold">
+                        {{ user.username[:2].upper() }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- CONTENT SCROLL AREA -->
+            <div class="flex-1 overflow-auto p-5">
+
+                <!-- SECTION: DASHBOARD -->
+                <section id="section-dashboard" class="section space-y-6">
+
+                    <!-- KPI CARDS -->
+                    <div id="kpi-cards" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="dashboard-card p-6 flex items-center justify-between">
+                            <div>
+                                <div class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1">Clienti Totali</div>
+                                <div id="dash-kpi-clients" class="text-3xl font-bold text-neutral-900">—</div>
+                            </div>
+                            <div class="p-3 bg-neutral-100 rounded-lg text-neutral-400">
+                                <i data-feather="users" class="w-6 h-6"></i>
+                            </div>
+                        </div>
+
+                        <div class="dashboard-card p-6 flex items-center justify-between">
+                            <div>
+                                <div class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1">Abbonamenti</div>
+                                <div id="dash-kpi-subs" class="text-3xl font-bold text-green-600">—</div>
+                            </div>
+                            <div class="p-3 bg-green-50 rounded-lg text-green-600">
+                                <i data-feather="check-circle" class="w-6 h-6"></i>
+                            </div>
+                        </div>
+
+                        <div class="dashboard-card p-6 flex items-center justify-between">
+                            <div>
+                                <div class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1">MRR (Stima)</div>
+                                <div id="dash-kpi-mrr" class="text-3xl font-bold text-indigo-600">—</div>
+                            </div>
+                            <div class="p-3 bg-indigo-50 rounded-lg text-indigo-600">
+                                <i data-feather="trending-up" class="w-6 h-6"></i>
+                            </div>
+                        </div>
+
+                        <div class="dashboard-card p-6 flex items-center justify-between">
+                            <div>
+                                <div class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1">Ricavo Totale</div>
+                                <div id="dash-kpi-revenue" class="text-3xl font-bold text-blue-600">—</div>
+                            </div>
+                            <div class="p-3 bg-blue-50 rounded-lg text-blue-600">
+                                <i data-feather="dollar-sign" class="w-6 h-6"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CONTENT INJECTION -->
+                    <div id="dashboard-content"></div>
+
+                    <!-- EXPORT SECTION -->
+                    <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm">
+                        <h2 class="text-lg font-bold text-neutral-900 mb-6 flex items-center gap-2">
+                            <i data-feather="download" class="w-5 h-5 text-neutral-500"></i> Esportazione Dati
+                        </h2>
+                        <div class="flex flex-wrap gap-4 items-end">
+                            <div class="w-48">
+                                <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Dal</label>
+                                <input type="date" id="export-from" class="w-full p-2.5 rounded-lg bg-neutral-50 border border-neutral-200 text-neutral-900 focus:ring-2 focus:ring-neutral-900 outline-none">
+                            </div>
+                            <div class="w-48">
+                                <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Al</label>
+                                <input type="date" id="export-to" class="w-full p-2.5 rounded-lg bg-neutral-50 border border-neutral-200 text-neutral-900 focus:ring-2 focus:ring-neutral-900 outline-none">
+                            </div>
+                            <button onclick="triggerExport('minutes')" class="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg font-medium shadow-md transition-colors flex items-center gap-2">
+                                <i data-feather="clock" class="w-4 h-4"></i> Export Minuti
+                            </button>
+                            <button onclick="triggerExport('logs')" class="px-5 py-2.5 bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-700 rounded-lg font-medium shadow-sm transition-colors flex items-center gap-2">
+                                <i data-feather="file-text" class="w-4 h-4"></i> Export Log
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION: ROUTING (INSTRADAMENTI) -->
+                <section id="section-routing" class="section hidden w-full">
+                    <div class="dashboard-card overflow-hidden">
+                        <div class="p-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50/50">
+                            <h3 class="text-lg font-bold text-neutral-900">Gestione Instradamenti</h3>
+                            <div class="flex gap-2">
+                                 <button onclick="openAddRoutingModal()" class="bg-neutral-900 hover:bg-neutral-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition-colors">
+                                    <i data-feather="plus" class="w-4 h-4"></i> Nuovo Routing
+                                </button>
+                                <button onclick="loadRoutingTable()" class="bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-600 px-3 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors">
+                                    <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-neutral-50 border-b border-neutral-200">
+                                    <tr>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Cliente</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Agente (ID)</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Numero (E.164)</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ultimo Evento</th>
+                                        <th class="px-6 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="routing-table-body" class="bg-white divide-y divide-neutral-100 text-sm text-neutral-600"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION: PHONE NUMBERS (NUMERI) -->
+                <section id="section-phonenumbers" class="section hidden w-full">
+                    <div class="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
+                        <div class="p-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50/50">
+                            <h3 class="text-lg font-bold text-neutral-900">Gestione Numeri</h3>
+                            <div class="flex gap-2">
+                                 <button onclick="openAddPhoneNumberModal()" class="bg-neutral-900 hover:bg-neutral-800 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition-colors">
+                                    <i data-feather="plus" class="w-4 h-4"></i> Nuovo Numero
+                                </button>
+                                <button onclick="loadPhoneNumbersTable()" class="bg-white border border-neutral-300 hover:bg-neutral-50 text-neutral-600 px-3 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors">
+                                    <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-neutral-50 border-b border-neutral-200">
+                                    <tr>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Numero (E.164)</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Assegnato a</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Note</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Data Creazione</th>
+                                        <th class="px-6 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="phonenumbers-table-body" class="bg-white divide-y divide-neutral-100 text-sm text-neutral-600"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="section-analytics" class="section hidden w-full">
+                    <!-- KPI GRID -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                        <!-- Total Users -->
+                        <div class="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
+                            <div class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Utenti Totali</div>
+                            <div id="metrics-total-users" class="text-3xl font-bold text-neutral-900">—</div>
+                        </div>
+                        <!-- Active Subs -->
+                        <div class="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
+                            <div class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Abbonamenti Attivi</div>
+                            <div id="metrics-active-subs" class="text-3xl font-bold text-green-600">—</div>
+                        </div>
+                        <!-- Churn -->
+                        <div class="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
+                            <div class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Cancellati (Churn)</div>
+                            <div id="metrics-churn" class="text-3xl font-bold text-red-600">—</div>
+                        </div>
+                        <!-- Past Due -->
+                        <div class="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm">
+                            <div class="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Pagamenti Falliti</div>
+                            <div id="metrics-past-due" class="text-3xl font-bold text-yellow-600">—</div>
+                        </div>
+                    </div>
+
+                    <!-- RECENT PAYMENTS -->
+                    <div class="bg-white p-8 rounded-xl border border-neutral-200 shadow-sm">
+                        <h3 class="text-lg font-bold text-neutral-900 mb-6">Ultimi Pagamenti</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-neutral-50 border-b border-neutral-200">
+                                    <tr>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Data</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Email</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Importo</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="metrics-payments-body" class="bg-white divide-y divide-neutral-100 text-sm text-neutral-600">
+                                    <tr><td colspan="4" class="text-center py-8 text-neutral-500">Caricamento...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION: USERS (CLIENTI) -->
+                <section id="section-users" class="section hidden w-full">
+                    <div class="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
+                        <div class="p-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50/50">
+                            <h3 class="text-lg font-bold text-neutral-900">Gestione Clienti</h3>
+                            <div class="flex gap-2">
+                                <input type="text" id="users-search" placeholder="Cerca email/username..."
+                                    class="ui-input text-sm w-64">
+                                <button onclick="loadUsersTable(0)" class="ui-button ui-button-primary px-4 py-2 text-sm">
+                                    Cerca
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-neutral-50 border-b border-neutral-200">
+                                    <tr>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">ID</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Email</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ruolo</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato Account</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Piano (Manuale)</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Scadenza</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Billing (Stripe)</th>
+                                        <th class="px-6 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="users-table-body" class="bg-white divide-y divide-neutral-100 text-sm text-neutral-600"></tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination Users -->
+                        <div class="bg-neutral-50 px-6 py-4 border-t border-neutral-200 flex justify-between items-center text-sm text-neutral-500">
+                            <button onclick="usersPrev()" class="hover:text-neutral-900 font-medium transition-colors">&larr; Indietro</button>
+                            <span id="users-info" class="font-mono">Pagina 1</span>
+                            <button onclick="usersNext()" class="hover:text-neutral-900 font-medium transition-colors">Avanti &rarr;</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION: SETTINGS -->
+                <section id="section-settings" class="section hidden">
+                    <div class="dashboard-card p-8 max-w-3xl">
+                        <h3 class="text-xl font-bold mb-8 text-neutral-900 flex items-center gap-2">
+                            <i data-feather="settings" class="w-5 h-5 text-neutral-500"></i> Impostazioni Studio
+                        </h3>
+
+                        <div class="p-6 bg-neutral-50 rounded-xl mb-8 border border-neutral-200">
+                            <label class="block text-sm font-medium text-neutral-700 mb-2">Seleziona cliente da configurare</label>
+                            <div class="flex gap-2">
+                                <select id="settings-client-select"
+                                    class="ui-input flex-1"></select>
+                                <button onclick="loadClientSettings()"
+                                    class="ui-button ui-button-primary px-5 py-2.5">
+                                    Carica
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="settings-form" class="hidden space-y-6">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Nome studio</label>
+                                    <input id="settings-studio-name" class="ui-input" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Email destinataria</label>
+                                    <input id="settings-email-to" class="ui-input" />
+                                </div>
+
+                                <div class="md:col-span-2">
+                                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">ID numero ElevenLabs</label>
+                                    <input id="settings-agent-phone-id"
+                                        class="ui-input font-mono text-sm"
+                                        placeholder="phnum_..." />
+                                </div>
+
+                                <div class="md:col-span-2">
+                                    <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Numero di test</label>
+                                    <input id="settings-test-phone"
+                                        class="ui-input"
+                                        placeholder="+39..." />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Greeting</label>
+                                <textarea id="settings-greeting"
+                                    class="ui-input h-24 text-sm"></textarea>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-semibold uppercase text-neutral-500 mb-1">Note interne</label>
+                                <textarea id="settings-notes"
+                                    class="ui-input h-20 text-sm"></textarea>
+                            </div>
+
+                            <div class="pt-6 flex gap-4 border-t border-neutral-100">
+                                <button onclick="saveClientSettings()"
+                                    class="ui-button ui-button-primary px-6 py-2.5">
+                                    Salva Modifiche
+                                </button>
+                                <button onclick="triggerTestCall()"
+                                    class="ui-button ui-button-ghost px-5 py-2.5">
+                                    Chiama Test
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION: LOGS -->
+                <section id="section-logs" class="section hidden h-full flex flex-col">
+                    <div class="dashboard-card overflow-hidden flex flex-col h-full">
+
+                        <!-- Filters Toolbar -->
+                        <div class="p-4 border-b border-neutral-100 bg-neutral-50/50 flex flex-wrap gap-4 items-end">
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-neutral-500 font-medium">Cliente</label>
+                                <select id="log-filter-client"
+                                    class="ui-input text-sm w-48"></select>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-neutral-500 font-medium">Stato</label>
+                                <select id="log-filter-status"
+                                    class="ui-input text-sm w-32">
+                                    <option value="all">Tutti</option>
+                                    <option value="success">Successo</option>
+                                    <option value="failure">Errori</option>
+                                </select>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-neutral-500 font-medium">Da</label>
+                                <input type="date" id="log-filter-from"
+                                    class="ui-input text-sm">
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="text-xs text-neutral-500 font-medium">A</label>
+                                <input type="date" id="log-filter-to"
+                                    class="ui-input text-sm">
+                            </div>
+                            <div
+                                class="flex bg-white border border-neutral-300 rounded-lg px-3 py-1.5 flex-1 items-center gap-2 focus-within:ring-2 focus-within:ring-neutral-900 focus-within:border-transparent transition-shadow">
+                                <i data-feather="search" class="w-4 h-4 text-neutral-400"></i>
+                                <input type="text" id="log-filter-q" placeholder="Cerca nel transcript..."
+                                    class="bg-transparent border-none outline-none text-sm w-full text-neutral-900 placeholder-neutral-400">
+                            </div>
+                            <button onclick="loadLogsTable(0)"
+                                class="ui-button ui-button-primary px-5 py-2 text-sm">
+                                Filtra
+                            </button>
+                            <button onclick="loadLogsTable(null)"
+                                title="Aggiorna log"
+                                class="ml-auto ui-button ui-button-ghost px-3 py-2 text-sm flex items-center gap-2">
+                                <i data-feather="refresh-cw" class="w-3 h-3"></i>
+                                Aggiorna
+                            </button>
+                        </div>
+
+                        <div class="px-6 py-2 bg-neutral-50/50 border-b border-neutral-100 text-xs text-neutral-400 italic flex items-center gap-2">
+                             <i data-feather="info" class="w-3 h-3"></i> Le chiamate possono comparire dopo alcuni secondi.
+                        </div>
+
+                        <!-- Table Container -->
+                        <div class="flex-1 overflow-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-neutral-50 border-b border-neutral-200 sticky top-0 z-10">
+                                    <tr>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider bg-neutral-50">Data</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider bg-neutral-50">Cliente</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider bg-neutral-50">Numero</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider bg-neutral-50">Stato</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider bg-neutral-50">Durata</th>
+                                        <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider bg-neutral-50">Riassunto</th>
+                                        <th class="px-6 py-3 text-center bg-neutral-50"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="logs-table" class="bg-white divide-y divide-neutral-100 text-sm text-neutral-600"></tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination -->
+                        <div class="bg-neutral-50 px-6 py-4 border-t border-neutral-200 flex justify-between items-center text-sm text-neutral-500">
+                            <button id="logs-prev" onclick="logsPrev()"
+                                class="px-3 py-1.5 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors">
+                                &larr; Precedente
+                            </button>
+                            <span id="logs-info" class="font-mono text-xs"></span>
+                            <button id="logs-next" onclick="logsNext()"
+                                class="px-3 py-1.5 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors">
+                                Successiva &rarr;
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script>
+        window.user = {{ user | tojson }};
+    </script>
+    <script src="/static/admin_dashboard.js"></script>
+    <script src="/static/charts.js"></script>
+
+    <script>
+        feather.replace();
+
+        function updatePageTitle(name) {
+            const titles = {
+                'dashboard': 'Panoramica',
+                'logs': 'Storico Chiamate',
+                'clients': 'Lista Clienti',
+                'phonenumbers': 'Gestione Numeri',
+                'routing': 'Instradamenti',
+                'analytics': 'Statistiche',
+                'settings': 'Configurazione'
+            };
+            const el = document.getElementById('page-title');
+            if (el) el.textContent = titles[name] || 'Dashboard';
+        }
+
+        const originalOpenSection = window.openSection;
+
+        window.openSection = function (name) {
+            updatePageTitle(name);
+
+            if (name === "logs") {
+                if (typeof startLogsPolling === "function") startLogsPolling();
+                initLogsSection();
+            } else {
+                if (typeof stopLogsPolling === "function") stopLogsPolling();
+            }
+
+            if (name === "settings" && typeof initSettingsSection === "function") initSettingsSection();
+            if (name === "analytics" && typeof loadAdminMetrics === "function") loadAdminMetrics();
+            if (name === "users" && typeof loadUsersTable === "function") loadUsersTable(0);
+            if (name === "phonenumbers" && typeof loadPhoneNumbersTable === "function") loadPhoneNumbersTable();
+            if (name === "routing" && typeof loadRoutingTable === "function") loadRoutingTable();
+
+            document.querySelectorAll(".section").forEach(s => s.classList.add("hidden"));
+            const section = document.getElementById(`section-${name}`);
+            if (section) section.classList.remove("hidden");
+
+            document.querySelectorAll("nav .nav-item").forEach(a => {
+                a.classList.remove("nav-item-active");
+                a.classList.remove("text-neutral-900");
+                a.classList.remove("bg-neutral-100");
+                a.classList.add("text-neutral-500");
+            });
+            const activeLink = document.querySelector(`nav a[data-section="${name}"]`);
+            if (activeLink) {
+                activeLink.classList.add("nav-item-active");
+                activeLink.classList.remove("text-neutral-500");
+            }
+        };
+
+        document.addEventListener("DOMContentLoaded", () => {
+            openSection('dashboard');
+            if (typeof initDashboard === "function") {
+                initDashboard();
+            }
+        });
+    </script>
+</body>
+</html>

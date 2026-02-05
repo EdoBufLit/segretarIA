@@ -30,7 +30,7 @@ The dashboard fails to load status information because the `GET /me` endpoint th
 
 ### 3. Logs
 - Logs polling also relies on the dashboard being functional (though the logs endpoint itself might be fine, the `dashboard.js` polling logic might be interrupted or the browser state is compromised by the errors).
-- The test "New log did not appear automatically" failed, likely as a side effect or because the initial client list fetch (part of `initDashboard`) might also be affected if it relies on a shared failure path (though `/clients` is a file read).
+- The test "New log did not appear automatically" failed, likely as a side effect or because the initial admin data fetch (part of `initDashboard`) might also be affected if it relies on a shared failure path.
 
 ### Recommendations
 1.  **HOTFIX:** Update `app.py` to use `Subscription.id` or `Subscription.updated_at` instead of `Subscription.created_at` for sorting.

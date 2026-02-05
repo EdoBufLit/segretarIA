@@ -9,9 +9,11 @@ from sqlalchemy import (
     Table,
     func,
     JSON,
+    Text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from db import Base
+from services.validators import normalize_phone_number
 
 # Association Table for User <-> Agent many-to-many relationship
 UserAgentAccess = Table(
@@ -33,6 +35,30 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     stripe_customer_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    subscription_plan = Column(String, default='NONE', nullable=False)
+    plan_expires_at = Column(DateTime, nullable=True)
+
+    def has_active_plan(self):
+        """
+        Check if user has an active plan.
+        Prioritizes manual expiration date if set.
+        Otherwise falls back to checking active Subscription records.
+        """
+        # 1. Manual Override via plan_expires_at
+        if self.plan_expires_at:
+            return self.plan_expires_at > datetime.datetime.utcnow()
+
+        # 2. Manual Permanent Plan (if plan is set but no expiration, assume indefinite if not NONE?
+        # Or require expiration? Prompt says "plan_expires_at (datetime)".
+        # Usually manual plans have expiration. If None, maybe it means fallback to Stripe?
+        # Let's check subscriptions relationship.
+
+        # 3. Stripe Subscriptions
+        for sub in self.subscriptions:
+            if sub.state == 'active':
+                return True
+
+        return False
 
     # Relationships
     subscriptions = relationship("Subscription", back_populates="user")
@@ -41,6 +67,7 @@ class User(Base):
         "Agent", secondary=UserAgentAccess, back_populates="users"
     )
     phone_numbers = relationship("PhoneNumber", back_populates="user")
+    chat_messages = relationship("ChatMessage", back_populates="user")
 
 class Agent(Base):
     __tablename__ = "agents"
@@ -55,6 +82,36 @@ class Agent(Base):
         "User", secondary=UserAgentAccess, back_populates="agents"
     )
     usage_events = relationship("UsageEvent", back_populates="agent")
+
+class AgentSettings(Base):
+    __tablename__ = "agent_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String, unique=True, index=True, nullable=False)
+    greeting = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
+    agent_phone_number_id = Column(String, nullable=True)
+    test_phone_number = Column(String, nullable=True)
+    fallback_number = Column(String, nullable=True) # For inactive service fallback
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    @validates("fallback_number", "test_phone_number")
+    def validate_phone(self, key, value):
+        return normalize_phone_number(value)
+
+class CallLog(Base):
+    __tablename__ = "call_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    timestamp = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    text = Column(String, nullable=True)
+    status = Column(String, nullable=True)
+    raw_data = Column(JSON, nullable=True)
+
+    user = relationship("User")
 
 class Plan(Base):
     __tablename__ = "plans"
@@ -93,7 +150,8 @@ class UsageEvent(Base):
     subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
-    call_id = Column(String, unique=True, nullable=True)
+    call_id = Column(String, unique=True, nullable=False)
+    call_log_id = Column(Integer, ForeignKey("call_logs.id"), unique=True, nullable=True, index=True)
     started_at = Column(DateTime, nullable=False)
     ended_at = Column(DateTime, nullable=False)
     billed_seconds = Column(Integer, nullable=False)
@@ -112,14 +170,22 @@ class PhoneNumber(Base):
     provider = Column(String, nullable=False, default="ehiweb")
     monthly_cost_cents = Column(Integer, nullable=False, default=200)
     status = Column(String, nullable=False, default="active") # active, pending_deprovision, released
+    notes = Column(String, nullable=True)
+    office_phone_e164 = Column(String, nullable=True)
+    timezone = Column(String, nullable=False, default="Europe/Rome")
+    open_hours_json = Column(JSON, nullable=False, default={"days": ["Mon", "Tue", "Wed", "Thu", "Fri"], "hours": ["09:00", "17:00"]})
     deprovision_at = Column(DateTime, nullable=True)
     released_at = Column(DateTime, nullable=True)
     notified_at = Column(DateTime, nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="phone_numbers")
+
+    @validates("e164", "office_phone_e164")
+    def validate_phone(self, key, value):
+        return normalize_phone_number(value)
 
 class AuditEvent(Base):
     __tablename__ = "audit_events"
@@ -132,3 +198,52 @@ class AuditEvent(Base):
     entity_type = Column(String, nullable=True) # 'user', 'subscription'
     entity_id = Column(String, nullable=True) # ID of the entity
     meta_json = Column(JSON, nullable=True) # Extra details
+
+class AgentRouting(Base):
+    __tablename__ = "agent_routing"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    agent_id = Column(String, nullable=False)
+    phone_number_id = Column(Integer, ForeignKey("phone_numbers.id"), nullable=True)
+    status = Column(String, default="active", nullable=False)  # active, unassigned
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    last_event_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+    phone_number = relationship("PhoneNumber")
+
+class UnassignedEvent(Base):
+    __tablename__ = "unassigned_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String, index=True, nullable=True)
+    phone_number = Column(String, nullable=True)
+    payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User")
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sender_type = Column(String, nullable=False) # 'client' or 'admin'
+    message = Column(Text, nullable=False)
+    read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="chat_messages")

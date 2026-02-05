@@ -1,6 +1,7 @@
 import logging
+import os
 import sys
-import structlog
+# import structlog
 from contextvars import ContextVar
 
 # Context var for Correlation ID
@@ -8,40 +9,27 @@ correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
 
 def configure_logging():
     """
-    Configures structured logging with structlog and standard logging.
+    Configures standard logging with specific format for diagnosis.
     """
-    shared_processors = [
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-    ]
-
-    structlog.configure(
-        processors=shared_processors + [
-            structlog.processors.JSONRenderer()
-        ],
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=True,
-    )
-
-    # Configure Standard Library Logging
-    formatter = structlog.stdlib.ProcessorFormatter(
-        foreign_pre_chain=shared_processors,
-        processors=[
-            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            structlog.processors.JSONRenderer(),
-        ],
-    )
-
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
-
     root_logger = logging.getLogger()
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
+    has_capture_handler = any(handler.__class__.__name__ == "LogCaptureHandler" for handler in root_logger.handlers)
+    is_pytest = bool(os.getenv("PYTEST_CURRENT_TEST")) or has_capture_handler
+    if not is_pytest:
+        # Remove existing handlers to avoid duplication if re-configured
+        if root_logger.handlers:
+            for handler in root_logger.handlers:
+                root_logger.removeHandler(handler)
 
-    # Suppress uvicorn access logs duplicate
+    logging.basicConfig(
+        format='[%(asctime)s] STEP: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        level=logging.INFO,
+        force=not is_pytest
+    )
+
+    # Suppress uvicorn access logs duplicate if needed
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 def get_logger(name):
-    return structlog.get_logger(name)
+    # return structlog.get_logger(name)
+    return logging.getLogger(name)

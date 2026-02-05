@@ -1,28 +1,180 @@
 import os
 import json
+import httpx
 from typing import Any, Dict, Optional, List
+from sqlalchemy.orm import Session
 from openai import OpenAI
+from db import SessionLocal
+from models import CallLog
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger("call_utils")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-LOGS_DIR = Path("logs")
-LOGS_DIR.mkdir(exist_ok=True)
-
-def log_call(agent_id: str, data: Dict[str, Any]):
-    """Salva una riga JSON in logs/<agent_id>.log"""
-    log_path = LOGS_DIR / f"{agent_id}.log"
+def log_call(
+    agent_id: str,
+    data: Dict[str, Any],
+    user_id: Optional[int] = None,
+    db: Optional[Session] = None,
+) -> Optional[int]:
+    """Salva una riga JSON in DB (CallLog)"""
+    timestamp = datetime.utcnow()
     entry = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": timestamp.isoformat(),
         "agent_id": agent_id,
         "data": data
     }
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    logger.info(f"[LOG] Salvata chiamata in {log_path}")
+    try:
+        session = db or SessionLocal()
+        call_log = CallLog(
+            agent_id=agent_id,
+            user_id=user_id,
+            timestamp=timestamp,
+            text=data.get("summary") or data.get("transcript_text"),
+            status=data.get("status"),
+            raw_data=entry
+        )
+        session.add(call_log)
+        session.commit()
+        logger.info(f"[LOG] Salvata chiamata su DB per agent {agent_id}")
+        return call_log.id
+    except Exception as exc:
+        logger.warning(f"[LOG] DB write failed for agent {agent_id}: {exc}")
+        return None
+    finally:
+        if db is None:
+            try:
+                session.close()
+            except Exception:
+                pass
+
+def upsert_call_log(
+    agent_id: str,
+    data: Dict[str, Any],
+    user_id: Optional[int] = None,
+    db: Optional[Session] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Salva o aggiorna una chiamata su DB (CallLog).
+    Cerca un duplicato (conversation_id o call_id) negli ultimi 2 giorni.
+    """
+    timestamp = datetime.utcnow()
+
+    # Identify unique key (conversation_id or call_id)
+    # ElevenLabs webhook uses 'conversation_id'
+    # Jobs use 'call_id' which is derived from conversation_id/call_sid
+    # We expect 'conversation_id' or 'call_id' in data.
+
+    unique_id = data.get("conversation_id") or data.get("call_id")
+
+    if not unique_id:
+        logger.warning(f"[LOG] upsert_call_log called without conversation_id or call_id for agent {agent_id}. Falling back to blind insert.")
+        call_log_id = log_call(agent_id, data, user_id=user_id, db=db) # Fallback to legacy
+        return {"id": call_log_id, "created": True} if call_log_id else None
+
+    try:
+        session = db or SessionLocal()
+
+        # 1. Search for existing log in recent window (optimization)
+        # Assuming most updates happen within hours.
+        search_window = timestamp - timedelta(days=2)
+
+        candidates = session.query(CallLog).filter(
+            CallLog.agent_id == agent_id,
+            CallLog.timestamp >= search_window
+        ).all()
+
+        target_log = None
+        for log in candidates:
+            raw = log.raw_data or {}
+            inner_data = raw.get("data", {})
+            existing_id = inner_data.get("conversation_id") or inner_data.get("call_id")
+            if existing_id == unique_id:
+                target_log = log
+                break
+
+        entry = {
+            "timestamp": timestamp.isoformat(),
+            "agent_id": agent_id,
+            "data": data
+        }
+
+        if target_log:
+            # UPDATE
+            # Merge data? Or overwrite?
+            # The job adds enriched analysis. The webhook adds basic transcript.
+            # We want to preserve existing fields if we are updating.
+
+            # Simple merge: Update top-level fields. Deep merge 'data' if needed.
+            # Ideally we want the latest 'data' but preserving analysis if not present in new data.
+            # But the job sends the FULL data including analysis.
+            # The webhook sends data WITHOUT analysis (or empty).
+            # If webhook comes AFTER job (unlikely), it might overwrite analysis with empty?
+            # Webhook comes first usually. Job runs later.
+            # So Job overwrites Webhook data. This is desired.
+
+            # What if Webhook comes AGAIN (idempotency)?
+            # If we already have analysis (from job), and webhook comes again with basic data, we don't want to wipe analysis.
+
+            current_raw = target_log.raw_data or {}
+            current_data = current_raw.get("data", {})
+
+            # If current has 'analysis' and new data doesn't, keep current analysis
+            if "analysis" in current_data and not data.get("analysis"):
+                data["analysis"] = current_data["analysis"]
+
+            merged_data = current_data.copy()
+            for key, value in data.items():
+                if value is not None:
+                    merged_data[key] = value
+
+            summary_text = merged_data.get("summary") or merged_data.get("transcript_text")
+            if summary_text:
+                target_log.text = summary_text
+            target_log.status = merged_data.get("status") or target_log.status
+            if user_id and not target_log.user_id:
+                target_log.user_id = user_id
+
+            # Update raw_data
+            entry["data"] = merged_data
+            target_log.raw_data = entry
+
+            logger.info(f"[LOG] Updated existing CallLog for {unique_id}")
+            call_log_id = target_log.id
+            created = False
+        else:
+            # INSERT
+            call_log = CallLog(
+                agent_id=agent_id,
+                user_id=user_id,
+                timestamp=timestamp,
+                text=data.get("summary") or data.get("transcript_text"),
+                status=data.get("status"),
+                raw_data=entry
+            )
+            session.add(call_log)
+            session.flush()
+            logger.info(f"[LOG] Inserted new CallLog for {unique_id}")
+            call_log_id = call_log.id
+            created = True
+
+        session.commit()
+        if not call_log_id:
+            call_log_id = target_log.id if target_log else None
+        return {"id": call_log_id, "created": created}
+
+    except Exception as exc:
+        logger.warning(f"[LOG] DB upsert failed for agent {agent_id}: {exc}")
+        session.rollback()
+        return None
+    finally:
+        if db is None:
+            try:
+                session.close()
+            except Exception:
+                pass
 
 def extract_transcript_text(payload: dict) -> str:
     """
@@ -86,10 +238,17 @@ Transcript:
 \"\"\"{combined_text}\"\"\"
 """
 
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": instructions}],
-    )
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": instructions}],
+        )
+    except (httpx.HTTPError, TimeoutError) as exc:
+        logger.error("[OPENAI] Network error during summarization: %s", exc)
+        raise
+    except Exception as exc:
+        logger.error("[OPENAI] Unexpected error during summarization: %s", exc)
+        raise
 
     raw = resp.choices[0].message.content
 
@@ -163,7 +322,7 @@ def build_email_body_html(
 
     <div style="max-width: 650px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
 
-      <h2 style="color: #333;">Segreteria IA – Nuova chiamata per <span style="color:#0066cc;">{studio_name}</span></h2>
+      <h2 style="color: #333;">Mr.Automa – Nuova chiamata per <span style="color:#0066cc;">{studio_name}</span></h2>
       <p style="color:#777; font-size:13px; margin-top:4px;">Servizio gestito da {agency_name}</p>
 
       <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
@@ -197,7 +356,7 @@ def build_email_body_html(
       <p>{analysis.get('suggested_followup')}</p>
 
       <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0 15px;">
-      <p style="color:#999; font-size:12px; text-align:center;">Email generata automaticamente dalla Segreteria IA.</p>
+      <p style="color:#999; font-size:12px; text-align:center;">Email generata automaticamente da Mr.Automa.</p>
 
     </div>
   </body>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piani e Prezzi - Segreteria IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                        display: ['"Newsreader"', 'serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Newsreader:opsz,wght@6..72,400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/ui.css">
+    <link rel="icon" href="/static/logo.png" type="image/png">
+</head>
+<body class="ui-shell text-neutral-900">
+    <nav class="ui-topbar">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <a href="/" class="flex items-center gap-3">
+                <span class="w-9 h-9 rounded-2xl bg-neutral-900 text-white flex items-center justify-center font-semibold">S</span>
+                <span class="font-display text-lg">Segreteria IA</span>
+            </a>
+            <a href="/dashboard" class="text-sm text-neutral-600 hover:text-neutral-900 transition-colors">&larr; Torna alla dashboard</a>
+        </div>
+    </nav>
+
+    <main class="py-16">
+        <div class="max-w-6xl mx-auto px-6">
+            <div class="mb-12">
+                <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Piani</p>
+                <h1 class="font-display text-3xl md:text-4xl text-neutral-900 mt-3">Scegli il piano giusto per il tuo volume</h1>
+                <p class="text-neutral-500 mt-3 max-w-2xl">I piani includono report automatici, gestione 24/7 e un numero dedicato. Puoi cambiare in qualsiasi momento.</p>
+            </div>
+
+            {% include 'pricing_partial.html' %}
+        </div>
+    </main>
+</body>
+</html>

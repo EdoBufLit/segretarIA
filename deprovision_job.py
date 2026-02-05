@@ -3,6 +3,9 @@ from db import SessionLocal
 from models import PhoneNumber
 from mailer import send_email
 import os
+import logging
+
+logger = logging.getLogger("deprovision_job")
 
 def run_deprovision_job():
     db = SessionLocal()
@@ -46,9 +49,13 @@ def run_deprovision_job():
             </ol>
             """
 
-            send_email(admin_email, subject, body)
-            number.notified_at = now
-            db.commit()
+            try:
+                send_email(admin_email, subject, body)
+                number.notified_at = now
+                db.commit()
+            except Exception as e:
+                logger.error("Failed to send deprovision email for %s: %s", number.e164, e)
+                db.rollback()
 
         print(f"Sent {len(numbers_to_deprovision)} deprovisioning notifications.")
 

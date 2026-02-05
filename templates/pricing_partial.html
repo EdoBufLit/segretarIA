@@ -1,0 +1,92 @@
+<script src="/static/billing.js"></script>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Starter Plan -->
+    <div class="ui-card p-8 flex flex-col">
+        <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Starter</p>
+        <h3 class="font-display text-2xl text-neutral-900 mt-3">{{ plans.starter.name }}</h3>
+        <p class="text-sm text-neutral-500 mt-2">{{ plans.starter.description }}</p>
+        <div class="mt-6">
+            <span class="font-display text-4xl text-neutral-900">{{ plans.starter.price_display }}</span>
+            <span class="text-sm text-neutral-500">{{ plans.starter.interval_display }}</span>
+            <p class="text-xs text-neutral-400 mt-2">{{ plans.starter.minutes }} minuti inclusi</p>
+        </div>
+        <ul class="mt-6 space-y-3 text-sm text-neutral-600 flex-1">
+            {% for feature in plans.starter.marketing_features %}
+            <li class="flex items-start gap-2">
+                <span class="mt-1 h-2 w-2 rounded-full bg-emerald-500"></span>
+                <span>{{ feature }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if user %}
+        <button onclick="buyPlan('{{ plans.starter.code }}')" class="ui-button ui-button-ghost mt-8 px-5 py-2 text-sm w-full">
+            Acquista {{ plans.starter.name }}
+        </button>
+        {% else %}
+        <a href="/login" class="ui-button ui-button-ghost mt-8 px-5 py-2 text-sm w-full text-center">
+            Inizia ora
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Pro Plan -->
+    <div class="ui-card p-8 flex flex-col border-2 border-emerald-200 bg-emerald-50/40">
+        <div class="flex items-center justify-between">
+            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Consigliato</p>
+            <span class="ui-badge ui-badge--success">Popolare</span>
+        </div>
+        <h3 class="font-display text-2xl text-neutral-900 mt-3">{{ plans.pro.name }}</h3>
+        <p class="text-sm text-neutral-500 mt-2">{{ plans.pro.description }}</p>
+        <div class="mt-6">
+            <span class="font-display text-4xl text-neutral-900">{{ plans.pro.price_display }}</span>
+            <span class="text-sm text-neutral-500">{{ plans.pro.interval_display }}</span>
+            <p class="text-xs text-neutral-400 mt-2">{{ plans.pro.minutes }} minuti inclusi</p>
+        </div>
+        <ul class="mt-6 space-y-3 text-sm text-neutral-600 flex-1">
+            {% for feature in plans.pro.marketing_features %}
+            <li class="flex items-start gap-2">
+                <span class="mt-1 h-2 w-2 rounded-full bg-emerald-600"></span>
+                <span>{{ feature }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if user %}
+        <button onclick="buyPlan('{{ plans.pro.code }}')" class="ui-button ui-button-primary mt-8 px-5 py-2 text-sm w-full">
+            Acquista {{ plans.pro.name }}
+        </button>
+        {% else %}
+        <a href="/login" class="ui-button ui-button-primary mt-8 px-5 py-2 text-sm w-full text-center">
+            Inizia ora
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Business Plan -->
+    <div class="ui-card p-8 flex flex-col">
+        <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Business</p>
+        <h3 class="font-display text-2xl text-neutral-900 mt-3">{{ plans.business.name }}</h3>
+        <p class="text-sm text-neutral-500 mt-2">{{ plans.business.description }}</p>
+        <div class="mt-6">
+            <span class="font-display text-4xl text-neutral-900">{{ plans.business.price_display }}</span>
+            <span class="text-sm text-neutral-500">{{ plans.business.interval_display }}</span>
+            <p class="text-xs text-neutral-400 mt-2">{{ plans.business.minutes }} minuti inclusi</p>
+        </div>
+        <ul class="mt-6 space-y-3 text-sm text-neutral-600 flex-1">
+            {% for feature in plans.business.marketing_features %}
+            <li class="flex items-start gap-2">
+                <span class="mt-1 h-2 w-2 rounded-full bg-emerald-500"></span>
+                <span>{{ feature }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if user %}
+        <button onclick="buyPlan('{{ plans.business.code }}')" class="ui-button ui-button-ghost mt-8 px-5 py-2 text-sm w-full">
+            Acquista {{ plans.business.name }}
+        </button>
+        {% else %}
+        <a href="/login" class="ui-button ui-button-ghost mt-8 px-5 py-2 text-sm w-full text-center">
+            Inizia ora
+        </a>
+        {% endif %}
+    </div>
+</div>

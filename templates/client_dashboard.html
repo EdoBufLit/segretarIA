@@ -1,0 +1,487 @@
+﻿<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Segreteria IA – Dashboard</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"IBM Plex Sans"', 'sans-serif'],
+                        display: ['"Newsreader"', 'serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Newsreader:opsz,wght@6..72,400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/ui.css">`n    <link rel="icon" href="/static/logo.png" type="image/png">
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d3cdc4; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #b9b1a8; }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden ui-shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar ui-sidebar w-64 flex-shrink-0 flex flex-col hidden md:flex h-full">
+        <div class="px-6 py-6 border-b border-neutral-200">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-2xl bg-neutral-900 text-white flex items-center justify-center font-semibold">S</div>
+                <div>
+                    <p class="text-sm uppercase tracking-[0.2em] text-neutral-400">Segreteria IA</p>
+                    <p class="font-display text-lg">Dashboard Clienti</p>
+                </div>
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto px-4 py-6 space-y-1">
+            <a href="#" data-section="dashboard" onclick="openSection('dashboard')" class="nav-item nav-item-active ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
+                <i data-feather="grid" class="w-4 h-4"></i>
+                Panoramica
+            </a>
+            <a href="#" data-section="logs" onclick="openSection('logs')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
+                <i data-feather="list" class="w-4 h-4"></i>
+                Storico Chiamate
+            </a>
+            <a href="#" data-section="analytics" onclick="openSection('analytics')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
+                <i data-feather="bar-chart-2" class="w-4 h-4"></i>
+                Analisi
+            </a>
+            <a href="#" data-section="numbers" onclick="openSection('numbers')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
+                <i data-feather="phone" class="w-4 h-4"></i>
+                Numeri
+            </a>
+            <a href="#" data-section="chat" onclick="openSection('chat')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900 relative">
+                <i data-feather="message-square" class="w-4 h-4"></i>
+                Chat supporto
+                <span id="nav-chat-badge" class="hidden absolute right-3 top-2 w-2 h-2 bg-red-500 rounded-full"></span>
+            </a>
+            <div class="pt-6 mt-6 border-t border-neutral-200"></div>
+            <a href="#" data-section="settings" onclick="openSection('settings')" class="nav-item ui-nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
+                <i data-feather="settings" class="w-4 h-4"></i>
+                Impostazioni
+            </a>
+        </nav>
+
+        <div class="p-4 border-t border-neutral-200">
+            <div class="flex items-center gap-3 px-4 py-3 bg-neutral-100/70 rounded-2xl">
+                <div class="w-9 h-9 rounded-full bg-neutral-900/10 text-neutral-700 flex items-center justify-center text-xs font-bold">
+                    {{ user.username[:2].upper() }}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-neutral-900 truncate">{{ user.username }}</p>
+                    <p class="text-xs text-neutral-500 truncate">{{ user.email }}</p>
+                </div>
+                <a href="/logout" class="text-neutral-400 hover:text-red-500 transition-colors" title="Logout">
+                    <i data-feather="log-out" class="w-4 h-4"></i>
+                </a>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MOBILE HEADER -->
+    <div class="md:hidden fixed top-0 left-0 right-0 h-16 ui-topbar z-40 flex items-center justify-between px-4">
+        <span class="font-display text-lg">Segreteria IA</span>
+        <button id="mobile-menu-btn" class="p-2 text-neutral-600">
+            <i data-feather="menu"></i>
+        </button>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 overflow-auto pt-16 md:pt-0">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            {% set service_active = user.is_active and subscription and subscription.state == 'active' %}
+            {% set cancel_requested = subscription and subscription.cancel_requested_at %}
+            {% set can_cancel = subscription and subscription.state == 'active' and not subscription.is_manual and subscription.stripe_subscription_id and not cancel_requested %}
+
+            {% if not service_active %}
+            <div class="ui-card-soft px-4 py-3 mb-8 flex items-center gap-3 border border-yellow-200 text-yellow-800">
+                <span class="text-lg">⚠️</span>
+                <span class="text-sm font-medium">Il tuo piano è scaduto o il servizio è disattivato. Rinnova per continuare a ricevere le chiamate.</span>
+            </div>
+            {% endif %}
+
+            <!-- TOP HEADER -->
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Panoramica</p>
+                    <h1 id="page-title" class="font-display text-3xl text-neutral-900">Stato del servizio</h1>
+                    <p class="text-neutral-500 mt-2">Tutto quello che serve per capire se la segreteria sta lavorando per te.</p>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-3">
+                    {% set minutes_exhausted = minutes_remaining <= 0 %}
+                    {% set payment_suspended = (not user.is_active) or (subscription and subscription.state in ['past_due', 'canceled']) %}
+                    {% if minutes_exhausted %}
+                        <span class="ui-badge ui-badge--warn">
+                            <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                            Minuti Esauriti
+                        </span>
+                    {% elif payment_suspended %}
+                        <span class="ui-badge ui-badge--danger">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                            Sospeso (Pagamento)
+                        </span>
+                    {% elif subscription and subscription.state == 'active' and user.is_active %}
+                        <span class="ui-badge ui-badge--success">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Servizio Attivo
+                        </span>
+                    {% else %}
+                        <span class="ui-badge ui-badge--danger">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                            Servizio Sospeso
+                        </span>
+                    {% endif %}
+
+                    {% if subscription %}
+                        <span class="ui-badge">{{ subscription.plan_code }}</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- ACTIVE CALL BANNER -->
+            <div id="active-call-banner" class="hidden ui-card-soft px-5 py-4 mb-8 border border-emerald-200">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div class="flex items-start gap-3">
+                        <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                            <i data-feather="phone-call" class="w-5 h-5"></i>
+                        </div>
+                        <div id="active-call-info" class="text-sm text-neutral-600"></div>
+                    </div>
+                    <div id="active-call-actions" class="flex items-center gap-3"></div>
+                </div>
+            </div>
+
+            <!-- DASHBOARD SECTION -->
+            <section id="section-dashboard" class="section space-y-8">
+                {% if not service_active %}
+                <div class="dashboard-card p-8 text-center">
+                    <div class="mx-auto w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
+                        <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
+                    </div>
+                    <h3 class="font-display text-xl text-neutral-900">Dashboard limitata</h3>
+                    <p class="text-neutral-500 mt-2">Riattiva il tuo piano per accedere ai grafici e alle statistiche.</p>
+                </div>
+                {% else %}
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="dashboard-card lg:col-span-2 p-8">
+                        <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+                            <div>
+                                <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Disponibilita</p>
+                                <h2 class="font-display text-2xl text-neutral-900 mt-2">Copertura chiamate 24/7</h2>
+                                <p class="text-neutral-500 mt-2 max-w-xl">La tua segreteria virtuale sta rispondendo in tempo reale. Il riepilogo dei minuti ti indica quando intervenire.</p>
+                            </div>
+                            <div class="ui-card-soft px-5 py-4 rounded-2xl">
+                                <p class="text-xs uppercase tracking-[0.25em] text-neutral-400">Rinnovo</p>
+                                <p class="text-sm font-medium text-neutral-900 mt-2">{{ subscription.cycle_end[:10] if subscription and subscription.cycle_end else '—' }}</p>
+                                <p class="text-xs text-neutral-500">Prossimo reset minuti</p>
+                            </div>
+                        </div>
+
+                        <div class="mt-10">
+                            <div class="flex items-end gap-4">
+                                <span class="ui-kpi text-5xl text-neutral-900">{{ minutes_remaining | round(0) | int }}</span>
+                                <div class="pb-1">
+                                    <p class="text-sm text-neutral-500">minuti disponibili</p>
+                                    <p class="text-xs text-neutral-400">su {{ minutes_limit }} totali</p>
+                                </div>
+                            </div>
+                            <div class="ui-progress h-2 mt-4">
+                                <div class="ui-progress__bar" style="width: {{ (minutes_used / minutes_limit * 100) if minutes_limit > 0 else 0 }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card p-6 flex flex-col justify-between">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Piano</p>
+                            <h3 class="font-display text-xl text-neutral-900 mt-2">{{ subscription.plan_code | upper if subscription else '—' }}</h3>
+                            <p class="text-sm text-neutral-500 mt-2">Pensato per offrire una copertura continua, con report sintetici dopo ogni chiamata.</p>
+                        </div>
+                        <div class="mt-6 flex flex-col gap-3">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <a href="/billing/plans" class="ui-button ui-button-ghost inline-flex items-center px-4 py-2 text-sm">Gestisci piano</a>
+                                {% if can_cancel %}
+                                <button id="cancel-subscription-btn" class="ui-button ui-button-danger inline-flex items-center px-4 py-2 text-sm">Disdici piano</button>
+                                {% endif %}
+                            </div>
+                            <div id="cancel-subscription-status" class="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-lg {{ '' if cancel_requested else 'hidden' }}" data-cycle-end="{{ subscription.cycle_end[:10] if subscription and subscription.cycle_end else '—' }}">
+                                Disdetta programmata · attivo fino al <span id="cancel-subscription-date">{{ subscription.cycle_end[:10] if subscription and subscription.cycle_end else '—' }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="dashboard-card p-6">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Oggi</p>
+                            <i data-feather="phone-incoming" class="w-4 h-4 text-neutral-400"></i>
+                        </div>
+                        <span id="kpi-today" class="font-display text-3xl text-neutral-900 block mt-4">—</span>
+                        <p class="text-xs text-neutral-500 mt-2">Chiamate gestite oggi</p>
+                    </div>
+                    <div class="dashboard-card p-6">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">7 Giorni</p>
+                            <i data-feather="calendar" class="w-4 h-4 text-neutral-400"></i>
+                        </div>
+                        <span id="kpi-week" class="font-display text-3xl text-neutral-900 block mt-4">—</span>
+                        <p class="text-xs text-neutral-500 mt-2">Volume settimanale</p>
+                    </div>
+                    <div class="dashboard-card p-6">
+                        <div class="flex items-center justify-between">
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Criticita</p>
+                            <i data-feather="alert-circle" class="w-4 h-4 text-neutral-400"></i>
+                        </div>
+                        <span id="kpi-errors" class="font-display text-3xl text-red-600 block mt-4">—</span>
+                        <p class="text-xs text-neutral-500 mt-2">Eventi da rivedere</p>
+                    </div>
+                </div>
+
+                <div class="dashboard-card p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.3em] text-neutral-400">Trend</p>
+                            <h3 class="font-display text-xl text-neutral-900">Attivita recente</h3>
+                        </div>
+                        <span class="text-xs text-neutral-400">Ultimi 30 giorni</span>
+                    </div>
+                    <div class="relative h-64 w-full">
+                        <canvas id="chart_all_clients"></canvas>
+                    </div>
+                </div>
+                {% endif %}
+            </section>
+
+            <!-- LOGS SECTION -->
+            <section id="section-logs" class="section hidden space-y-6">
+                {% if not service_active %}
+                <div class="dashboard-card p-8 text-center">
+                    <div class="mx-auto w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
+                        <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
+                    </div>
+                    <h3 class="font-display text-xl text-neutral-900">Registro bloccato</h3>
+                    <p class="text-neutral-500 mt-2">Riattiva il servizio per consultare lo storico chiamate.</p>
+                </div>
+                {% else %}
+                <div class="dashboard-card overflow-hidden">
+                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center">
+                        <h3 class="font-display text-lg text-neutral-900">Registro chiamate</h3>
+                        <button onclick="loadLogsTable(null)" class="p-2 hover:bg-neutral-100 rounded-full transition-colors text-neutral-500">
+                            <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-neutral-50 border-b border-neutral-100">
+                                <tr>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Data</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Numero</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Durata</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Riassunto</th>
+                                    <th class="px-6 py-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-table" class="divide-y divide-neutral-100 bg-white">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="px-6 py-4 border-t border-neutral-100 flex items-center justify-between bg-neutral-50">
+                        <button id="logs-prev" onclick="logsPrev()" class="text-sm font-medium text-neutral-600 hover:text-neutral-900 disabled:opacity-50">Indietro</button>
+                        <span id="logs-info" class="text-xs text-neutral-500"></span>
+                        <button id="logs-next" onclick="logsNext()" class="text-sm font-medium text-neutral-600 hover:text-neutral-900 disabled:opacity-50">Avanti</button>
+                    </div>
+                </div>
+                {% endif %}
+            </section>
+
+            <!-- ANALYTICS SECTION -->
+            <section id="section-analytics" class="section hidden space-y-6">
+                {% if not service_active %}
+                <div class="dashboard-card p-8 text-center">
+                    <div class="mx-auto w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
+                        <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
+                    </div>
+                    <h3 class="font-display text-xl text-neutral-900">Analytics bloccati</h3>
+                    <p class="text-neutral-500 mt-2">Le statistiche non sono disponibili senza un piano attivo.</p>
+                </div>
+                {% else %}
+                <div class="dashboard-card p-6">
+                    <h3 class="font-display text-xl text-neutral-900 mb-6">Distribuzione oraria</h3>
+                    <div id="heatmap-container" class="w-full overflow-x-auto pb-2">
+                        <div class="text-neutral-400 text-sm animate-pulse">Caricamento dati...</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="dashboard-card p-6">
+                        <h3 class="font-display text-lg text-neutral-900 mb-4">Categorie</h3>
+                        <ul id="analytics-category-list" class="space-y-2 text-sm text-neutral-600"></ul>
+                    </div>
+                    <div class="dashboard-card p-6">
+                        <h3 class="font-display text-lg text-neutral-900 mb-4">Urgenza</h3>
+                        <ul id="analytics-urgency-list" class="space-y-2 text-sm text-neutral-600"></ul>
+                    </div>
+                </div>
+                {% endif %}
+            </section>
+
+            <!-- NUMBERS SECTION -->
+            <section id="section-numbers" class="section hidden space-y-6">
+                {% if not service_active %}
+                <div class="dashboard-card p-8 text-center">
+                    <div class="mx-auto w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center mb-4">
+                        <i data-feather="lock" class="w-6 h-6 text-yellow-600"></i>
+                    </div>
+                    <h3 class="font-display text-xl text-neutral-900">Gestione numeri bloccata</h3>
+                    <p class="text-neutral-500 mt-2">Non puoi gestire i numeri finché il servizio è sospeso.</p>
+                </div>
+                {% else %}
+                <div class="dashboard-card overflow-hidden">
+                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center">
+                        <h3 class="font-display text-lg text-neutral-900">Numeri assegnati</h3>
+                        <button onclick="loadClientNumbers()" class="p-2 hover:bg-neutral-100 rounded-full transition-colors text-neutral-500" title="Aggiorna">
+                            <i data-feather="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-neutral-50 border-b border-neutral-100">
+                                <tr>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Numero</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Agente</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Note</th>
+                                    <th class="px-6 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Stato</th>
+                                    <th class="px-6 py-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="numbers-table-body" class="divide-y divide-neutral-100 bg-white">
+                                <tr><td colspan="5" class="text-center py-8 text-neutral-500 text-sm">Caricamento...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+            </section>
+
+            <!-- CHAT SECTION -->
+            <section id="section-chat" class="section hidden h-[calc(100vh-12rem)] flex flex-col">
+                <div class="dashboard-card flex flex-col h-full overflow-hidden">
+                    <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
+                        <h3 class="font-display text-lg text-neutral-900 flex items-center gap-2">
+                            <i data-feather="message-circle" class="w-4 h-4 text-neutral-500"></i>
+                            Supporto diretto
+                        </h3>
+                        <div class="text-xs text-neutral-400">Rispondiamo il prima possibile</div>
+                    </div>
+
+                    <div id="chat-messages-container" class="flex-1 overflow-y-auto p-6 space-y-4 bg-white flex flex-col">
+                        <div class="text-center text-neutral-400 text-sm my-auto">Caricamento messaggi...</div>
+                    </div>
+
+                    <div class="p-4 border-t border-neutral-100 bg-neutral-50">
+                        <form onsubmit="handleSendChat(event)" class="flex gap-2">
+                            <textarea id="chat-input" required placeholder="Scrivi un messaggio..." class="ui-input text-sm h-12 min-h-[3rem] max-h-32 resize-none flex-1"></textarea>
+                            <button type="submit" class="ui-button ui-button-primary h-12 w-12 flex items-center justify-center">
+                                <i data-feather="send" class="w-4 h-4"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SETTINGS SECTION -->
+            <section id="section-settings" class="section hidden">
+                <div class="dashboard-card p-8 max-w-2xl">
+                    <h3 class="font-display text-2xl text-neutral-900 mb-2">Impostazioni account</h3>
+                    <p class="text-neutral-500 mb-8">Gestisci le preferenze principali del tuo servizio.</p>
+
+                    <div class="space-y-6">
+                        <div class="pb-6 border-b border-neutral-100">
+                            <h4 class="text-sm font-semibold text-neutral-900 mb-1">Piano attivo</h4>
+                            <div class="flex items-center justify-between">
+                                <span class="text-neutral-600">{{ subscription.plan_code | upper if subscription else 'Nessuno' }}</span>
+                                <a href="/billing/plans" class="text-sm font-medium text-neutral-900 hover:underline">Cambia piano</a>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4 class="text-sm font-semibold text-neutral-900 mb-1">Supporto</h4>
+                            <p class="text-sm text-neutral-500 mb-4">Hai bisogno di aiuto con la configurazione?</p>
+                            <a href="mailto:support@segreteriaia.it" class="ui-button ui-button-ghost inline-flex items-center px-4 py-2 text-sm">
+                                Contatta il supporto
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- CANCEL SUBSCRIPTION MODAL -->
+    <div id="cancel-subscription-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity">
+        <div class="ui-card max-w-md w-full overflow-hidden scale-95 opacity-0 transition-all" role="dialog" aria-modal="true">
+            <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
+                <h3 class="font-display text-lg text-neutral-900">Disdici piano</h3>
+                <button id="cancel-subscription-close" class="text-neutral-400 hover:text-neutral-600 transition-colors">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-3 text-sm text-neutral-600">
+                <p>Confermi la disdetta? Il piano rimarrà attivo fino alla fine del periodo corrente.</p>
+                <p class="text-xs text-neutral-500">Potrai riattivare in qualsiasi momento prima della scadenza.</p>
+            </div>
+            <div class="px-6 py-4 bg-neutral-50 text-right border-t border-neutral-100 flex justify-end gap-3">
+                <button id="cancel-subscription-dismiss" class="ui-button ui-button-ghost px-4 py-2 text-sm">Annulla</button>
+                <button id="confirm-cancel-subscription" class="ui-button ui-button-danger px-4 py-2 text-sm">Conferma disdetta</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOG DETAIL MODAL -->
+    <div id="log-detail-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity">
+        <div class="ui-card max-w-lg w-full overflow-hidden" role="dialog" aria-modal="true">
+            <div class="px-6 py-4 border-b border-neutral-100 flex justify-between items-center bg-neutral-50">
+                <h3 class="font-display text-lg text-neutral-900">Dettaglio chiamata</h3>
+                <button onclick="closeLogDetail()" class="text-neutral-400 hover:text-neutral-600 transition-colors">
+                    <i data-feather="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-6 max-h-[70vh] overflow-y-auto">
+                <div id="log-detail-content" class="space-y-6">
+                    <!-- Content injected by JS -->
+                </div>
+            </div>
+            <div class="px-6 py-4 bg-neutral-50 text-right border-t border-neutral-100">
+                <button onclick="closeLogDetail()" class="ui-button ui-button-primary px-4 py-2 text-sm">Chiudi</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.user = {{ user | tojson }};
+    </script>
+    <script src="/static/client_dashboard.js"></script>
+    <script>
+        feather.replace();
+    </script>
+</body>
+</html>
+

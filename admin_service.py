@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
 import os
-import json
 import csv
+import json
+import logging
 from io import StringIO
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -10,6 +11,8 @@ from models import User, Agent, Plan, Subscription, PhoneNumber, UsageEvent
 from auth import hash_password, generate_random_password
 from mailer import send_email
 import audit_logger
+
+logger = logging.getLogger("admin_service")
 
 class AdminService:
     def __init__(self, db: Session):
@@ -109,44 +112,12 @@ class AdminService:
             admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
             subject = f"[REACTIVATE] Disdetta numero annullata per {phone_number.e164}"
             body = f"<p>La disdetta del numero <b>{phone_number.e164}</b> per il cliente {client.studio_name or client.username} è stata annullata a seguito della riattivazione della sottoscrizione.</p>"
-            send_email(admin_email, subject, body)
+            try:
+                send_email(admin_email, subject, body)
+            except Exception as exc:
+                logger.error("Failed to send reactivation email to %s: %s", admin_email, exc)
 
         return subscription
-
-    def sync_clients_to_json(self):
-        import json
-
-        clients_json_path = "clients.json"
-
-        try:
-            with open(clients_json_path, "r") as f:
-                clients_data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            clients_data = {}
-
-        updated_count = 0
-        created_count = 0
-
-        client_users = self.db.query(User).filter(User.role == "client").all()
-
-        for user in client_users:
-            for agent in user.agents:
-                agent_id_str = str(agent.agent_id)
-                if agent_id_str not in clients_data:
-                    created_count += 1
-                else:
-                    updated_count += 1
-
-                clients_data[agent_id_str] = {
-                    **clients_data.get(agent_id_str, {}),
-                    "studio_name": user.studio_name,
-                    "email_to": user.email
-                }
-
-        with open(clients_json_path, "w") as f:
-            json.dump(clients_data, f, indent=2, ensure_ascii=False)
-
-        return {"created": created_count, "updated": updated_count}
 
     def get_all_phone_numbers(self):
         return self.db.query(PhoneNumber).all()
@@ -156,7 +127,12 @@ class AdminService:
         if not user:
             raise ValueError("User not found")
 
-        new_phone = PhoneNumber(e164=e164, user_id=user_id)
+        new_phone = PhoneNumber(
+            e164=e164,
+            user_id=user_id,
+            status="active",
+            released_at=None
+        )
         self.db.add(new_phone)
         self.db.commit()
         self.db.refresh(new_phone)
@@ -169,7 +145,41 @@ class AdminService:
 
         phone.status = "released"
         phone.released_at = datetime.utcnow()
+        phone.user_id = None
         self.db.commit()
+        return phone
+
+    def reactivate_phone_number(self, phone_id: int, user_id: int, admin_username: str):
+        """
+        Reactivates a released phone number and assigns it to a user.
+        """
+        phone = self.db.query(PhoneNumber).filter_by(id=phone_id).first()
+        if not phone:
+            raise ValueError("Phone number not found")
+
+        if not phone.released_at:
+            raise ValueError("Phone number is not released")
+
+        user = self.db.query(User).filter_by(id=user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
+        phone.status = "active"
+        phone.released_at = None
+        phone.user_id = user.id
+        self.db.commit()
+
+        # Audit Log
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
+            action="reactivate_phone_number",
+            entity_type="phone_number",
+            entity_id=str(phone_id),
+            meta={"e164": phone.e164, "new_user_id": user_id},
+            admin_username=admin_username,
+            target_str=f"e164={phone.e164} user={user.username}"
+        )
         return phone
 
     def cancel_phone_number_deprovisioning(self, phone_id: int):
@@ -186,9 +196,38 @@ class AdminService:
             admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
             subject = f"[REACTIVATE] Disdetta numero annullata per {phone.e164}"
             body = f"<p>La disdetta del numero <b>{phone.e164}</b> è stata annullata manualmente dall'amministratore.</p>"
-            send_email(admin_email, subject, body)
+            try:
+                send_email(admin_email, subject, body)
+            except Exception as exc:
+                logger.error("Failed to send manual reactivation email to %s: %s", admin_email, exc)
 
         return phone
+
+    def delete_phone_number_permanent(self, phone_id: int, admin_username: str):
+        """
+        Hard delete of a phone number from the database.
+        Irreversible action.
+        """
+        phone = self.db.query(PhoneNumber).filter_by(id=phone_id).first()
+        if not phone:
+            raise ValueError("Phone number not found")
+
+        e164 = phone.e164
+        self.db.delete(phone)
+        self.db.commit()
+
+        # Audit Log
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
+            action="delete_phone_number_permanent",
+            entity_type="phone_number",
+            entity_id=str(phone_id),
+            meta={"e164": e164, "admin_username": admin_username},
+            admin_username=admin_username,
+            target_str=f"e164={e164}"
+        )
+        return True
 
     def reset_password_random(self, user_id: int, admin_username: str) -> str:
         """
@@ -228,7 +267,7 @@ class AdminService:
         except Exception as e:
             # We log the error but don't fail the transaction, as the PW is already changed.
             # However, the admin needs to know the PW to communicate it manually if email fails.
-            print(f"Failed to send reset email: {e}")
+            logger.error("Failed to send reset email to %s: %s", user.email, e)
 
         return new_password
 
@@ -285,7 +324,7 @@ class AdminService:
 
     def export_logs_csv_generator(self, from_date: datetime, to_date: datetime, client_filter: Optional[str] = None, admin_username: str = "system"):
         """
-        Exports logs from logs directory as a CSV generator.
+        Exports logs from DB (CallLog) as a CSV generator.
         Cols: Timestamp, AgentID, Caller, Status, Duration, Summary
         """
 
@@ -301,17 +340,18 @@ class AdminService:
 
         output = StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Timestamp", "AgentID", "Caller", "Status", "Duration", "Summary"])
+        writer.writerow(["Timestamp", "AgentID", "Caller", "Status", "Duration", "Summary", "Transcript", "AI_Analysis"])
         yield output.getvalue()
         output.seek(0)
         output.truncate(0)
 
-        logs_dir = "logs"
-        if not os.path.exists(logs_dir):
-            return
+        from models import CallLog
 
-        # Gather agent_ids to check
-        agent_ids = []
+        query = self.db.query(CallLog).filter(
+            CallLog.timestamp >= from_date,
+            CallLog.timestamp <= to_date
+        )
+
         if client_filter:
             # Check if client_filter is a User ID (integer)
             try:
@@ -320,62 +360,56 @@ class AdminService:
                 user = self.db.query(User).filter(User.id == user_id).first()
                 if user:
                     agent_ids = [agent.agent_id for agent in user.agents]
+                    query = query.filter(CallLog.agent_id.in_(agent_ids))
                 else:
-                    return
+                    return # No user found, empty result
             except ValueError:
+                # Assume it's an agent_id directly
                 if client_filter.replace("-", "").replace("_", "").isalnum():
-                     agent_ids = [client_filter]
+                     query = query.filter(CallLog.agent_id == client_filter)
                 else:
                      return
-        else:
-            # List all .log files
-            for filename in os.listdir(logs_dir):
-                if filename.endswith(".log"):
-                    agent_ids.append(filename[:-4])
 
-        for agent_id in agent_ids:
-            # Sanitize agent_id for path safety
-            safe_agent_id = os.path.basename(agent_id)
-            if safe_agent_id != agent_id:
-                continue
+        query = query.order_by(CallLog.timestamp.desc())
 
-            log_path = os.path.join(logs_dir, f"{safe_agent_id}.log")
-            if not os.path.exists(log_path):
-                continue
+        # Batch query
+        batch_size = 1000
+        offset = 0
+        while True:
+            logs = query.offset(offset).limit(batch_size).all()
+            if not logs:
+                break
 
-            with open(log_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                        ts_str = entry.get("timestamp")
-                        if not ts_str:
-                            continue
+            for log in logs:
+                ts_str = log.timestamp.isoformat() if log.timestamp else ""
 
-                        ts_dt = datetime.fromisoformat(ts_str)
-                        if from_date.tzinfo is None and ts_dt.tzinfo is not None:
-                            ts_dt = ts_dt.replace(tzinfo=None)
+                raw = log.raw_data or {}
+                data = raw.get("data", {})
 
-                        if not (from_date <= ts_dt <= to_date):
-                            continue
+                caller = data.get("caller_number", "N/D")
+                # Fallback to DB status if not in JSON, or vice versa
+                status = log.status or data.get("status", "success")
+                duration = data.get("duration_secs", "")
 
-                        data = entry.get("data", {})
+                # Analysis/Summary extraction
+                analysis = data.get("analysis", {})
+                summary = log.text or data.get("summary") or analysis.get("summary", "")
 
-                        caller = data.get("caller_number", "N/D")
-                        status = data.get("status", "success")
-                        duration = data.get("duration_secs", "")
-                        summary = data.get("summary") or data.get("analysis", {}).get("summary", "")
+                transcript = data.get("transcript_text", "")
+                analysis_json = json.dumps(analysis, ensure_ascii=False) if analysis else ""
 
-                        writer.writerow([
-                            ts_str,
-                            agent_id,
-                            caller,
-                            status,
-                            duration,
-                            summary
-                        ])
-                        yield output.getvalue()
-                        output.seek(0)
-                        output.truncate(0)
+                writer.writerow([
+                    ts_str,
+                    log.agent_id,
+                    caller,
+                    status,
+                    duration,
+                    summary,
+                    transcript,
+                    analysis_json
+                ])
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
 
-                    except (json.JSONDecodeError, ValueError):
-                        continue
+            offset += batch_size
