@@ -1,7 +1,12 @@
 from datetime import datetime, timedelta
 import os
+import json
+import csv
+from io import StringIO
+from typing import Optional
 from sqlalchemy.orm import Session
-from models import User, Agent, Plan, Subscription, PhoneNumber
+from sqlalchemy import func
+from models import User, Agent, Plan, Subscription, PhoneNumber, UsageEvent
 from auth import hash_password, generate_random_password
 from mailer import send_email
 import audit_logger
@@ -198,12 +203,16 @@ class AdminService:
         user.password_hash = hash_password(new_password)
         self.db.commit()
 
-        # Audit Log
-        audit_logger.log_action(
-            admin_username=admin_username,
+        # Audit Log (DB + File)
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
             action="reset_password",
-            target=f"user_id={user_id} ({user.username})",
-            details="Password reset to random value"
+            entity_type="user",
+            entity_id=str(user.id),
+            meta={"admin_username": admin_username},
+            admin_username=admin_username,
+            target_str=f"user_id={user_id} ({user.username})"
         )
 
         # Email the user
@@ -222,3 +231,151 @@ class AdminService:
             print(f"Failed to send reset email: {e}")
 
         return new_password
+
+    def export_minutes_csv_generator(self, from_date: datetime, to_date: datetime, admin_username: str = "system"):
+        """
+        Exports usage minutes (UsageEvents) as a CSV generator.
+        Cols: UserID, ClientName, AgentID, Date, CallDuration(s), CallID
+        """
+
+        # Audit Log (DB + File)
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
+            action="export_minutes",
+            meta={"from_date": str(from_date), "to_date": str(to_date)},
+            admin_username=admin_username,
+            target_str=f"range={from_date}..{to_date}"
+        )
+
+        # Yield header
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["UserID", "ClientName", "AgentID", "Date", "DurationSec", "CallID"])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+
+        # Batch query to avoid OOM
+        batch_size = 1000
+        offset = 0
+        while True:
+            events = self.db.query(UsageEvent).join(User).join(Agent).filter(
+                UsageEvent.started_at >= from_date,
+                UsageEvent.started_at <= to_date
+            ).order_by(UsageEvent.id).offset(offset).limit(batch_size).all()
+
+            if not events:
+                break
+
+            for event in events:
+                writer.writerow([
+                    event.user_id,
+                    event.user.studio_name or event.user.username,
+                    event.agent.agent_id,
+                    event.started_at.isoformat(),
+                    event.billed_seconds,
+                    event.call_id
+                ])
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+
+            offset += batch_size
+
+    def export_logs_csv_generator(self, from_date: datetime, to_date: datetime, client_filter: Optional[str] = None, admin_username: str = "system"):
+        """
+        Exports logs from logs directory as a CSV generator.
+        Cols: Timestamp, AgentID, Caller, Status, Duration, Summary
+        """
+
+        # Audit Log (DB + File)
+        audit_logger.log_audit_event(
+            db=self.db,
+            actor_type="admin",
+            action="export_logs",
+            meta={"from_date": str(from_date), "to_date": str(to_date), "client_filter": client_filter},
+            admin_username=admin_username,
+            target_str=f"range={from_date}..{to_date} client={client_filter}"
+        )
+
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Timestamp", "AgentID", "Caller", "Status", "Duration", "Summary"])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+
+        logs_dir = "logs"
+        if not os.path.exists(logs_dir):
+            return
+
+        # Gather agent_ids to check
+        agent_ids = []
+        if client_filter:
+            # Check if client_filter is a User ID (integer)
+            try:
+                user_id = int(client_filter)
+                # Find all agents for this user
+                user = self.db.query(User).filter(User.id == user_id).first()
+                if user:
+                    agent_ids = [agent.agent_id for agent in user.agents]
+                else:
+                    return
+            except ValueError:
+                if client_filter.replace("-", "").replace("_", "").isalnum():
+                     agent_ids = [client_filter]
+                else:
+                     return
+        else:
+            # List all .log files
+            for filename in os.listdir(logs_dir):
+                if filename.endswith(".log"):
+                    agent_ids.append(filename[:-4])
+
+        for agent_id in agent_ids:
+            # Sanitize agent_id for path safety
+            safe_agent_id = os.path.basename(agent_id)
+            if safe_agent_id != agent_id:
+                continue
+
+            log_path = os.path.join(logs_dir, f"{safe_agent_id}.log")
+            if not os.path.exists(log_path):
+                continue
+
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                        ts_str = entry.get("timestamp")
+                        if not ts_str:
+                            continue
+
+                        ts_dt = datetime.fromisoformat(ts_str)
+                        if from_date.tzinfo is None and ts_dt.tzinfo is not None:
+                            ts_dt = ts_dt.replace(tzinfo=None)
+
+                        if not (from_date <= ts_dt <= to_date):
+                            continue
+
+                        data = entry.get("data", {})
+
+                        caller = data.get("caller_number", "N/D")
+                        status = data.get("status", "success")
+                        duration = data.get("duration_secs", "")
+                        summary = data.get("summary") or data.get("analysis", {}).get("summary", "")
+
+                        writer.writerow([
+                            ts_str,
+                            agent_id,
+                            caller,
+                            status,
+                            duration,
+                            summary
+                        ])
+                        yield output.getvalue()
+                        output.seek(0)
+                        output.truncate(0)
+
+                    except (json.JSONDecodeError, ValueError):
+                        continue

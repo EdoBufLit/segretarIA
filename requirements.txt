@@ -8,3 +8,9 @@ alembic
 passlib
 bcrypt==4.0.1
 jinja2
+psycopg2-binary
+redis
+rq
+stripe
+sentry-sdk
+structlog

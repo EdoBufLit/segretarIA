@@ -1,14 +1,17 @@
 import os
 import json
+import uuid
+import sentry_sdk
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Request, Body, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, Body, Query, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
 from dotenv import load_dotenv
 from mailer import send_email
 from openai import OpenAI
 import logging
+from logging_config import configure_logging, correlation_id
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from datetime import datetime, date, timedelta
@@ -19,16 +22,40 @@ from fastapi import Form, Depends
 from fastapi.templating import Jinja2Templates
 import httpx
 from sqlalchemy.orm import Session
-from db import get_db
+from sqlalchemy import text
+from db import get_db, SessionLocal
 from models import User
 from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
 from client_service import ClientService
 from billing_service import BillingService
+from backup_db import perform_backup, enforce_retention
+from stripe_service import StripeService
+from models import Agent, Subscription
+from queue_utils import get_queue, get_redis_connection
+from jobs.email_jobs import send_email_job
+from jobs.stripe_jobs import process_stripe_event_job
+from jobs.eleven_jobs import process_elevenlabs_event_job
+from call_utils import extract_transcript_text, summarize_call, build_email_body_html, enrich_call_with_ai, log_call
 # ================== CONFIG BASE ==================
 
 load_dotenv()
 templates = Jinja2Templates(directory="templates")
+
+# Configure Logging
+configure_logging()
+# Get structlog logger? Or use stdlib which is now intercepted
+logger = logging.getLogger("app")
+
+# Sentry
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        # Set traces_sample_rate to 1.0 to capture 100%
+        # of transactions for performance monitoring.
+        traces_sample_rate=1.0,
+    )
 
 app = FastAPI()
 app.add_middleware(
@@ -36,12 +63,35 @@ app.add_middleware(
     secret_key=os.getenv("SESSION_SECRET", "super-secret-change-me"),
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-# Logger (va nei log di uvicorn)
-logger = logging.getLogger("uvicorn.error")
+@app.middleware("http")
+async def add_correlation_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    token = correlation_id.set(request_id)
+    # Bind to Sentry
+    if SENTRY_DSN:
+        sentry_sdk.set_tag("correlation_id", request_id)
 
-# OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+
+    correlation_id.reset(token)
+    return response
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Run database backup and retention policy on application startup.
+    """
+    try:
+        logger.info("Starting database backup...")
+        perform_backup()
+        enforce_retention()
+        logger.info("Database backup and retention policy enforcement completed.")
+    except Exception as e:
+        logger.error(f"Error during database backup on startup: {e}")
 
 # Nome della TUA agency / servizio, non del singolo studio
 STUDIO_NAME = os.getenv("STUDIO_NAME", "Segreteria IA")
@@ -58,11 +108,11 @@ ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "password123")
 
 # ================== CONFIG MULTI-CLIENT (clients.json) ==================
-LOGS_DIR = Path("logs")
-LOGS_DIR.mkdir(exist_ok=True)
 CLIENTS_FILE = os.getenv("CLIENTS_FILE", "clients.json")
 CLIENTS: Dict[str, Dict[str, Any]] = {}
 CLIENTS_MTIME: Optional[float] = None
+LOGS_DIR = Path("logs")
+LOGS_DIR.mkdir(exist_ok=True)
 
 class ClientSettingsUpdate(BaseModel):
     studio_name: str | None = None
@@ -125,19 +175,6 @@ def maybe_reload_clients() -> None:
     if CLIENTS_MTIME is None or current_mtime != CLIENTS_MTIME:
         logger.info("[CLIENTS] Rilevato cambiamento in clients.json, ricarico...")
         CLIENTS = load_clients()
-
-def log_call(agent_id: str, data: Dict[str, Any]):
-    """Salva una riga JSON in logs/<agent_id>.log"""
-    log_path = LOGS_DIR / f"{agent_id}.log"
-    entry = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "agent_id": agent_id,
-        "data": data
-    }
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    logger.info(f"[LOG] Salvata chiamata in {log_path}")
-
 
 @app.get("/clients/{agent_id}")
 async def get_client(agent_id: str):
@@ -204,176 +241,36 @@ def get_client_config(agent_id: Optional[str]) -> Dict[str, Any]:
         "email_to": email_to,
     }
 
+# ================== HEALTH ENDPOINTS ==================
 
-# ================== FUNZIONI DI SUPPORTO ==================
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
-def summarize_call(transcript: str, existing_summary: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Usa OpenAI per:
-    - creare un riassunto leggibile della chiamata
-    - estrarre metadati strutturati utili allo studio.
-    """
-
-    meta_text = ""
-    if existing_summary:
-        meta_text = f"\n\n[RIASSUNTO ORIGINALE ELEVENLABS]\n{existing_summary}"
-
-    combined_text = transcript + meta_text
-
-    instructions = f"""
-Sei un assistente per la segreteria di uno studio professionale italiano.
-Ti fornirò il transcript completo di una telefonata con un potenziale cliente.
-
-Devi:
-1. Creare un riassunto breve e chiaro (5-10 righe) per il professionista.
-2. Estrarre alcuni dati strutturati.
-
-IMPORTANTISSIMO:
-- Rispondi SOLO con un oggetto JSON valido.
-- Nessun testo prima o dopo il JSON.
-- Nessun commento, nessuna spiegazione.
-
-Struttura JSON richiesta:
-
-{{
-  "summary": "riassunto leggibile in italiano",
-  "client_name": "nome e cognome se presente, altrimenti null",
-  "client_phone": "numero di telefono se presente nel testo, altrimenti null",
-  "client_email": "email se presente, altrimenti null",
-  "matter_type": "civile/penale/lavoro/famiglia/condominio/recupero crediti/altro/ignoto",
-  "main_reason": "motivo principale in 1-2 frasi",
-  "urgency": "oggi/poche_giorni/non_urgente/ignoto",
-  "deadlines": "eventuali scadenze/udienze citate, oppure null",
-  "existing_client": "si/no/ignoto",
-  "lawyer_name": "nome avvocato o professionista se citato, altrimenti null",
-  "counterparty": "eventuale controparte (persona/azienda/ente) oppure null",
-  "suggested_followup": "cosa dovrebbe fare lo studio come prossimo passo in 1-2 frasi"
-}}
-
-Transcript:
-\"\"\"{combined_text}\"\"\"
-"""
-
-    resp = client.responses.create(
-        model="gpt-4o-mini",
-        input=instructions,
-    )
-
-    raw = resp.output_text
-
-    # Proviamo a ripulire eventuale testo extra e prendere solo il JSON
+@app.get("/ready")
+async def readiness_check(db: Session = Depends(get_db)):
+    # Check Database
     try:
-        start = raw.index("{")
-        end = raw.rindex("}") + 1
-        json_str = raw[start:end]
-    except ValueError:
-        json_str = raw
-
-    try:
-        data = json.loads(json_str)
-        if not isinstance(data, dict):
-            raise TypeError("Output non è un oggetto JSON")
-        return data
+        db.execute(text("SELECT 1"))
+        db_status = "ok"
     except Exception as e:
-        logger.warning(f"[OPENAI] JSON non valido, uso fallback: {e}")
-        return {
-            "summary": raw,
-            "client_name": None,
-            "client_phone": None,
-            "client_email": None,
-            "matter_type": "ignoto",
-            "main_reason": None,
-            "urgency": "ignoto",
-            "deadlines": None,
-            "existing_client": "ignoto",
-            "lawyer_name": None,
-            "counterparty": None,
-            "suggested_followup": None,
-        }
+        logger.error(f"Readiness check failed (DB): {e}")
+        db_status = "failed"
+        return Response(status_code=503, content=json.dumps({"status": "failed", "db": db_status}), media_type="application/json")
 
+    # Check Redis
+    redis_status = "ok"
+    try:
+        redis = get_redis_connection()
+        redis.ping()
+    except Exception as e:
+        logger.error(f"Readiness check failed (Redis): {e}")
+        redis_status = "failed"
+        # Redis might be optional depending on config, but if configured, we should check.
+        # Assuming Redis is critical for async jobs.
+        return Response(status_code=503, content=json.dumps({"status": "failed", "db": db_status, "redis": redis_status}), media_type="application/json")
 
-def build_email_body_html(
-    transcript_text: str,
-    analysis: Dict[str, Any],
-    caller_number: str,
-    started_at: Optional[str],
-    ended_at: Optional[str],
-    raw_payload: Dict[str, Any],  # non usato, solo compatibilità
-    studio_name: str,
-    agency_name: str,
-) -> str:
-    """
-    Costruisce una mail HTML elegante per il singolo studio.
-    Nessun transcript, nessun raw payload.
-    Solo dati utili, puliti.
-    """
-
-    started = started_at or "N/D"
-    ended = ended_at or "N/D"
-
-    urgenza = analysis.get("urgency", "ignoto")
-
-    if urgenza == "oggi":
-        urgenza_label = "URGENTE (entro oggi)"
-        urgenza_color = "#ff3b30"
-    elif urgenza == "poche_giorni":
-        urgenza_label = "Importante (entro pochi giorni)"
-        urgenza_color = "#ff9500"
-    elif urgenza == "non_urgente":
-        urgenza_label = "Non urgente"
-        urgenza_color = "#34c759"
-    else:
-        urgenza_label = "Urgenza non chiara"
-        urgenza_color = "#8e8e93"
-
-    html = f"""
-<html>
-  <body style="font-family: Arial, sans-serif; background-color: #f7f7f7; padding: 20px;">
-    
-    <div style="max-width: 650px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
-
-      <h2 style="color: #333;">Segreteria IA – Nuova chiamata per <span style="color:#0066cc;">{studio_name}</span></h2>
-      <p style="color:#777; font-size:13px; margin-top:4px;">Servizio gestito da {agency_name}</p>
-
-      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-
-      <h3 style="color: #333; margin-bottom: 10px;">📞 Dati della chiamata</h3>
-      <p><strong>Numero chiamante:</strong> {caller_number}</p>
-      <p><strong>Inizio:</strong> {started}</p>
-      <p><strong>Fine:</strong> {ended}</p>
-
-      <div style="margin: 20px 0; padding: 12px 15px; background: {urgenza_color}; color: white; border-radius: 8px; font-size: 15px;">
-        <strong>URGENZA:</strong> {urgenza_label}
-      </div>
-
-      <h3 style="color: #333; margin-bottom: 10px;">👤 Dati cliente (estratti automaticamente)</h3>
-      <p><strong>Nome:</strong> {analysis.get('client_name')}</p>
-      <p><strong>Telefono dichiarato:</strong> {analysis.get('client_phone')}</p>
-      <p><strong>Email dichiarata:</strong> {analysis.get('client_email')}</p>
-      <p><strong>Cliente già esistente:</strong> {analysis.get('existing_client')}</p>
-      <p><strong>Professionista citato:</strong> {analysis.get('lawyer_name')}</p>
-
-      <h3 style="color: #333; margin-top: 25px;">📂 Oggetto della questione</h3>
-      <p><strong>Tipo di questione:</strong> {analysis.get('matter_type')}</p>
-      <p><strong>Motivo principale:</strong> {analysis.get('main_reason')}</p>
-      <p><strong>Controparte:</strong> {analysis.get('counterparty')}</p>
-      <p><strong>Scadenze/udienze:</strong> {analysis.get('deadlines')}</p>
-
-      <h3 style="color: #333; margin-top: 25px;">📝 Riassunto della chiamata</h3>
-      <p style="white-space: pre-line; line-height: 1.5;">{analysis.get('summary')}</p>
-
-      <h3 style="color: #333; margin-top: 25px;">👉 Prossimi passi consigliati</h3>
-      <p>{analysis.get('suggested_followup')}</p>
-
-      <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0 15px;">
-      <p style="color:#999; font-size:12px; text-align:center;">Email generata automaticamente dalla Segreteria IA.</p>
-
-    </div>
-  </body>
-</html>
-    """
-
-    return html
+    return {"status": "ok", "db": db_status, "redis": redis_status}
 
 
 # ================== ENDPOINT DI TEST ==================
@@ -483,6 +380,81 @@ async def admin_reset_password(user_id: int, db: Session = Depends(get_db), admi
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/admin/export/minutes")
+async def admin_export_minutes(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    """
+    Exports usage minutes to CSV.
+    """
+    service = AdminService(db)
+    try:
+        # Parse dates (expecting ISO or YYYY-MM-DD)
+        # If they come as YYYY-MM-DD, we can assume start of day / end of day
+        try:
+            fd = datetime.fromisoformat(from_date)
+        except ValueError:
+            fd = datetime.strptime(from_date, "%Y-%m-%d")
+
+        try:
+            td = datetime.fromisoformat(to_date)
+            # If input was just YYYY-MM-DD (len 10), fromisoformat returns midnight.
+            # We want inclusive end date for logs/minutes.
+            if len(to_date) == 10:
+                 td = td.replace(hour=23, minute=59, second=59)
+        except ValueError:
+            td = datetime.strptime(to_date, "%Y-%m-%d")
+            td = td.replace(hour=23, minute=59, second=59)
+
+        return StreamingResponse(
+            service.export_minutes_csv_generator(fd, td, admin.username),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=minutes_{from_date}_{to_date}.csv"}
+        )
+    except Exception as e:
+        logger.exception("Export minutes failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/admin/export/logs")
+async def admin_export_logs(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    client: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    """
+    Exports logs to CSV.
+    """
+    service = AdminService(db)
+    try:
+        try:
+            fd = datetime.fromisoformat(from_date)
+        except ValueError:
+            fd = datetime.strptime(from_date, "%Y-%m-%d")
+
+        try:
+            td = datetime.fromisoformat(to_date)
+            if len(to_date) == 10:
+                 td = td.replace(hour=23, minute=59, second=59)
+        except ValueError:
+            td = datetime.strptime(to_date, "%Y-%m-%d")
+            td = td.replace(hour=23, minute=59, second=59)
+
+        return StreamingResponse(
+            service.export_logs_csv_generator(fd, td, client, admin.username),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=logs_{from_date}_{to_date}.csv"}
+        )
+    except Exception as e:
+        logger.exception("Export logs failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ================== CLIENT ENDPOINTS ==================
 
 @app.get("/subscription/status")
@@ -501,22 +473,65 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# ================== WEBHOOK ELEVENLABS ==================
+@app.post("/billing/checkout")
+async def create_checkout_session(
+    plan_code: str = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    service = StripeService(db)
+    try:
+        # Assuming we have a configured base URL or use request headers
+        base_url = os.getenv("BASE_URL", "http://127.0.0.1:8000")
+        success_url = f"{base_url}/dashboard?checkout=success"
+        cancel_url = f"{base_url}/dashboard?checkout=cancel"
 
-def extract_transcript_text(payload: dict) -> str:
-    """
-    Unisce i messaggi 'agent' e 'user' in un testo unico, leggibile.
-    """
-    turns = payload.get("data", {}).get("transcript", [])
-    lines = []
-    for t in turns:
-        role = t.get("role")
-        msg = t.get("message", "")
-        if not msg:
-            continue
-        prefix = "Cliente: " if role == "user" else "Assistente: "
-        lines.append(prefix + msg)
-    return "\n".join(lines)
+        session = service.create_checkout_session(
+            user_id=current_user.id,
+            plan_code=plan_code,
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+        return {"status": "ok", "checkout_url": session.url}
+    except Exception as e:
+        logger.exception("Checkout creation failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    service = StripeService(db)
+    try:
+        # Verify and extract data
+        event_type, data = service.verify_webhook_event(payload, sig_header)
+
+        # Enqueue processing
+        try:
+            queue = get_queue()
+            queue.enqueue(process_stripe_event_job, event_type, data)
+            logger.info(f"[STRIPE] Job enqueued: {event_type}")
+        except Exception as e:
+            logger.error(f"[STRIPE] Failed to enqueue job (Redis down?): {e}")
+            # Fallback: Process sync if queue fails?
+            # Or just fail? For reliability, we might want sync fallback.
+            # But task says "Make Stripe webhook handler async via queue".
+            # If queue is down, we can return 500 so Stripe retries later.
+            raise HTTPException(status_code=500, detail="Queue unavailable")
+
+        return {"status": "received"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Stripe webhook failed")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+# ================== WEBHOOK ELEVENLABS ==================
 
 @app.post("/elevenlabs/webhook")
 async def elevenlabs_webhook(request: Request):
@@ -572,34 +587,14 @@ async def elevenlabs_webhook(request: Request):
 
     # 3b) Agent ID (chi identifica il cliente)
     agent_id: Optional[str] = data.get("agent_id")
-    client_cfg = get_client_config(agent_id)
-    studio_name = client_cfg["studio_name"]
-    email_to = client_cfg["email_to"]
 
-    # 4) Transcript
-    transcript_turns = data.get("transcript", []) or []
-    transcript_lines: List[str] = []
-    for turn in transcript_turns:
-        role = str(turn.get("role", "unknown")).upper()
-        msg = turn.get("message", "")
-        transcript_lines.append(f"{role}: {msg}")
-    transcript_text = "\n".join(transcript_lines) if transcript_lines else "(Transcript vuoto)"
-
-    # 5) Metadati chiamata
+    # Metadati chiamata
     metadata: Dict[str, Any] = data.get("metadata", {}) or {}
-
-    caller_number = (
-        metadata.get("phone_call", {}).get("external_number")
-        or metadata.get("from_number")
-        or metadata.get("caller_number")
-        or metadata.get("phone_number")
-        or "N/D"
-    )
+    start_unix = metadata.get("start_time_unix_secs")
+    duration_secs = metadata.get("call_duration_secs")
 
     started_at: Optional[str] = None
     ended_at: Optional[str] = None
-    start_unix = metadata.get("start_time_unix_secs")
-    duration_secs = metadata.get("call_duration_secs")
 
     try:
         if isinstance(start_unix, (int, float)):
@@ -611,84 +606,51 @@ async def elevenlabs_webhook(request: Request):
     except Exception as e:
         logger.warning(f"[WEBHOOK] Errore calcolo orari chiamata: {e}")
 
-    # 6) Riassunto già fornito da ElevenLabs (se presente)
-    analysis_obj: Dict[str, Any] = data.get("analysis", {}) or {}
-    el_summary: Optional[str] = analysis_obj.get("transcript_summary")
+    # ENFORCEMENT & IDEMPOTENCY
+    with SessionLocal() as db:
+        agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+        if agent_obj:
+            # Find owner (Client)
+            user = db.query(User).filter(User.agents.contains(agent_obj)).first()
 
-    # 7) OpenAI per analisi strutturata
+            # Check User Active
+            if user and not user.is_active:
+                logger.warning(f"[WEBHOOK] Suspended user {user.username} (agent {agent_id}). Blocking.")
+                return {"status": "suspended"}
+
+            # Check Subscription Active
+            if user:
+                active_sub = db.query(Subscription).filter(
+                    Subscription.user_id == user.id,
+                    Subscription.state == "active"
+                ).first()
+                if not active_sub:
+                    logger.warning(f"[WEBHOOK] No active subscription for user {user.username} (agent {agent_id}). Blocking.")
+                    return {"status": "suspended"}
+
+        # IDEMPOTENCY CHECK
+        if duration_secs and agent_id:
+            call_id = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
+            if call_id:
+                from models import UsageEvent
+                exists = db.query(UsageEvent).filter_by(call_id=call_id).first()
+                if exists:
+                    logger.info(f"[WEBHOOK] Duplicate call_id {call_id}. Idempotency check passed. Skipping.")
+                    return {"status": "ok", "message": "Duplicate event ignored"}
+
+    # Enqueue processing job
     try:
-        analysis_structured = summarize_call(transcript_text, el_summary)
+        queue = get_queue()
+        queue.enqueue(process_elevenlabs_event_job, payload)
+        logger.info(f"[WEBHOOK] Job enqueued for agent {agent_id}")
     except Exception as e:
-        logger.exception("[OPENAI] Errore in summarize_call")
-        analysis_structured = {
-            "summary": transcript_text,
-            "client_name": None,
-            "client_phone": None,
-            "client_email": None,
-            "matter_type": "ignoto",
-            "main_reason": None,
-            "urgency": "ignoto",
-            "deadlines": None,
-            "existing_client": "ignoto",
-            "lawyer_name": None,
-            "counterparty": None,
-            "suggested_followup": None,
-        }
+        logger.error(f"[WEBHOOK] Failed to enqueue job (Redis down?): {e}")
+        # Fallback logic could be added here, but for now we return 200
+        # and rely on the queue. In real prod, might return 500 to trigger retry.
+        # Given requirement to return fast response, we accept queue dependency.
+        raise HTTPException(status_code=500, detail="Queue unavailable")
 
-    # Determinazione status
-    status = "success"
-    if duration_secs and duration_secs < 3:
-        status = "failure"
-
-    log_call(agent_id, {
-        "transcript_text": transcript_text,
-        "analysis": analysis_structured,
-        "caller_number": caller_number,
-        "started_at": started_at,
-        "ended_at": ended_at,
-        "duration_secs": duration_secs,
-        "status": status,
-        "summary": analysis_structured.get("summary")
-    })
-    # 8) Mail
-    try:
-        email_body = build_email_body_html(
-            transcript_text=transcript_text,
-            analysis=analysis_structured,
-            caller_number=caller_number,
-            started_at=started_at,
-            ended_at=ended_at,
-            raw_payload=payload,
-            studio_name=studio_name,
-            agency_name=STUDIO_NAME,
-        )
-
-        subject = f"[Segreteria IA] Nuova chiamata per {studio_name} da {caller_number}"
-
-        send_email(email_to, subject, email_body)
-    except Exception as e:
-        logger.exception("[EMAIL] Errore invio email/build")
-        return {"status": "error", "reason": f"email error: {e}"}
-
-    logger.info(f"[WEBHOOK] Chiamata gestita correttamente per {studio_name} ({agent_id})")
-
-    # Meter the call
-    if duration_secs and agent_id:
-        call_id = metadata.get("phone_call", {}).get("call_sid") or data.get("conversation_id")
-        if call_id:
-            with SessionLocal() as db:
-                billing_service = BillingService(db)
-                billing_service.meter_call(
-                    agent_id=agent_id,
-                    duration_secs=int(duration_secs),
-                    call_id=call_id,
-                    started_at=datetime.fromisoformat(started_at) if started_at else datetime.utcnow() - timedelta(seconds=duration_secs),
-                    ended_at=datetime.fromisoformat(ended_at) if ended_at else datetime.utcnow()
-                )
-        else:
-            logger.warning("[METERING] No unique call_id found in webhook payload.")
-
-    return {"status": "ok", "message": "Webhook ricevuto e email inviata."}
+    return {"status": "ok", "message": "Webhook received and processing enqueued."}
 
 @app.get("/clients")
 async def list_clients():
@@ -1142,53 +1104,6 @@ async def get_logs_filtered(
 
     return {"status": "ok", "total": total, "items": items}
 
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-def enrich_call_with_ai(transcript: str) -> dict:
-    """
-    Usa OpenAI per estrarre info strutturate dalla chiamata.
-    Ritorna sempre un dict Python, anche se il modello sbarella.
-    """
-    system_msg = (
-        "Sei un assistente che analizza le trascrizioni delle chiamate "
-        "a uno studio legale.\n"
-        "Devi restituire SOLO un JSON valido con queste chiavi:\n"
-        "category: string (es. 'lavoro', 'civile', 'penale', 'famiglia', 'amministrativo', 'altro')\n"
-        "urgency: string ('bassa','media','alta','estrema')\n"
-        "callback_needed: boolean\n"
-        "short_title: string (max 80 caratteri, titolo riassuntivo)\n"
-        "tags: lista di 2-5 parole chiave\n"
-        "description: breve descrizione (1-2 frasi sintetiche in italiano)\n"
-    )
-
-    user_msg = (
-        "Trascrizione completa della chiamata (in italiano):\n\n"
-        f"{transcript}"
-    )
-
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.2,
-        )
-        content = resp.choices[0].message.content
-        data = json.loads(content)
-        return data
-    except Exception as e:
-        print("AI enrichment error:", e)
-        return {
-            "category": "altro",
-            "urgency": "media",
-            "callback_needed": True,
-            "short_title": "Richiesta non classificata",
-            "tags": [],
-            "description": "Impossibile classificare la chiamata (errore interno).",
-        }
 
 
 
@@ -1196,11 +1111,27 @@ def enrich_call_with_ai(transcript: str) -> dict:
     # …qui il tuo log_call(entry, agent_id) o simile…
     # …e la parte di email che già hai…
 @app.post("/clients/{agent_id}/test-call")
-async def test_call(agent_id: str):
+async def test_call(agent_id: str, db: Session = Depends(get_db)):
     """
     Avvia una chiamata di test tramite ElevenLabs/Twilio verso il numero di test
     configurato per questo cliente.
     """
+    # ENFORCEMENT: Check suspension
+    agent_obj = db.query(Agent).filter_by(agent_id=agent_id).first()
+    if agent_obj:
+        user = db.query(User).filter(User.agents.contains(agent_obj)).first()
+        if user and not user.is_active:
+             raise HTTPException(status_code=403, detail="Service suspended due to payment failure.")
+
+        # Check subscription
+        if user:
+            active_sub = db.query(Subscription).filter(
+                Subscription.user_id == user.id,
+                Subscription.state == "active"
+            ).first()
+            if not active_sub:
+                 raise HTTPException(status_code=403, detail="No active subscription.")
+
     maybe_reload_clients()
     if agent_id not in CLIENTS:
         raise HTTPException(status_code=404, detail="Cliente non trovato")

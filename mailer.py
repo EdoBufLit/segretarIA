@@ -32,6 +32,11 @@ def send_email(to_addr: str, subject: str, html_body: str):
     # HTML content
     msg.add_alternative(html_body, subtype="html")
 
+    # Mock mode for QA/Testing
+    if SMTP_HOST == "mock":
+        print(f"Email sent to {to_addr} with subject: '{subject}' (MOCK)")
+        return
+
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             server.starttls()
