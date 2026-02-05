@@ -19,12 +19,40 @@ from fastapi import Form, Depends
 from fastapi.templating import Jinja2Templates
 import httpx
 from sqlalchemy.orm import Session
-from db import get_db
-from models import User
+from db import get_db, SessionLocal
+from models import User, Agent
 from auth import verify_password, get_current_user, get_current_admin_user
 from admin_service import AdminService
 from client_service import ClientService
 from billing_service import BillingService
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse, Response
+import time
+import asyncio
+from backup_db import backup_database
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app):
+        super().__init__(app)
+        self.rate_limit_records = {}
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/login" or request.url.path.startswith("/admin/"):
+            client_ip = request.client.host if request.client else "unknown"
+            key = client_ip
+            now = time.time()
+
+            # Filter out timestamps older than 60 seconds
+            self.rate_limit_records.setdefault(key, [])
+            self.rate_limit_records[key] = [t for t in self.rate_limit_records[key] if now - t < 60]
+
+            if len(self.rate_limit_records[key]) >= 5:
+                return JSONResponse(status_code=429, content={"detail": "Too many requests"})
+
+            self.rate_limit_records[key].append(now)
+
+        return await call_next(request)
+
 # ================== CONFIG BASE ==================
 
 load_dotenv()
@@ -35,10 +63,27 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "super-secret-change-me"),
 )
+app.add_middleware(RateLimitMiddleware)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 # Logger (va nei log di uvicorn)
 logger = logging.getLogger("uvicorn.error")
+
+async def daily_backup_task():
+    while True:
+        try:
+            logger.info("Running daily database backup...")
+            # Run backup in a separate thread to avoid blocking the event loop
+            await asyncio.to_thread(backup_database)
+        except Exception as e:
+            logger.error(f"Backup failed: {e}")
+
+        # Wait for 24 hours
+        await asyncio.sleep(86400)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(daily_backup_task())
 
 # OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -387,13 +432,13 @@ async def root():
 
 @app.get("/admin/clients", response_class=HTMLResponse)
 async def admin_get_clients(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     clients = service.get_clients()
     return templates.TemplateResponse("admin_clients.html", {"request": request, "clients": clients})
 
 @app.post("/admin/clients/create")
 async def admin_create_client(username: str = Form(...), email: str = Form(...), password: str = Form(...), studio_name: str = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         client = service.create_client(username, email, password, studio_name)
         service.sync_clients_to_json()
@@ -403,7 +448,7 @@ async def admin_create_client(username: str = Form(...), email: str = Form(...),
 
 @app.post("/admin/agents/create")
 async def admin_create_agent(agent_id: str = Form(...), display_name: str = Form(...), phone_number_id: str = Form(None), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         agent = service.create_agent(agent_id, display_name, phone_number_id)
         service.sync_clients_to_json()
@@ -413,7 +458,7 @@ async def admin_create_agent(agent_id: str = Form(...), display_name: str = Form
 
 @app.post("/admin/clients/{user_id}/assign-agent")
 async def admin_assign_agent(user_id: int, agent_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         client = service.assign_agent_to_client(user_id, agent_id)
         service.sync_clients_to_json()
@@ -423,28 +468,95 @@ async def admin_assign_agent(user_id: int, agent_id: int = Form(...), db: Sessio
 
 @app.post("/admin/clients/{user_id}/create-subscription")
 async def admin_create_subscription(user_id: int, plan_code: str = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         subscription = service.create_or_update_subscription(user_id, plan_code)
         return {"status": "ok", "subscription_id": subscription.id, "state": subscription.state}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.post("/admin/users/{user_id}/reset-password")
+async def admin_reset_user_password(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db, admin.username)
+    try:
+        service.reset_password_random(user_id)
+        return {"status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/admin/sync-clients-json")
 async def admin_sync_clients_json(db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     summary = service.sync_clients_to_json()
     return {"status": "ok", **summary}
 
+@app.get("/admin/export/minutes")
+def admin_export_minutes(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db, admin.username)
+    try:
+        dt_from = datetime.fromisoformat(from_date)
+        dt_to = datetime.fromisoformat(to_date)
+
+        # Ensure 'to_date' covers the whole day if it's just a date
+        if "T" not in to_date and len(to_date) == 10:
+             dt_to = dt_to + timedelta(hours=23, minutes=59, seconds=59)
+
+        csv_content = service.export_minutes_csv(dt_from, dt_to)
+
+        filename = f"minutes_{from_date}_{to_date}.csv"
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)")
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/export/logs")
+def admin_export_logs(
+    client: str = Query(None),
+    from_date: str = Query(None, alias="from"),
+    to_date: str = Query(None, alias="to"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db, admin.username)
+    try:
+        dt_from = datetime.fromisoformat(from_date) if from_date else None
+        dt_to = datetime.fromisoformat(to_date) if to_date else None
+
+        if dt_to and "T" not in to_date and len(to_date) == 10:
+             dt_to = dt_to + timedelta(hours=23, minutes=59, seconds=59)
+
+        csv_content = service.export_logs_csv(client, dt_from, dt_to)
+
+        filename = f"logs_{client or 'all'}_{from_date or 'start'}_{to_date or 'end'}.csv"
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid format: " + str(e))
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/admin/phone-numbers", response_class=HTMLResponse)
 async def admin_get_phone_numbers(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     numbers = service.get_all_phone_numbers()
     return templates.TemplateResponse("admin_phonenumbers.html", {"request": request, "numbers": numbers})
 
 @app.post("/admin/phone-numbers/create") # Temporary for testing
 async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(...), db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         phone = service.create_phone_number(e164, user_id)
         return {"status": "ok", "phone_number_id": phone.id}
@@ -453,7 +565,7 @@ async def admin_create_phone_number(e164: str = Form(...), user_id: int = Form(.
 
 @app.post("/admin/phone-numbers/{phone_id}/mark-released")
 async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         service.mark_phone_number_released(phone_id)
         return RedirectResponse(url="/admin/phone-numbers", status_code=303)
@@ -462,7 +574,7 @@ async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(
 
 @app.post("/admin/phone-numbers/{phone_id}/cancel-deprovision")
 async def admin_cancel_deprovision(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
-    service = AdminService(db)
+    service = AdminService(db, admin.username)
     try:
         service.cancel_phone_number_deprovisioning(phone_id)
         return RedirectResponse(url="/admin/phone-numbers", status_code=303)
@@ -486,6 +598,15 @@ async def cancel_subscription(db: Session = Depends(get_db), current_user: User 
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/admin/users/{user_id}/toggle-active")
+async def admin_toggle_user_active(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db, admin.username)
+    try:
+        user = service.toggle_client_active(user_id)
+        return {"status": "ok", "is_active": user.is_active}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # ================== WEBHOOK ELEVENLABS ==================
@@ -559,6 +680,16 @@ async def elevenlabs_webhook(request: Request):
 
     # 3b) Agent ID (chi identifica il cliente)
     agent_id: Optional[str] = data.get("agent_id")
+
+    # Check suspension status
+    with SessionLocal() as db:
+        agent_db = db.query(Agent).filter(Agent.agent_id == agent_id).first()
+        if agent_db and agent_db.users:
+            user = agent_db.users[0]
+            if not user.is_active:
+                logger.warning(f"[WEBHOOK] Blocked call for suspended user {user.username} (Agent {agent_id})")
+                return {"status": "suspended"}
+
     client_cfg = get_client_config(agent_id)
     studio_name = client_cfg["studio_name"]
     email_to = client_cfg["email_to"]
@@ -678,15 +809,41 @@ async def elevenlabs_webhook(request: Request):
     return {"status": "ok", "message": "Webhook ricevuto e email inviata."}
 
 @app.get("/clients")
-async def list_clients():
+async def list_clients(db: Session = Depends(get_db)):
     """
     Restituisce la lista dei client configurati (agent_id -> dati).
     Prima ricarica dinamicamente clients.json se è cambiato.
+    Enriches with DB status (user_id, is_active).
     """
     maybe_reload_clients()
 
     from copy import deepcopy
     visible_clients = deepcopy(CLIENTS)
+
+    # Enrich with DB data
+    # Map agent_id -> user
+    agents = db.query(Agent).all()
+    agent_map = {a.agent_id: a for a in agents}
+
+    # We need to find the user for each agent
+    # Agent <-> User is M2M but typically 1:1 or N:1 in this logic
+    # We can iterate users instead?
+    # Let's iterate visible_clients and find associated user data
+
+    for agent_id, cfg in visible_clients.items():
+        # Default status
+        cfg["is_active"] = True
+        cfg["user_id"] = None
+
+        agent_db = agent_map.get(agent_id)
+        if agent_db:
+            # Get associated user. For simplicity, grab first user if M2M.
+            # In current AdminService logic, we assign agent to client.
+            # So agent.users should have the client.
+            if agent_db.users:
+                user = agent_db.users[0] # Assuming one user owner
+                cfg["is_active"] = user.is_active
+                cfg["user_id"] = user.id
 
     return {
         "status": "ok",
