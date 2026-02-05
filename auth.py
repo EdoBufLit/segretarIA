@@ -1,3 +1,5 @@
+import secrets
+import string
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -21,6 +23,33 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Verifies a plain text password against its hashed version.
     """
     return pwd_context.verify(plain_password, hashed_password)
+
+
+def generate_random_password(length: int = 12) -> str:
+    """
+    Generates a secure random password with at least one uppercase,
+    one lowercase, one number, and one special character.
+    """
+    if length < 4:
+        raise ValueError("Password length must be at least 4")
+
+    alphabet = string.ascii_letters + string.digits + string.punctuation
+
+    # Ensure at least one of each required character type
+    password = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice(string.punctuation),
+    ]
+
+    # Fill the rest
+    password += [secrets.choice(alphabet) for _ in range(length - 4)]
+
+    # Shuffle to avoid predictable pattern
+    secrets.SystemRandom().shuffle(password)
+
+    return "".join(password)
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:

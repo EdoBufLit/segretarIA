@@ -3,9 +3,11 @@ import json
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, Request, Body, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, Body, Query, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from dotenv import load_dotenv
+from collections import defaultdict
+import time
 from mailer import send_email
 from openai import OpenAI
 import logging
@@ -31,6 +33,37 @@ load_dotenv()
 templates = Jinja2Templates(directory="templates")
 
 app = FastAPI()
+
+# Rate Limiting
+rate_limit_data = defaultdict(list)
+RATE_LIMIT_COUNT = 10
+RATE_LIMIT_WINDOW = 60 # seconds
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Skip rate limiting for static files
+    if request.url.path.startswith("/static"):
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+
+    # Filter out timestamps older than the window
+    valid_timestamps = [t for t in rate_limit_data[client_ip] if now - t < RATE_LIMIT_WINDOW]
+    rate_limit_data[client_ip] = valid_timestamps
+
+    if len(valid_timestamps) >= RATE_LIMIT_COUNT:
+        return JSONResponse(status_code=429, content={"error": "Too many attempts"})
+
+    rate_limit_data[client_ip].append(now)
+
+    # Prevent memory leak by limiting the number of tracked IPs
+    if len(rate_limit_data) > 10000:
+        rate_limit_data.clear()
+
+    response = await call_next(request)
+    return response
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "super-secret-change-me"),
@@ -459,6 +492,56 @@ async def admin_mark_phone_number_released(phone_id: int, db: Session = Depends(
         return RedirectResponse(url="/admin/phone-numbers", status_code=303)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/admin/users/{user_id}/toggle-active")
+async def admin_toggle_user_active(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        user = service.toggle_user_active_status(user_id)
+        return {"status": "ok", "user_id": user.id, "is_active": user.is_active}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/admin/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
+    service = AdminService(db)
+    try:
+        service.reset_password_random(user_id)
+        return {"status": "ok", "message": "Password reset and emailed to user."}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.get("/admin/export/logs")
+async def admin_export_logs(
+    from_date: str = Query(None, alias="from"),
+    to_date: str = Query(None, alias="to"),
+    client: str = Query(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin_user)
+):
+    service = AdminService(db)
+
+    d_from = None
+    if from_date:
+        try:
+            d_from = datetime.fromisoformat(from_date).date()
+        except ValueError:
+            pass # Ignore invalid date or handle error
+
+    d_to = None
+    if to_date:
+        try:
+            d_to = datetime.fromisoformat(to_date).date()
+        except ValueError:
+            pass
+
+    csv_content = service.export_logs_csv(date_from=d_from, date_to=d_to, agent_id=client)
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=logs.csv"}
+    )
 
 @app.post("/admin/phone-numbers/{phone_id}/cancel-deprovision")
 async def admin_cancel_deprovision(phone_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_admin_user)):
